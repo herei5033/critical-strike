@@ -1,0 +1,16 @@
+const P = {
+  bg:      '#08060d',
+  floor:   '#1c1626',
+  floorAlt:'#2a2038',
+  wall:    '#2e2440',
+  wallTop: '#5b3f78',
+  wallEdge:'#120c1c',
+  player:  '#ff2a6d',
+  playerDk:'#a8144a',
+  enemy:   '#05d9e8',
+  enemyDk: '#037f8a',
+  accent:  '#05d9e8',
+  yellow:  '#ffd319',
+  blood:   '#b3001b',
+  white:   '#f5f5f5',
+};

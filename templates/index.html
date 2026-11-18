@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#05050a">
+  <title>CRITICAL STRIKE</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <!-- Жесткий контейнер -->
+  <div id="game-container">
+    <canvas id="game"></canvas>
+  </div>
+
+  <!-- Кнопка фуллскрина -->
+  <button id="fs-btn" title="Полный экран">⛶</button>
+
+  <!-- Мобильное управление (Игра) -->
+  <div id="mobile-game-controls" class="mobile-overlay">
+    <div id="joystick-move-base" class="joystick-base">
+      <div class="joystick-knob"></div>
+    </div>
+    <div id="joystick-aim-base" class="joystick-base">
+      <div class="joystick-knob"></div>
+    </div>
+    <div id="mobile-buttons">
+      <button class="mbtn" id="btn-shoot">✶</button>
+      <button class="mbtn" id="btn-throw">Q</button>
+      <button class="mbtn" id="btn-pause">II</button>
+    </div>
+  </div>
+
+  <!-- Мобильное управление (Меню) -->
+  <div id="mobile-menu-controls" class="mobile-overlay">
+    <button class="nbtn nbtn-confirm" id="btn-enter">OK</button>
+    <div class="menu-nav-btns">
+      <button class="nbtn" id="btn-up">▲</button>
+      <button class="nbtn" id="btn-down">▼</button>
+    </div>
+  </div>
+
+  <!-- Оверлей поворота -->
+  <div id="rotate-overlay">
+    <div class="rotate-icon">⟳</div>
+    <p>Поверните телефон горизонтально</p>
+  </div>
+
+  <!-- Скрипты -->
+  <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/input.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/palette.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/audio.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/weapons.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/door.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/entities/bullet.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/entities/pickup.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/entities/enemy.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/entities/player.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/level.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/mobile.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
