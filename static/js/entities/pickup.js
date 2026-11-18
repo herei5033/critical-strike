@@ -117,10 +117,10 @@ class Pickup {
       ctx.rotate(this.rotation);
       ctx.scale(1.4, 1.4);
       if (this.isHealth) {
-        ctx.fillStyle = '#ff4444'; ctx.fillRect(-6, -6, 12, 12);
-        ctx.fillStyle = '#fff'; ctx.fillRect(-2, -6, 4, 12); ctx.fillRect(-6, -2, 12, 4);
+        ctx.scale(0.8, 0.8); Sprites.drawMedkit(ctx);
       } else {
-        drawWeapon(ctx, this.weapon, 0, 0, 1);
+        ctx.translate(-8, 0);
+        drawWeapon(ctx, this.weapon, 0, 0, 0.85);
       }
       ctx.restore();
       return;
@@ -140,87 +140,33 @@ class Pickup {
     ctx.save();
     ctx.translate(this.x, this.y + bob);
     if (this.isHealth) {
-      ctx.fillStyle = '#ff4444'; ctx.fillRect(-8, -8, 16, 16);
-      ctx.fillStyle = '#fff'; ctx.fillRect(-3, -8, 6, 16); ctx.fillRect(-8, -3, 16, 6);
+      Sprites.drawMedkit(ctx);
     } else {
       ctx.rotate(this.phase * 0.25);
-      ctx.scale(1.4, 1.4);
+      ctx.translate(-9, 0);
       drawWeapon(ctx, this.weapon, 0, 0, 1);
     }
     ctx.restore();
+
+    // блики-искорки вокруг предмета
+    for (let i = 0; i < 2; i++) {
+      const a = this.phase * 1.3 + i * Math.PI;
+      const k = (Math.sin(this.phase * 3 + i * 2) + 1) / 2;
+      if (k < 0.55) continue;
+      const sx = this.x + Math.cos(a) * 16, sy = this.y + Math.sin(a) * 10 + bob;
+      ctx.globalAlpha = (k - 0.55) * 2.2;
+      Sprites.star(ctx, sx, sy, 2.4, this.isHealth ? '#ffb0b8' : '#fff6c0');
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
+// Отрисовка оружия: хват в (ox,oy), ствол вдоль +X. Сами спрайты — в sprites.js
 function drawWeapon(ctx, w, ox, oy, scale) {
   if (!w) return;
   ctx.save();
   ctx.translate(ox, oy);
   if (scale && scale !== 1) ctx.scale(scale, scale);
-
-  if (w.id === 'm4') {
-    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(-7, -3, 7, 6);
-    ctx.fillStyle = '#333';    ctx.fillRect(-7, -2, 3, 4);
-    ctx.fillStyle = '#666';    ctx.fillRect(0, -2, 26, 4);
-    ctx.fillStyle = '#888';    ctx.fillRect(4, -2, 14, 4);
-    ctx.fillStyle = '#222';    ctx.fillRect(8, -3, 2, 2); ctx.fillRect(18, -3, 2, 2);
-    ctx.fillStyle = '#444';    ctx.fillRect(10, 2, 4, 8);
-    ctx.fillStyle = '#111';    ctx.fillRect(10, 8, 4, 2);
-    ctx.fillStyle = '#555';    ctx.fillRect(-2, 2, 3, 5);
-  } else if (w.id === 'ak47') {
-    ctx.fillStyle = '#3d2817'; ctx.fillRect(-7, -3, 7, 6);
-    ctx.fillStyle = '#d9a05b'; ctx.fillRect(0, -2, 22, 4);
-    ctx.fillStyle = '#b07a3a'; ctx.fillRect(4, -2, 8, 4);
-    ctx.fillStyle = '#222';    ctx.fillRect(12, 2, 5, 8);
-    ctx.fillStyle = '#444';    ctx.fillRect(12, 7, 5, 3);
-    ctx.fillStyle = '#222';    ctx.fillRect(18, -3, 2, 2);
-    ctx.fillStyle = '#555';    ctx.fillRect(-2, 2, 3, 5);
-  } else if (w.id === 'glock') {
-    ctx.fillStyle = '#888';    ctx.fillRect(0, -2, 16, 4);
-    ctx.fillStyle = '#bbb';    ctx.fillRect(4, -2, 10, 4);
-    ctx.fillStyle = '#666';    ctx.fillRect(-2, -3, 5, 6);
-    ctx.fillStyle = '#111';    ctx.fillRect(-2, 1, 6, 7);
-    ctx.fillStyle = '#333';    ctx.fillRect(2, 2, 4, 2);
-    ctx.fillStyle = '#aaa';    ctx.fillRect(0, -3, 2, 2);
-  } else if (w.id === 'uzi') {
-    ctx.fillStyle = '#333';    ctx.fillRect(-3, -3, 16, 6);
-    ctx.fillStyle = '#ff77dd'; ctx.fillRect(0, -2, 13, 4);
-    ctx.fillStyle = '#222';    ctx.fillRect(11, -2, 6, 4);
-    ctx.fillStyle = '#111';    ctx.fillRect(2, 2, 4, 9);
-    ctx.fillRect(-3, 2, 4, 5);
-    ctx.fillStyle = '#555';    ctx.fillRect(5, -4, 6, 2);
-  } else if (w.id === 'shotgun') {
-    ctx.fillStyle = '#3d2817'; ctx.fillRect(-8, -3, 8, 6);
-    ctx.fillStyle = '#666';    ctx.fillRect(0, -3, 28, 6);
-    ctx.fillStyle = '#888';    ctx.fillRect(4, -2, 20, 4);
-    ctx.fillStyle = '#444';    ctx.fillRect(8, 2, 6, 6);
-    ctx.fillStyle = '#222';    ctx.fillRect(22, -4, 4, 8);
-  } else if (w.id === 'bat') {
-    ctx.fillStyle = '#3d2817'; ctx.fillRect(-5, -1, 9, 2);
-    ctx.fillStyle = '#7a4a22'; ctx.fillRect(0, -2, 22, 4);
-    ctx.fillStyle = '#a0622b'; ctx.fillRect(16, -3, 8, 6);
-    ctx.fillStyle = '#8a5430'; ctx.fillRect(18, -2, 4, 4);
-  } else if (w.id === 'pipe') {
-    ctx.fillStyle = '#666';    ctx.fillRect(0, -2, 20, 4);
-    ctx.fillStyle = '#999';    ctx.fillRect(2, -2, 16, 4);
-    ctx.fillStyle = '#bbb';    ctx.fillRect(18, -2, 3, 4);
-    ctx.fillStyle = '#444';    ctx.fillRect(0, -2, 2, 4);
-  } else if (w.id === 'knife') {
-    ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-5, -2, 6, 4);
-    ctx.fillStyle = '#777';    ctx.fillRect(0, -3, 2, 6);
-    ctx.fillStyle = '#ddd';    ctx.fillRect(2, -1, 9, 2);
-    ctx.fillStyle = '#fff';    ctx.fillRect(2, -1, 9, 1);
-  } else if (w.id === 'sword') {
-    ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-7, -2, 7, 4);
-    ctx.fillStyle = '#c0a040'; ctx.fillRect(0, -5, 2, 10);
-    ctx.fillStyle = '#e8e8ff'; ctx.fillRect(2, -2, 22, 4);
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(2, -2, 22, 1);
-    ctx.fillStyle = '#dddddd';
-    ctx.beginPath();
-    ctx.moveTo(24, -2);
-    ctx.lineTo(28, 0);
-    ctx.lineTo(24, 2);
-    ctx.fill();
-  }
-
+  Sprites.drawWeapon(ctx, w.id);
   ctx.restore();
 }

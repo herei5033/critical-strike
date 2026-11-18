@@ -21,6 +21,7 @@ const Utils = {
 
   // Частицы
   spawnBloodParticles: (x, y, count, angle = null) => {
+    if (typeof Effects !== 'undefined') Effects.bloodSplat(x, y, angle, count);
     const particles = [];
     for (let i = 0; i < count; i++) {
       const a = angle !== null ? angle + Utils.rand(-1, 1) : Utils.rand(0, Math.PI * 2);

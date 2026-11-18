@@ -6,7 +6,7 @@ class Game {
     this.H = canvas.height;
     this.state = 'loading';
     this.menu = new Menu(this);
-    this.zoom = 1.15;
+    this.zoom = 1.45;
 
     this.assetsToLoad = 0;
     this.assetsLoaded = 0;
@@ -173,6 +173,9 @@ class Game {
       if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
     }
 
+    Effects.reset();
+    this.combo = 0;
+    this.comboTimer = 0;
     this.state = 'playing';
     this.restartTimer = 0;
     this.shake = 0;
@@ -272,6 +275,7 @@ class Game {
     if (this.state === 'dead') {
       // Кровь/частицы и тряска продолжают затухать после смерти
       this.player.updateParticles(dt);
+      Effects.update(dt, this.level);
       this.shake = Math.max(0, this.shake - dt * 2);
 
       if (!this.nameSubmitted) {
@@ -324,6 +328,11 @@ class Game {
     }
 
     if (this.state === 'playing') {
+      // хитстоп: короткая "заморозка" мира в момент сильного удара
+      if (Effects.hitstop > 0) { Effects.hitstop -= dt; Effects.update(dt * 0.2, this.level); return; }
+      Effects.update(dt, this.level);
+      this.comboTimer = Math.max(0, this.comboTimer - dt);
+      if (this.comboTimer <= 0) this.combo = 0;
       if (!this.player.dead) {
         try {
           this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
@@ -373,10 +382,19 @@ class Game {
         }
       }
 
-      const deadCount = this.enemies.filter(e => e.dead).length;
-      if (deadCount > this.kills) {
-        this.score += (deadCount - this.kills) * 100;
-        this.kills = deadCount;
+      // Очки с комбо: убийства подряд (до 3 сек между ними) умножают награду
+      for (const e of this.enemies) {
+        if (!e.dead || e._scored) continue;
+        e._scored = true;
+        this.combo = this.comboTimer > 0 ? this.combo + 1 : 1;
+        this.comboTimer = 3;
+        const pts = 100 * this.combo;
+        this.score += pts;
+        this.kills++;
+        Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, this.combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(this.combo, 5) * 2);
+        if (this.combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${this.combo} КОМБО`, '#05d9e8', 11);
+        Effects.screenFlash(0.08, '255,255,255');
+        this.shake = Math.max(this.shake, 0.35);
       }
 
       this.pickups = this.pickups.filter(p => !p.pickedUp);
@@ -509,10 +527,12 @@ class Game {
       }
     }
 
+    Effects.drawFloor(b);
     for (const p of this.pickups) p.draw(b);
     this.player.draw(b);
     for (const bullet of this.bullets) bullet.draw(b);
     this.level.drawEffects(b);
+    Effects.drawTop(b);
     this._drawMuzzleLights(b, lit);
     b.restore();
 
@@ -558,6 +578,17 @@ class Game {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.W, this.H);
 
+    Effects.drawScreen(ctx, this.W, this.H);
+    // красная виньетка при последнем сердце
+    if (this.player && !this.player.dead && this.player.hp === 1) {
+      const pulse = 0.25 + 0.15 * Math.sin(performance.now() / 180);
+      const rg = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.35, this.W / 2, this.H / 2, this.H * 0.8);
+      rg.addColorStop(0, 'rgba(255,0,40,0)');
+      rg.addColorStop(1, `rgba(255,0,40,${pulse})`);
+      ctx.fillStyle = rg;
+      ctx.fillRect(0, 0, this.W, this.H);
+    }
+
     const scale = Math.min(1, this.W / 960);
     const wname = this.player.weapon ? this.player.weapon.name : '— КУЛАКИ —';
     const ammoText = this.player.weapon && this.player.weapon.type === 'ranged' ? `   ${this.player.weapon.ammo} / ${this.player.weapon.maxAmmo}` : '';
@@ -579,6 +610,23 @@ class Game {
 
     ctx.fillStyle = P.white;
     ctx.fillText(`ОЧКИ: ${this.score}`, this.W - rightMargin, 55 * scale);
+
+    // индикатор комбо
+    if (this.combo > 1 && this.comboTimer > 0) {
+      const k = this.comboTimer / 3;
+      const cs = (22 + Math.min(this.combo, 6) * 2) * scale;
+      ctx.save();
+      ctx.font = `bold ${cs}px "Courier New", monospace`;
+      ctx.textAlign = 'right';
+      ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 12;
+      ctx.fillStyle = '#ff2a6d';
+      ctx.fillText(`x${this.combo} КОМБО`, this.W - rightMargin, 88 * scale);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(this.W - rightMargin - 120 * scale, 96 * scale, 120 * scale, 4 * scale);
+      ctx.fillStyle = '#05d9e8';
+      ctx.fillRect(this.W - rightMargin - 120 * scale, 96 * scale, 120 * scale * k, 4 * scale);
+    }
 
     if (this.state === 'levelClear') {
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -657,77 +705,86 @@ class Game {
   }
 
   _renderCharSelect(ctx) {
-    ctx.fillStyle = P.bg;
-    ctx.fillRect(0, 0, this.W, this.H);
-
-    for (let i = 0; i < 6; i++) {
-      const y = (performance.now() / 25 + i * 90) % this.H;
-      ctx.fillStyle = i % 2 ? 'rgba(255,42,109,0.06)' : 'rgba(5,217,232,0.05)';
-      ctx.fillRect(0, y, this.W, 18);
-    }
+    const M = this.menu;
+    const t = performance.now() / 1000;
+    M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Хладнокровие: +15% скорость, враги замечают позже' },
-      { id: 'gal', name: 'ГАЛ', perk: 'Танк: +1 HP, мощный ближний бой' },
-      { id: 'daur', name: 'ДАУР', perk: 'Оружейник: Дробовик, -15% перезарядка, 2 HP' }
+      { id: 'dani', name: 'ДАНИ', perk: 'Хладнокровие', desc: '+15% скорость, враги замечают позже', hp: 3, speed: 1.15, weapon: 'glock' },
+      { id: 'gal', name: 'ГАЛ', perk: 'Танк', desc: '+1 HP, мощный ближний бой', hp: 4, speed: 1, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Оружейник', desc: 'Дробовик со старта, но только 2 HP', hp: 2, speed: 1, weapon: 'shotgun' },
     ];
 
     const isMobile = this.W < 800;
     const spacing = isMobile ? 200 : 280;
     const startX = this.W / 2 - spacing;
-    const cardW = isMobile ? 160 : 200;
-    const cardH = isMobile ? 220 : 300;
-    const imgSize = isMobile ? 130 : 180;
-    const titleY = isMobile ? 40 : 70;
-
-    ctx.textAlign = 'center';
-    ctx.font = `bold ${isMobile ? 28 : 40}px "Courier New", monospace`;
-    ctx.fillStyle = P.accent;
-    ctx.fillText('ВЫБОР ПЕРСОНАЖА', this.W / 2, titleY);
-
+    const cardW = isMobile ? 170 : 220;
+    const cardH = isMobile ? 260 : 330;
+    const imgSize = isMobile ? 110 : 150;
     const baseY = isMobile ? 150 : 200;
 
+    M.glowText(ctx, 'ВЫБОР ПЕРСОНАЖА', this.W / 2, isMobile ? 46 : 70, '#05d9e8', isMobile ? 26 : 38);
+
     for (let i = 0; i < 3; i++) {
+      const c = chars[i];
       const x = startX + i * spacing;
       const isSel = i === this.selectedChar;
+      const bob = isSel ? Math.sin(this.charSelectAnim) * 6 : 0;
+      const top = baseY - 80 + bob;
 
-      const bob = isSel ? Math.sin(this.charSelectAnim) * 10 : Math.sin(this.charSelectAnim + i) * 3;
-      const y = baseY + bob;
-
+      ctx.save();
       if (isSel) {
-        ctx.fillStyle = 'rgba(255, 211, 25, 0.15)';
-        ctx.fillRect(x - cardW/2, y - 80, cardW, cardH);
-        ctx.strokeStyle = P.yellow;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x - cardW/2, y - 80, cardW, cardH);
-      } else {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(x - cardW/2, y - 80, cardW, cardH);
+        ctx.translate(x, top + cardH / 2); ctx.scale(1.04, 1.04); ctx.translate(-x, -(top + cardH / 2));
+      } else ctx.globalAlpha = 0.72;
+      M.panel(ctx, x - cardW / 2, top, cardW, cardH, isSel ? '#ffd319' : 'rgba(5,217,232,0.5)', 0.82);
+
+      const img = this.images[c.id];
+      const ix = x - imgSize / 2, iy = top + 14;
+      ctx.fillStyle = '#05030a'; ctx.fillRect(ix - 3, iy - 3, imgSize + 6, imgSize + 6);
+      if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, ix, iy, imgSize, imgSize);
+      ctx.strokeStyle = isSel ? '#ffd319' : '#3a2a5a'; ctx.lineWidth = 2; ctx.strokeRect(ix - 2, iy - 2, imgSize + 4, imgSize + 4);
+
+      // живой спрайт героя под портретом
+      ctx.save();
+      ctx.translate(x + imgSize / 2 - 16, iy + imgSize - 16);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 4, 16, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(-Math.PI / 2 + (isSel ? Math.sin(t * 2) * 0.4 : 0));
+      ctx.scale(1.6, 1.6);
+      Sprites.drawHuman(ctx, Sprites.HEROES[c.id], { t, walk: t * 10, move: isSel ? 0.9 : 0, weaponId: c.weapon });
+      ctx.restore();
+
+      let ty = iy + imgSize + (isMobile ? 26 : 34);
+      ctx.textAlign = 'center';
+      if (isSel) M.glowText(ctx, c.name, x, ty, '#ffd319', isMobile ? 20 : 26, 'center', 12);
+      else { ctx.font = `bold ${isMobile ? 20 : 26}px "Courier New", monospace`; ctx.fillStyle = '#b8b0d0'; ctx.fillText(c.name, x, ty); }
+      ty += isMobile ? 18 : 22;
+      ctx.font = `bold ${isMobile ? 11 : 13}px "Courier New", monospace`; ctx.fillStyle = '#ff2a6d';
+      ctx.fillText(c.perk.toUpperCase(), x, ty);
+      ty += isMobile ? 14 : 18;
+
+      // сердца и скорость
+      for (let k = 0; k < c.hp; k++) {
+        const hx = x - (c.hp - 1) * 9 + k * 18, hy = ty;
+        ctx.fillStyle = '#ff2a6d';
+        ctx.beginPath(); ctx.moveTo(hx, hy + 2); ctx.bezierCurveTo(hx - 6, hy - 4, hx - 10, hy + 3, hx, hy + 9); ctx.bezierCurveTo(hx + 10, hy + 3, hx + 6, hy - 4, hx, hy + 2); ctx.fill();
       }
-
-      const img = this.images[chars[i].id];
-      if (img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, x - imgSize/2, y - 70, imgSize, imgSize);
-      } else {
-        ctx.fillStyle = '#333';
-        ctx.fillRect(x - imgSize/2, y - 70, imgSize, imgSize);
-        ctx.fillStyle = '#fff';
-        ctx.font = '14px monospace';
-        ctx.fillText('NO IMG', x, y + 20);
+      ty += isMobile ? 18 : 22;
+      const bw = cardW - 50;
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x - bw / 2, ty, bw, 5);
+      ctx.fillStyle = '#05d9e8'; ctx.fillRect(x - bw / 2, ty, bw * (c.speed / 1.15), 5);
+      ctx.font = `10px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
+      ctx.fillText('СКОРОСТЬ', x, ty + 16);
+      if (!isMobile) {
+        ctx.font = `12px "Courier New", monospace`; ctx.fillStyle = isSel ? '#e8e4f8' : '#777';
+        this._wrapText(ctx, c.desc, x, ty + 34, cardW - 30, 15);
       }
-
-      ctx.font = `bold ${isMobile ? 18 : 24}px "Courier New", monospace`;
-      ctx.fillStyle = isSel ? P.yellow : '#888';
-      ctx.fillText(chars[i].name, x, y + 100);
-
-      ctx.font = `${isMobile ? 11 : 14}px "Courier New", monospace`;
-      ctx.fillStyle = isSel ? '#fff' : '#666';
-      this._wrapText(ctx, chars[i].perk, x, y + 125, cardW - 20, isMobile ? 14 : 20);
+      ctx.restore();
     }
 
-    ctx.font = `16px "Courier New", monospace`;
-    ctx.fillStyle = '#555';
-    ctx.fillText('Тап — выбор / старт    A/D — листать', this.W / 2, this.H - 30);
+    ctx.textAlign = 'center';
+    ctx.font = `14px "Courier New", monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('A/D — выбор    ENTER / тап по карточке — старт    ESC — назад', this.W / 2, this.H - 24);
   }
 
   _wrapText(ctx, text, x, y, maxWidth, lineHeight) {

@@ -132,6 +132,9 @@ class Door {
       if (e !== player && this.playerPushTimer > 0 && tipSpeed > 170 && e.type !== 'tank') {
         e.stun();
         AudioSys.play('punch');
+        Effects.burst(e.x + e.w / 2, e.y + e.h / 2, '255,200,120', 14, 220);
+        Effects.hitstop = Math.max(Effects.hitstop, 0.05);
+        Effects.popup(e.x + e.w / 2, e.y - 6, 'БАМ!', '#ffd319', 13);
         continue;
       }
       blocked = true;

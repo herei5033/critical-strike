@@ -58,6 +58,17 @@ class Enemy {
       this.fovRange = 240;
     }
 
+    this.seed = (Math.random() * 1e9) | 0;
+    this.look = Sprites.enemyLook(type, this.seed);
+    this.walkPhase = Math.random() * 6;
+    this.moveAmt = 0;
+    this.animT = Math.random() * 10;
+    this._px = x; this._py = y;
+    this.swingDur = 0.3;
+    this.swingSide = 1;
+    this.recoil = 0;
+    this.hitFlash = 0;
+
     this.noiseTarget = null;
     this.investigateTimer = 0;
     this._stuckTimer = 0;
@@ -87,8 +98,10 @@ class Enemy {
     this.stunTimer = 3.0;
     this.state = 'idle';
     this.chargeTimer = 0;
-    this.deathAngle = this.angle + Math.PI / 2;
+    this.deathAngle = this.angle + Math.PI;
     AudioSys.play('stun');
+    Effects.burst(this.cx(), this.cy(), '255,230,120', 10, 140);
+    Effects.ring(this.cx(), this.cy(), '255,230,120', 20);
 
     if (this.weapon) {
       // Оружие выпадает на пол (создаётся пикап в update, где доступен массив pickups)
@@ -129,7 +142,8 @@ class Enemy {
 
     if (this.type === 'tank' && this.hp > 0) {
       AudioSys.play('tank_hit');
-      this.flashTimer = 0.1;
+      this.hitFlash = 0.12;
+      Effects.burst(this.cx(), this.cy(), '255,210,120', 12, 200);
     }
 
     if (this.hp <= 0) {
@@ -192,6 +206,16 @@ class Enemy {
 
   update(dt, level, player, bullets, enemies, pickups) {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
+    this.animT += dt;
+    {
+      const v = Math.hypot(this.x - this._px, this.y - this._py) / dt;
+      this._px = this.x; this._py = this.y;
+      const target = Utils.clamp(v / Math.max(60, this.speed), 0, 1);
+      this.moveAmt += (target - this.moveAmt) * Math.min(1, dt * 10);
+      this.walkPhase += dt * (this.type === 'hound' ? 16 : 12) * this.moveAmt;
+      this.recoil = Math.max(0, this.recoil - dt * 9);
+      this.hitFlash = Math.max(0, this.hitFlash - dt);
+    }
 
     // Частицы крови живут и у мёртвых врагов
     for (let i = this.particles.length - 1; i >= 0; i--) {
@@ -448,8 +472,11 @@ class Enemy {
           if (this.weapon.ammo > 0) {
             this.weapon.ammo--;
             this.flashTimer = 0.06;
+            this.recoil = 1;
             AudioSys.play(this.weapon.sound);
             level.addNoise(this.x, this.y, 400);
+            Effects.casing(this.cx() + Math.cos(this.angle) * 8, this.cy() + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
+            Effects.smoke(this.cx() + Math.cos(this.angle) * 30, this.cy() + Math.sin(this.angle) * 30, this.angle, 2);
             const bx = this.cx() + Math.cos(this.angle) * 12;
             const by = this.cy() + Math.sin(this.angle) * 12;
             if (this.weapon.id === 'shotgun') {
@@ -465,8 +492,11 @@ class Enemy {
             this.weapon = null;
           }
         } else {
-          this.swingTimer = 0.22;
-          AudioSys.play(this.weapon.sound);
+          this.swingDur = (typeof MELEE_SWING !== 'undefined' && MELEE_SWING[this.weapon.id]) || 0.3;
+          if (this.type === 'hound') this.swingDur = 0.25;
+          this.swingTimer = this.swingDur;
+          this.swingSide = -this.swingSide;
+          AudioSys.play(this.type === 'hound' ? 'hound_bark' : this.weapon.sound);
           // Удар не проходит сквозь стены
           if (dist < (this.weapon.range || 50) + 10 && level.lineOfSight(this.cx(), this.cy(), pcx, pcy)) {
             player.takeDamage(1);
@@ -480,8 +510,9 @@ class Enemy {
     if (this.dead) return;
     this.dead = true;
     this.stunned = false;
-    this.deathAngle = this.angle + Math.PI / 2;
+    this.deathAngle = this.angle + Math.PI + Utils.rand(-0.5, 0.5);
     AudioSys.play('enemy_death');
+    Effects.bloodSplat(this.cx(), this.cy(), this.angle + Math.PI, 26);
     // Лужа крови + брызги, вытянутые по направлению удара
     const cx = this.cx(), cy = this.cy();
     const dir = this.angle + Math.PI;
@@ -540,80 +571,35 @@ class Enemy {
       }
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(this.deathAngle);
-      ctx.scale(1.2, 1.2);
-      ctx.fillStyle = this.stunned ? '#3d4450' : this.bodyColor();
-      ctx.beginPath(); ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f2c89b'; ctx.beginPath(); ctx.arc(14, 0, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(16, 0, 5, Math.PI * 1.5, Math.PI * 2.5); ctx.fill();
+      ctx.rotate(this.deathAngle + Math.PI);
+      ctx.scale(1.15, 1.15);
+      const st = { seed: this.seed, stunned: this.stunned, t: this.animT };
+      if (this.type === 'hound') Sprites.drawDogDown(ctx, this.look, st);
+      else Sprites.drawHumanDown(ctx, this.look, st);
       ctx.restore();
       return;
     }
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(cx, cy + 4, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, this.type === 'hound' ? 15 : 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(this.angle);
-    ctx.scale(1.2, 1.2);
-
-    if (this.type === 'tank') {
-      ctx.fillStyle = '#2a2a2a';
-      ctx.beginPath(); ctx.ellipse(0, 0, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = this.flashTimer > 0 ? '#fff' : '#4a4a4a';
-      ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#1a1a1a';
-      ctx.beginPath(); ctx.arc(0, 0, 8, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
-    } else if (this.type === 'hound') {
-      ctx.fillStyle = '#4a2a1a';
-      ctx.beginPath(); ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#8a4a2a';
-      ctx.beginPath(); ctx.ellipse(0, 0, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#2a1a0a';
-      ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(12, -12); ctx.lineTo(14, -2); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(8, 4); ctx.lineTo(12, 12); ctx.lineTo(14, 2); ctx.fill();
-    } else if (this.type === 'sniper') {
-      ctx.fillStyle = '#1a2a1a';
-      ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = this.bodyColor();
-      ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#0a1a0a';
-      ctx.beginPath(); ctx.arc(0, 0, 9, Math.PI * 0.6, Math.PI * 1.4); ctx.fill();
+    ctx.scale(1.15, 1.15);
+    const swingP = this.swingTimer > 0 ? 1 - this.swingTimer / this.swingDur : 0;
+    if (this.type === 'hound') {
+      const bite = this.swingTimer > 0 ? Math.sin(swingP * Math.PI) : 0;
+      Sprites.drawDog(ctx, this.look, { t: this.animT, walk: this.walkPhase, move: this.moveAmt, bite });
     } else {
-      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(-8, -5, 6, 4); ctx.fillRect(-8, 1, 6, 4);
-      ctx.fillStyle = '#d9a880'; ctx.fillRect(4, -9, 10, 4);
-      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
-      ctx.fillStyle = this.bodyColor(); ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.ellipse(-2, -3, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f2c89b'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(-2, 0, 6, Math.PI * 0.55, Math.PI * 1.45); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.fillRect(4, -2, 2, 2); ctx.fillRect(4, 2, 2, 2);
+      const wid = this.weapon ? (this.type === 'sniper' ? 'sniper' : this.weapon.id) : null;
+      const st = {
+        t: this.animT, walk: this.walkPhase, move: this.moveAmt, weaponId: wid,
+        recoil: this.recoil, flash: this.flashTimer > 0, hurt: this.hitFlash > 0,
+      };
+      if (this.swingTimer > 0 && this.weapon && this.weapon.type === 'melee') st.swing = { p: swingP, side: this.swingSide, stab: this.weapon.id === 'knife' && this.swingSide > 0 };
+      Sprites.drawHuman(ctx, this.look, st);
     }
-
-    if (this.weapon && this.type !== 'hound') {
-      let swingAngle = 0, armExtend = 0, weaponOffset = 0;
-      if (this.swingTimer > 0) {
-        const t = 1 - this.swingTimer / 0.22;
-        swingAngle = Math.sin(t * Math.PI) * 0.9 - 0.45;
-        armExtend = Math.sin(t * Math.PI) * 6;
-      }
-      if (this.flashTimer > 0) weaponOffset = -4;
-
-      ctx.save(); ctx.translate(3 + armExtend, 5); ctx.rotate(swingAngle);
-      ctx.fillStyle = '#d9a880'; ctx.fillRect(0, -2, 10, 4);
-      ctx.fillStyle = '#e0b48a'; ctx.beginPath(); ctx.arc(10, 0, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-
-      ctx.save(); ctx.translate(10 + weaponOffset + armExtend, 5); ctx.rotate(swingAngle);
-      drawWeapon(ctx, this.weapon, 0, 0, 1);
-      if (this.flashTimer > 0 && this.weapon.type === 'ranged') {
-        ctx.fillStyle = '#fff8a0'; ctx.beginPath(); ctx.arc(this.weapon.length + 6, 0, 7, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
-    }
-
     ctx.restore();
   }
 }
