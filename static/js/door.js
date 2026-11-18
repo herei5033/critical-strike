@@ -1,5 +1,4 @@
 class Door {
-  // lenTiles — длина двери в тайлах (1 или 2)
   constructor(x, y, horizontal, lenTiles = 1) {
     this.lenTiles = lenTiles;
     this.w = TILE * lenTiles;
@@ -43,7 +42,7 @@ class Door {
         }
       }
     }
-    AudioSys.play('door');
+    AudioSys.play('door_open');
   }
 
   update(dt) {

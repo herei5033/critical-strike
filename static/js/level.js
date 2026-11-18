@@ -1,5 +1,5 @@
 const TILE = 32;
-const DOOR_W = 2; // проход и дверь шириной 2 тайла
+const DOOR_W = 2;
 
 class Level {
   constructor(w, h) {
@@ -36,25 +36,21 @@ class Level {
   }
 
   generate() {
-    // Всё поле — стены
     for (let y = 0; y < this.rows; y++) {
       this.grid[y] = [];
       for (let x = 0; x < this.cols; x++) this.grid[y][x] = 1;
     }
-    // Внешняя рампа (декор)
     for (let y = 0; y < this.rows; y++)
       for (let x = 0; x < this.cols; x++)
         if (x < 2 || y < 2 || x >= this.cols - 2 || y >= this.rows - 2)
           this.grid[y][x] = 4;
 
-    // Сетка комнат: 4×3, впритык, стены между ними — 1 тайл
     const zonesX = 4, zonesY = 3;
-    const usableX = this.cols - 4; // 2 тайла рамки с каждой стороны
+    const usableX = this.cols - 4;
     const usableY = this.rows - 4;
     const zoneW = Math.floor(usableX / zonesX);
     const zoneH = Math.floor(usableY / zonesY);
 
-    // Комнаты занимают ВСЮ зону (без отступов) — стены = 1 тайл между зонами
     for (let zy = 0; zy < zonesY; zy++) {
       for (let zx = 0; zx < zonesX; zx++) {
         const rx = 2 + zx * zoneW;
@@ -62,8 +58,6 @@ class Level {
         const rw = zoneW;
         const rh = zoneH;
 
-        // Оставляем 1 тайл стены между комнатами: сужаем каждую комнату на 1 справа/снизу,
-        // кроме последней в ряду/столбце
         const innerW = rw - (zx < zonesX - 1 ? 1 : 0);
         const innerH = rh - (zy < zonesY - 1 ? 1 : 0);
         if (innerW < 4 || innerH < 4) continue;
@@ -79,7 +73,6 @@ class Level {
       }
     }
 
-    // Ближайшая к центру комнаты — стартовая
     let cx = this.cols / 2, cy = this.rows / 2;
     let bestRoom = this.rooms[0], bestD = Infinity;
     for (const r of this.rooms) {
@@ -88,7 +81,6 @@ class Level {
     }
     this.playerRoom = bestRoom;
 
-    // Соединяем комнаты: горизонтальные и вертикальные проходы по 2 тайла
     for (let zy = 0; zy < zonesY; zy++) {
       for (let zx = 0; zx < zonesX - 1; zx++) {
         const a = this.rooms.find(r => r.id === zy * zonesX + zx);
@@ -106,7 +98,6 @@ class Level {
 
     for (const r of this.rooms) this._decorate(r);
     this._buildRoomGraph();
-
   }
 
   _carveRoom(r) {
@@ -116,13 +107,10 @@ class Level {
   }
 
   _connectRooms(a, b, horizontal) {
-    // horizontal=true — вертикальный проход (комнаты друг над другом)
-    // Проход шириной DOOR_W тайлов
     if (horizontal) {
-      // Верхняя комната — a, нижняя — b
       const top = a.y < b.y ? a : b;
       const bot = a.y < b.y ? b : a;
-      const wallY = top.y + top.h; // первый тайл стены
+      const wallY = top.y + top.h;
       const midX = Math.floor((top.cx + bot.cx) / 2);
       const startX = midX - Math.floor(DOOR_W / 2);
       for (let y = wallY; y <= wallY; y++) {
@@ -130,10 +118,8 @@ class Level {
           this._setGrid(startX + dx, y, 0);
         }
       }
-      // Дверь длиной DOOR_W, горизонтальная (вдоль X)
       this.doors.push(new Door(startX * TILE, wallY * TILE, true, DOOR_W));
     } else {
-      // Левая — a, правая — b
       const left = a.x < b.x ? a : b;
       const right = a.x < b.x ? b : a;
       const wallX = left.x + left.w;
@@ -144,13 +130,11 @@ class Level {
           this._setGrid(x, startY + dy, 0);
         }
       }
-      // Дверь длиной DOOR_W, вертикальная (вдоль Y)
       this.doors.push(new Door(wallX * TILE, startY * TILE, false, DOOR_W));
     }
   }
 
   _decorate(r) {
-    // Ковёр
     if (r.w > 5 && r.h > 5) {
       this.decor.push({
         type: 'rug',
@@ -162,7 +146,6 @@ class Level {
       });
     }
 
-    // Мебель — только внутри комнаты (не на стенах)
     const items = Utils.randInt(2, 4);
     for (let i = 0; i < items; i++) {
       if (r.w < 4 || r.h < 4) break;
@@ -181,15 +164,19 @@ class Level {
       });
     }
 
-    // Враги — НЕ в комнате игрока, только во внутренних тайлах
     if (r !== this.playerRoom && r.w >= 4 && r.h >= 4) {
       const enemyCount = Utils.randInt(2, 4);
       for (let i = 0; i < enemyCount; i++) {
-        // Внутренние тайлы: от r.x+1 до r.x+r.w-2
         const ex = (r.x + 1 + Utils.randInt(0, r.w - 3)) * TILE;
         const ey = (r.y + 1 + Utils.randInt(0, r.h - 3)) * TILE;
-
         if (this._getGrid(Math.floor(ex / TILE), Math.floor(ey / TILE)) !== 0) continue;
+
+        // Определение типа врага
+        const roll = Math.random();
+        let type = 'normal';
+        if (roll < 0.05) type = 'tank';
+        else if (roll < 0.12) type = 'hound';
+        else if (roll < 0.20) type = 'sniper';
 
         const behavior = Utils.choice(['static', 'patrol', 'patrol']);
         let waypoints = null;
@@ -204,28 +191,11 @@ class Level {
             }
           }
         }
-        this.spawnPoints.push({ x: ex, y: ey, behavior, waypoints });
+        this.spawnPoints.push({ x: ex, y: ey, behavior, waypoints, type });
       }
     }
   }
 
-  getRoomAt(x, y) {
-    const cx = Math.floor(x / TILE);
-    const cy = Math.floor(y / TILE);
-    for (const r of this.rooms) {
-      if (cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h) return r;
-    }
-    return null;
-  }
-
-  _areAdjacent(a, b) {
-    const A = { l: a.x, r: a.x + a.w, t: a.y, b: a.y + a.h };
-    const B = { l: b.x, r: b.x + b.w, t: b.y, b: b.y + b.h };
-    // 1 тайл стены между ними
-    return (A.r === B.l || B.r === A.l || A.b === B.t || B.b === A.t);
-  }
-
-    // Строим граф смежности комнат (по дверям)
   _buildRoomGraph() {
     this._roomGraph = new Map();
     for (const r of this.rooms) this._roomGraph.set(r.id, []);
@@ -234,8 +204,6 @@ class Level {
       const dx = d.x + d.w / 2;
       const dy = d.y + d.h / 2;
 
-      // Определяем, какие две комнаты соединяет дверь
-      // Дверь стоит в стене; смотрим на тайлы слева/справа (или сверху/снизу)
       const leftRoom = this.getRoomAt(dx - TILE, dy);
       const rightRoom = this.getRoomAt(dx + TILE, dy);
       const topRoom = this.getRoomAt(dx, dy - TILE);
@@ -252,7 +220,6 @@ class Level {
     }
   }
 
-  // Возвращает дверь между двумя соседними комнатами или null
   _doorBetween(roomA, roomB) {
     if (!this._roomGraph) this._buildRoomGraph();
     const edges = this._roomGraph.get(roomA.id) || [];
@@ -260,7 +227,6 @@ class Level {
     return e ? e.door : null;
   }
 
-  // BFS по комнатам: возвращает массив комнат от from до to (включая обе)
   _findRoomPath(from, to) {
     if (!this._roomGraph) this._buildRoomGraph();
     if (!from || !to) return null;
@@ -281,6 +247,21 @@ class Level {
       }
     }
     return null;
+  }
+
+  getRoomAt(x, y) {
+    const cx = Math.floor(x / TILE);
+    const cy = Math.floor(y / TILE);
+    for (const r of this.rooms) {
+      if (cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h) return r;
+    }
+    return null;
+  }
+
+  _areAdjacent(a, b) {
+    const A = { l: a.x, r: a.x + a.w, t: a.y, b: a.y + a.h };
+    const B = { l: b.x, r: b.x + b.w, t: b.y, b: b.y + b.h };
+    return (A.r === B.l || B.r === A.l || A.b === B.t || B.b === A.t);
   }
 
   spawnPoint() {
@@ -361,8 +342,7 @@ class Level {
         const px = x * TILE, py = y * TILE;
         const t = this.grid[y][x];
         if (t === 0) {
-          ctx.fillStyle = '#151020';
-          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#151020'; ctx.fillRect(px, py, TILE, TILE);
           ctx.fillStyle = '#1f1830';
           for (let i = 0; i < 4; i++) {
             const sx = px + ((x * 7 + y * 13 + i * 3) % (TILE - 2));
@@ -370,8 +350,7 @@ class Level {
             ctx.fillRect(sx, sy, 2, 2);
           }
         } else if (t === 4) {
-          ctx.fillStyle = '#0d0a14';
-          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#0d0a14'; ctx.fillRect(px, py, TILE, TILE);
           ctx.fillStyle = '#161220';
           for (let i = 0; i < 3; i++) {
             const sx = px + ((x * 5 + y * 11 + i * 7) % (TILE - 2));
@@ -379,50 +358,33 @@ class Level {
             ctx.fillRect(sx, sy, 2, 2);
           }
         } else {
-          ctx.fillStyle = '#0a0810';
-          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#0a0810'; ctx.fillRect(px, py, TILE, TILE);
         }
       }
     }
 
     for (const d of this.decor) {
       if (d.type === 'rug') {
-        ctx.fillStyle = d.color;
-        ctx.fillRect(d.x, d.y, d.w, d.h);
-        ctx.strokeStyle = 'rgba(255, 42, 109, 0.4)';
-        ctx.lineWidth = 2;
+        ctx.fillStyle = d.color; ctx.fillRect(d.x, d.y, d.w, d.h);
+        ctx.strokeStyle = 'rgba(255, 42, 109, 0.4)'; ctx.lineWidth = 2;
         ctx.strokeRect(d.x + 2, d.y + 2, d.w - 4, d.h - 4);
       } else if (d.type === 'table') {
-        ctx.fillStyle = '#2a1a0a';
-        ctx.fillRect(d.x + 4, d.y + 4, TILE - 8, TILE - 8);
-        ctx.fillStyle = '#4a2f1a';
-        ctx.fillRect(d.x + 4, d.y + 4, TILE - 8, 4);
+        ctx.fillStyle = '#2a1a0a'; ctx.fillRect(d.x + 4, d.y + 4, TILE - 8, TILE - 8);
+        ctx.fillStyle = '#4a2f1a'; ctx.fillRect(d.x + 4, d.y + 4, TILE - 8, 4);
       } else if (d.type === 'couch') {
-        ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(d.x, d.y + 6, TILE, TILE - 12);
-        ctx.fillStyle = '#333355';
-        ctx.fillRect(d.x, d.y + 6, TILE, 4);
+        ctx.fillStyle = '#1a1a2e'; ctx.fillRect(d.x, d.y + 6, TILE, TILE - 12);
+        ctx.fillStyle = '#333355'; ctx.fillRect(d.x, d.y + 6, TILE, 4);
       } else if (d.type === 'chair') {
-        ctx.fillStyle = '#3a2a1a';
-        ctx.fillRect(d.x + 8, d.y + 8, TILE - 16, TILE - 16);
+        ctx.fillStyle = '#3a2a1a'; ctx.fillRect(d.x + 8, d.y + 8, TILE - 16, TILE - 16);
       } else if (d.type === 'shelf') {
-        ctx.fillStyle = '#2a1a0a';
-        ctx.fillRect(d.x + 2, d.y + 2, TILE - 4, TILE - 4);
-        ctx.fillStyle = '#5a3a2a';
-        ctx.fillRect(d.x + 4, d.y + 6, TILE - 8, 2);
-        ctx.fillRect(d.x + 4, d.y + 14, TILE - 8, 2);
+        ctx.fillStyle = '#2a1a0a'; ctx.fillRect(d.x + 2, d.y + 2, TILE - 4, TILE - 4);
+        ctx.fillStyle = '#5a3a2a'; ctx.fillRect(d.x + 4, d.y + 6, TILE - 8, 2); ctx.fillRect(d.x + 4, d.y + 14, TILE - 8, 2);
       } else if (d.type === 'plant') {
-        ctx.fillStyle = '#3a2a1a';
-        ctx.fillRect(d.x + 12, d.y + 20, 8, 10);
-        ctx.fillStyle = '#2a5a2a';
-        ctx.beginPath();
-        ctx.arc(d.x + 16, d.y + 14, 8, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = '#3a2a1a'; ctx.fillRect(d.x + 12, d.y + 20, 8, 10);
+        ctx.fillStyle = '#2a5a2a'; ctx.beginPath(); ctx.arc(d.x + 16, d.y + 14, 8, 0, Math.PI * 2); ctx.fill();
       } else if (d.type === 'tv') {
-        ctx.fillStyle = '#111';
-        ctx.fillRect(d.x + 4, d.y + 6, TILE - 8, TILE - 14);
-        ctx.fillStyle = '#1a3a6a';
-        ctx.fillRect(d.x + 6, d.y + 8, TILE - 12, TILE - 18);
+        ctx.fillStyle = '#111'; ctx.fillRect(d.x + 4, d.y + 6, TILE - 8, TILE - 14);
+        ctx.fillStyle = '#1a3a6a'; ctx.fillRect(d.x + 6, d.y + 8, TILE - 12, TILE - 18);
       }
     }
 
@@ -430,24 +392,19 @@ class Level {
       for (let x = 0; x < this.cols; x++) {
         if (this.grid[y][x] === 1) {
           const px = x * TILE, py = y * TILE;
-          ctx.fillStyle = '#000';
-          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#000'; ctx.fillRect(px, py, TILE, TILE);
           if (y > 0 && this.grid[y - 1] && this.grid[y - 1][x] !== 1) {
-            ctx.fillStyle = '#ff2a6d';
-            ctx.fillRect(px, py, TILE, 2);
+            ctx.fillStyle = '#ff2a6d'; ctx.fillRect(px, py, TILE, 2);
           }
           if (x > 0 && this.grid[y][x - 1] !== 1) {
-            ctx.fillStyle = '#4a1a3a';
-            ctx.fillRect(px, py, 2, TILE);
+            ctx.fillStyle = '#4a1a3a'; ctx.fillRect(px, py, 2, TILE);
           }
           if (y < this.rows - 1 && this.grid[y + 1] && this.grid[y + 1][x] !== 1) {
-            ctx.fillStyle = '#2a0a15';
-            ctx.fillRect(px, py + TILE - 2, TILE, 2);
+            ctx.fillStyle = '#2a0a15'; ctx.fillRect(px, py + TILE - 2, TILE, 2);
           }
         }
       }
     }
-
     this._staticDirty = false;
   }
 
@@ -496,10 +453,10 @@ class Level {
           ctx.fillStyle = 'rgba(0,0,0,0.15)';
           ctx.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE);
         } else if (this.exploredRooms.has(r)) {
-          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
           ctx.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE);
         } else {
-          ctx.fillStyle = 'rgba(0,0,0,0.9)';
+          ctx.fillStyle = 'rgba(0,0,0,1)';
           ctx.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE);
         }
       }

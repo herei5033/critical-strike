@@ -1,11 +1,63 @@
 [
   {
+    "name": "GGWP",
+    "score": 4000
+  },
+  {
+    "name": "SUPER",
+    "score": 3600
+  },
+  {
+    "name": "ASD",
+    "score": 3500
+  },
+  {
+    "name": "Ы",
+    "score": 2400
+  },
+  {
+    "name": "PLAYER",
+    "score": 2200
+  },
+  {
+    "name": "GALA",
+    "score": 1600
+  },
+  {
+    "name": "PLAYER",
+    "score": 1400
+  },
+  {
     "name": "ZAEBIS",
     "score": 1100
   },
   {
+    "name": "EZ",
+    "score": 1100
+  },
+  {
+    "name": "D",
+    "score": 1000
+  },
+  {
     "name": "PLAYER",
     "score": 900
+  },
+  {
+    "name": "A",
+    "score": 900
+  },
+  {
+    "name": "A",
+    "score": 900
+  },
+  {
+    "name": "PLAYER",
+    "score": 800
+  },
+  {
+    "name": "PLAYER",
+    "score": 800
   },
   {
     "name": "PLAYER",
@@ -17,6 +69,18 @@
   },
   {
     "name": "PLAYER",
+    "score": 700
+  },
+  {
+    "name": "PLAYER",
+    "score": 700
+  },
+  {
+    "name": "S",
+    "score": 700
+  },
+  {
+    "name": "FUCK",
     "score": 700
   },
   {
@@ -41,10 +105,34 @@
   },
   {
     "name": "PLAYER",
+    "score": 600
+  },
+  {
+    "name": "D",
+    "score": 600
+  },
+  {
+    "name": "D",
+    "score": 600
+  },
+  {
+    "name": "PLAYER",
     "score": 500
   },
   {
     "name": "PLAYER",
+    "score": 500
+  },
+  {
+    "name": "PLAYER",
+    "score": 500
+  },
+  {
+    "name": "PLAYER",
+    "score": 500
+  },
+  {
+    "name": "ASDASDASD",
     "score": 500
   },
   {
@@ -72,39 +160,43 @@
     "score": 400
   },
   {
+    "name": "DANI",
+    "score": 400
+  },
+  {
     "name": "DAUREN",
     "score": 300
   },
   {
     "name": "PLAYER",
-    "score": 100
+    "score": 300
   },
   {
     "name": "PLAYER",
-    "score": 100
+    "score": 300
+  },
+  {
+    "name": "SAD",
+    "score": 300
+  },
+  {
+    "name": "SDSAD",
+    "score": 300
+  },
+  {
+    "name": "WD",
+    "score": 300
+  },
+  {
+    "name": "ASD",
+    "score": 300
+  },
+  {
+    "name": "S",
+    "score": 300
   },
   {
     "name": "PLAYER",
-    "score": 100
-  },
-  {
-    "name": "PLAYER",
-    "score": 0
-  },
-  {
-    "name": "PLAYER",
-    "score": 0
-  },
-  {
-    "name": "PLAYER",
-    "score": 0
-  },
-  {
-    "name": "PLAYER",
-    "score": 0
-  },
-  {
-    "name": "KOTAQ",
-    "score": 0
+    "score": 200
   }
 ]

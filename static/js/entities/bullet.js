@@ -24,7 +24,6 @@ class Bullet {
 
     if (!isFinite(this.x) || !isFinite(this.y)) { this.dead = true; return; }
 
-    // Проверяем попадание в стену или окно
     if (level.bulletHitsWall(this.x, this.y)) {
       this.dead = true;
     }

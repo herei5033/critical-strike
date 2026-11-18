@@ -1,16 +1,44 @@
 class Enemy {
-  constructor(x, y, behavior, waypoints) {
+  constructor(x, y, behavior, waypoints, type = 'normal') {
     this.x = x;
     this.y = y;
     this.w = 18; this.h = 18;
+    this.type = type;
+    
     this.speed = 120;
+    this.maxHp = 1;
+    this.hp = 1;
+    
+    const pool = ['m4','ak47','glock','uzi','bat','pipe','knife','sword'];
+    
+    if (type === 'tank') {
+      this.speed = 70;
+      this.maxHp = 3;
+      this.hp = 3;
+      this.weapon = makeWeapon('shotgun');
+      this.fovRange = 180;
+    } else if (type === 'hound') {
+      this.speed = 200;
+      this.weapon = makeWeapon('knife');
+      this.fovRange = 350;
+      this.fovAngle = Math.PI * 1.5;
+    } else if (type === 'sniper') {
+      this.speed = 90;
+      this.weapon = makeWeapon('m4');
+      this.fovRange = 600;
+      this.fovAngle = Math.PI / 4;
+      this.laserAngle = 0;
+      this.chargeTimer = 0;
+    } else {
+      this.weapon = makeWeapon(Utils.choice(pool));
+    }
+
     this.angle = Math.random() * Math.PI * 2;
     this.state = 'idle';
     this.dead = false;
     this.stunned = false;
     this.stunTimer = 0;
-    const pool = ['m4','ak47','glock','uzi','bat','pipe','knife','sword'];
-    this.weapon = makeWeapon(Utils.choice(pool));
+    
     this.attackTimer = 0;
     this.alertTimer = 0;
     this.swingTimer = 0;
@@ -23,8 +51,10 @@ class Enemy {
     this.wpIndex = 0;
     this.waitTimer = 0;
 
-    this.fovAngle = Math.PI / 2.2;
-    this.fovRange = 240;
+    if (type === 'normal') {
+      this.fovAngle = Math.PI / 2.2;
+      this.fovRange = 240;
+    }
 
     this.noiseTarget = null;
     this.investigateTimer = 0;
@@ -34,6 +64,10 @@ class Enemy {
   }
 
   bodyColor() {
+    if (this.type === 'tank') return '#4a4a4a';
+    if (this.type === 'hound') return '#8a4a2a';
+    if (this.type === 'sniper') return '#2a4a2a';
+
     if (!this.weapon) return '#4a2c48';
     if (this.weapon.type === 'ranged') {
       if (this.weapon.id === 'm4' || this.weapon.id === 'ak47') return '#7a1a2a';
@@ -46,12 +80,17 @@ class Enemy {
   }
 
   stun() {
-    if (this.dead) return;
+    if (this.dead || this.type === 'tank') return; // Танка нельзя оглушить
     this.stunned = true;
     this.stunTimer = 3.0;
     this.state = 'idle';
     this.deathAngle = this.angle + Math.PI / 2;
-    AudioSys.play('hit');
+    AudioSys.play('stun');
+    
+    if (this.weapon) {
+      this._droppedWeapon = this.weapon;
+      this.weapon = null;
+    }
   }
 
   cx() { return this.x + this.w / 2; }
@@ -62,12 +101,14 @@ class Enemy {
   }
 
   canSeePlayer(player, level) {
+    if (this.stunned || this.dead) return false;
+
     const cx = this.cx();
     const cy = this.cy();
     const px = player.x + player.w / 2;
     const py = player.y + player.h / 2;
     let range = this.fovRange;
-    if (player.charId === 'dani') range *= 0.8; // Стелс Дани
+    if (player.charId === 'dani') range *= 0.8;
 
     const dist = Math.hypot(px - cx, py - cy);
     if (dist > range) return false;
@@ -76,6 +117,20 @@ class Enemy {
     if (diff > Math.PI) diff = Math.PI * 2 - diff;
     if (diff > this.fovAngle / 2) return false;
     return level.lineOfSight(cx, cy, px, py);
+  }
+
+  takeDamage(amount, pickups) {
+    if (this.dead) return;
+    this.hp -= amount;
+    
+    if (this.type === 'tank' && this.hp > 0) {
+      AudioSys.play('tank_hit');
+      this.flashTimer = 0.1;
+    }
+
+    if (this.hp <= 0) {
+      this.die(pickups);
+    }
   }
 
   _moveToward(tx, ty, speed, dt, level) {
@@ -138,19 +193,95 @@ class Enemy {
     if (this.dead) return;
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
 
-    for (const b of bullets) {
-      if (b.dead) continue;
-      if (b.isPlayer && Utils.dist(this.cx(), this.cy(), b.x, b.y) < 12) {
-        this.die(pickups);
-        b.dead = true;
-        return;
-      }
-    }
-
     if (this.stunned) {
       this.stunTimer -= dt;
       if (this.stunTimer <= 0) this.stunned = false;
       return;
+    }
+
+    for (const b of bullets) {
+      if (b.dead) continue;
+      if (b.isPlayer && Utils.dist(this.cx(), this.cy(), b.x, b.y) < 12) {
+        this.takeDamage(1, pickups);
+        b.dead = true;
+        if (this.dead) return;
+      }
+    }
+
+    if (this.type === 'sniper') {
+      if (this.state === 'attack') {
+        this.chargeTimer += dt;
+        this.laserAngle = Math.atan2(player.y - this.cy(), player.x - this.cx());
+        
+        if (!this.canSeePlayer(player, level)) {
+          this.state = 'chase';
+          this.chargeTimer = 0;
+        } else if (this.chargeTimer > 1.5) {
+          AudioSys.play('sniper_shot');
+          this.attackTimer = 2.0;
+          this.chargeTimer = 0;
+          
+          const dx = player.x + player.w/2 - this.cx();
+          const dy = player.y + player.h/2 - this.cy();
+          const dist = Math.hypot(dx, dy);
+          const steps = Math.ceil(dist / 8);
+          for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            const px = this.cx() + dx * t;
+            const py = this.cy() + dy * t;
+            if (Utils.dist(px, py, player.x + player.w/2, player.y + player.h/2) < 12) {
+              player.takeDamage(2);
+              break;
+            }
+            if (level.bulletHitsWall(px, py)) break;
+          }
+        }
+        return;
+      } else if (this.state === 'chase') {
+        if (this.canSeePlayer(player, level)) {
+          this.state = 'attack';
+          this.chargeTimer = 0;
+          AudioSys.play('sniper_charge');
+          return;
+        }
+      }
+    }
+
+    if (!this.weapon) {
+      let nearest = null;
+      let minDist = 400;
+      for (const p of pickups) {
+        if (p.pickedUp || p.isHealth) continue;
+        const d = Utils.dist(this.cx(), this.cy(), p.x, p.y);
+        if (d < minDist) {
+          minDist = d;
+          nearest = p;
+        }
+      }
+      
+      if (nearest) {
+        const ok = this._moveToward(nearest.x, nearest.y, this.speed, dt, level);
+        if (Utils.dist(this.cx(), this.cy(), nearest.x, nearest.y) < 18) {
+          this.weapon = nearest.weapon;
+          nearest.pickedUp = true;
+        }
+        return;
+      } else {
+        if (this.behavior === 'patrol') {
+          this.waitTimer -= dt;
+          if (this.waitTimer <= 0) {
+            if (this.waypoints.length === 0) return;
+            const wp = this.waypoints[this.wpIndex];
+            if (Utils.dist(this.cx(), this.cy(), wp.x, wp.y) < 12) {
+              this.wpIndex = (this.wpIndex + 1) % this.waypoints.length;
+              this.waitTimer = Utils.rand(1, 2.5);
+            } else {
+              this._moveToward(wp.x, wp.y, this.speed, dt, level);
+            }
+          }
+        }
+        return;
+      }
     }
 
     this.attackTimer = Math.max(0, this.attackTimer - dt);
@@ -177,6 +308,7 @@ class Enemy {
     if (this.state !== 'chase' && this.state !== 'attack') {
       if (this.canSeePlayer(player, level)) {
         this.state = 'chase';
+        if (this.type === 'hound') AudioSys.play('hound_bark');
       }
     }
 
@@ -306,7 +438,7 @@ class Enemy {
           if (this.weapon.ammo > 0) {
             this.weapon.ammo--;
             this.flashTimer = 0.06;
-            AudioSys.play('shoot');
+            AudioSys.play(this.weapon.sound);
             level.addNoise(this.x, this.y, 400);
             bullets.push(new Bullet(
               this.cx() + Math.cos(this.angle) * 12,
@@ -314,11 +446,11 @@ class Enemy {
               this.angle, this.weapon.bulletSpeed, false, this.weapon.color
             ));
           } else {
-            this.weapon = makeWeapon('knife');
+            this.weapon = null;
           }
         } else {
           this.swingTimer = 0.22;
-          AudioSys.play('melee');
+          AudioSys.play(this.weapon.sound);
           if (dist < (this.weapon.range || 50) + 10) {
             player.takeDamage(1);
           }
@@ -331,7 +463,7 @@ class Enemy {
     if (this.dead) return;
     this.dead = true;
     this.deathAngle = this.angle + Math.PI / 2;
-    AudioSys.play('die');
+    AudioSys.play('enemy_death');
     for (let i = 0; i < 8; i++) {
       this.bloodStains.push({
         x: this.x + Utils.rand(-14, 14),
@@ -340,13 +472,12 @@ class Enemy {
       });
     }
     if (pickups) {
-      // Шанс дропа аптечки (20%)
-      if (Math.random() < 0.2) {
-        pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), null, true));
-      }
-      // Дроп оружия
-      else if (this.weapon) {
+      if (this.weapon) {
         pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), this.weapon));
+      }
+      const healthChance = this.type === 'tank' ? 0.8 : 0.2;
+      if (Math.random() < healthChance) {
+        pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), null, true));
       }
     }
   }
@@ -355,13 +486,20 @@ class Enemy {
     const cx = this.cx();
     const cy = this.cy();
 
+    if (this.type === 'sniper' && this.state === 'attack') {
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(this.laserAngle) * 800, cy + Math.sin(this.laserAngle) * 800);
+      ctx.stroke();
+    }
+
     if (this.dead || this.stunned) {
       if (this.dead) {
         ctx.fillStyle = P.blood;
         for (const b of this.bloodStains) {
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
         }
       }
       ctx.save();
@@ -369,63 +507,54 @@ class Enemy {
       ctx.rotate(this.deathAngle);
       ctx.scale(1.2, 1.2);
       ctx.fillStyle = this.stunned ? '#3d4450' : this.bodyColor();
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#f2c89b';
-      ctx.beginPath();
-      ctx.arc(14, 0, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#1a1a1a';
-      ctx.beginPath();
-      ctx.arc(16, 0, 5, Math.PI * 1.5, Math.PI * 2.5);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f2c89b'; ctx.beginPath(); ctx.arc(14, 0, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(16, 0, 5, Math.PI * 1.5, Math.PI * 2.5); ctx.fill();
       ctx.restore();
       return;
     }
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 4, 14, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy + 4, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(this.angle);
     ctx.scale(1.2, 1.2);
 
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(-8, -5, 6, 4);
-    ctx.fillRect(-8, 1, 6, 4);
+    if (this.type === 'tank') {
+      ctx.fillStyle = '#2a2a2a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 14, 12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.flashTimer > 0 ? '#fff' : '#4a4a4a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.arc(0, 0, 8, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
+    } else if (this.type === 'hound') {
+      ctx.fillStyle = '#4a2a1a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 16, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8a4a2a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a1a0a';
+      ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(12, -12); ctx.lineTo(14, -2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(8, 4); ctx.lineTo(12, 12); ctx.lineTo(14, 2); ctx.fill();
+    } else if (this.type === 'sniper') {
+      ctx.fillStyle = '#1a2a1a';
+      ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.bodyColor();
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0a1a0a';
+      ctx.beginPath(); ctx.arc(0, 0, 9, Math.PI * 0.6, Math.PI * 1.4); ctx.fill();
+    } else {
+      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(-8, -5, 6, 4); ctx.fillRect(-8, 1, 6, 4);
+      ctx.fillStyle = '#d9a880'; ctx.fillRect(4, -9, 10, 4);
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.bodyColor(); ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f2c89b'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(-2, 0, 6, Math.PI * 0.55, Math.PI * 1.45); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.fillRect(4, -2, 2, 2); ctx.fillRect(4, 2, 2, 2);
+    }
 
-    ctx.fillStyle = '#d9a880';
-    ctx.fillRect(4, -9, 10, 4);
-
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = this.bodyColor();
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#f2c89b';
-    ctx.beginPath();
-    ctx.arc(0, 0, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#1a1a1a';
-    ctx.beginPath();
-    ctx.arc(-2, 0, 6, Math.PI * 0.55, Math.PI * 1.45);
-    ctx.fill();
-
-    ctx.fillStyle = '#000';
-    ctx.fillRect(4, -2, 2, 2);
-    ctx.fillRect(4, 2, 2, 2);
-
-    if (this.weapon) {
+    if (this.weapon && this.type !== 'hound') {
       let swingAngle = 0, armExtend = 0, weaponOffset = 0;
       if (this.swingTimer > 0) {
         const t = 1 - this.swingTimer / 0.22;
@@ -434,46 +563,16 @@ class Enemy {
       }
       if (this.flashTimer > 0) weaponOffset = -4;
 
-      ctx.save();
-      ctx.translate(3 + armExtend, 5);
-      ctx.rotate(swingAngle);
-      ctx.fillStyle = '#d9a880';
-      ctx.fillRect(0, -2, 10, 4);
-      ctx.fillStyle = '#e0b48a';
-      ctx.beginPath();
-      ctx.arc(10, 0, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.save(); ctx.translate(3 + armExtend, 5); ctx.rotate(swingAngle);
+      ctx.fillStyle = '#d9a880'; ctx.fillRect(0, -2, 10, 4);
+      ctx.fillStyle = '#e0b48a'; ctx.beginPath(); ctx.arc(10, 0, 3, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
 
-      ctx.save();
-      ctx.translate(10 + weaponOffset + armExtend, 5);
-      ctx.rotate(swingAngle);
+      ctx.save(); ctx.translate(10 + weaponOffset + armExtend, 5); ctx.rotate(swingAngle);
       drawWeapon(ctx, this.weapon, 0, 0, 1);
-
       if (this.flashTimer > 0 && this.weapon.type === 'ranged') {
-        ctx.fillStyle = '#fff8a0';
-        ctx.beginPath();
-        ctx.arc(this.weapon.length + 6, 0, 7, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = '#fff8a0'; ctx.beginPath(); ctx.arc(this.weapon.length + 6, 0, 7, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.restore();
-    } else {
-      const t = this.swingTimer > 0 ? (1 - this.swingTimer / 22) : 0;
-      const swing = this.swingTimer > 0 ? Math.sin(t * Math.PI) * 0.9 - 0.45 : 0;
-      const ext = this.swingTimer > 0 ? Math.sin(t * Math.PI) * 8 : 0;
-
-      ctx.save();
-      ctx.translate(4, -3);
-      ctx.rotate(swing * 0.5);
-      ctx.fillStyle = '#d9a880';
-      ctx.fillRect(0, -2, 8 + ext * 0.5, 3);
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(4, 5);
-      ctx.rotate(swing);
-      ctx.fillStyle = '#d9a880';
-      ctx.fillRect(0, -2, 8 + ext, 3);
       ctx.restore();
     }
 

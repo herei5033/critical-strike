@@ -12,6 +12,7 @@ const Input = {
 
   init(canvas) {
     this.canvas = canvas;
+    
     window.addEventListener('keydown', (e) => {
       if (!e.repeat) this._pressedThisFrame[e.code] = true;
       this.keys[e.code] = true;
@@ -20,8 +21,44 @@ const Input = {
     window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     window.addEventListener('blur', () => { this.keys = {}; this.mouse.down = false; });
 
-    canvas.addEventListener('mousedown', () => { this.mouse.down = true; this.mouse.justDown = true; });
-    window.addEventListener('mouseup',  () => { this.mouse.down = false; });
+    this.updateCoords = (clientX, clientY) => {
+      const rect = canvas.getBoundingClientRect();
+      const canvasRatio = canvas.width / canvas.height;
+      const rectRatio = rect.width / rect.height;
+      
+      let renderWidth, renderHeight, offsetX, offsetY;
+
+      if (rectRatio > canvasRatio) {
+        renderHeight = rect.height;
+        renderWidth = renderHeight * canvasRatio;
+        offsetX = (rect.width - renderWidth) / 2;
+        offsetY = 0;
+      } else {
+        renderWidth = rect.width;
+        renderHeight = renderWidth / canvasRatio;
+        offsetX = 0;
+        offsetY = (rect.height - renderHeight) / 2;
+      }
+
+      this.mouse.x = (clientX - rect.left - offsetX) * (canvas.width / renderWidth);
+      this.mouse.y = (clientY - rect.top - offsetY) * (canvas.height / renderHeight);
+    };
+
+    canvas.addEventListener('mousemove', (e) => {
+      this.updateCoords(e.clientX, e.clientY);
+    });
+    
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 0) { 
+        this.mouse.down = true; 
+        this.mouse.justDown = true;
+      }
+    });
+    
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouse.down = false;
+    });
+    
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   },
 
@@ -45,7 +82,6 @@ const Input = {
   setThrow(on) { this._touchThrow = on; },
   setPause(on) { this._touchPause = on; },
 
-  // Для меню: эмуляция нажатий
   simulatePress(code) {
     this._pressedThisFrame[code] = true;
     setTimeout(() => { this._pressedThisFrame[code] = false; }, 100);
@@ -61,6 +97,13 @@ const Input = {
     if (c === 'Escape' && this._touchPause) return true;
     return !!this._pressedThisFrame[c];
   },
+  
+  consumeClick() { 
+    const j = this.mouse.justDown; 
+    this.mouse.justDown = false; 
+    return j; 
+  },
+  
   endFrame() {
     this.mouse.justDown = false;
     this._pressedThisFrame = {};

@@ -24,6 +24,7 @@ class Pickup {
     this.groundTimer = 0.25;
     this.traveled = 0;
     this.bounces = 0;
+    AudioSys.play('throw');
   }
 
   update(dt, level, enemies) {
@@ -51,7 +52,14 @@ class Pickup {
         const ex = e.x + e.w / 2;
         const ey = e.y + e.h / 2;
         if (Utils.dist(nextX, nextY, ex, ey) < 22) {
-          e.stun();
+          // Если это милишное оружие — убиваем, иначе оглушаем
+          if (this.weapon && this.weapon.type === 'melee') {
+            e.die(enemies);
+            // Кровь от швыряния
+            if (e.particles) e.particles.push(...Utils.spawnBloodParticles(ex, ey, 20));
+          } else {
+            e.stun();
+          }
           this.thrown = false;
           this.x = ex + Utils.rand(-10, 10);
           this.y = ey + Utils.rand(-10, 10);
@@ -64,18 +72,11 @@ class Pickup {
       const wallY = level.isWallAt(this.x, nextY) || this._doorAt(this.x, nextY, level);
       const wallXY = level.isWallAt(nextX, nextY) || this._doorAt(nextX, nextY, level);
       if (wallXY || (wallX && wallY)) {
-        this.vx = -this.vx * 0.4;
-        this.vy = -this.vy * 0.4;
-        this.bounces++;
-        break;
+        this.vx = -this.vx * 0.4; this.vy = -this.vy * 0.4; this.bounces++; break;
       } else if (wallX) {
-        this.vx = -this.vx * 0.4;
-        this.bounces++;
-        break;
+        this.vx = -this.vx * 0.4; this.bounces++; break;
       } else if (wallY) {
-        this.vy = -this.vy * 0.4;
-        this.bounces++;
-        break;
+        this.vy = -this.vy * 0.4; this.bounces++; break;
       } else {
         this.x = nextX;
         this.y = nextY;
@@ -115,11 +116,8 @@ class Pickup {
       ctx.rotate(this.rotation);
       ctx.scale(1.4, 1.4);
       if (this.isHealth) {
-        ctx.fillStyle = '#ff4444';
-        ctx.fillRect(-6, -6, 12, 12);
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(-2, -6, 4, 12);
-        ctx.fillRect(-6, -2, 12, 4);
+        ctx.fillStyle = '#ff4444'; ctx.fillRect(-6, -6, 12, 12);
+        ctx.fillStyle = '#fff'; ctx.fillRect(-2, -6, 4, 12); ctx.fillRect(-6, -2, 12, 4);
       } else {
         drawWeapon(ctx, this.weapon, 0, 0, 1);
       }
@@ -141,11 +139,8 @@ class Pickup {
     ctx.save();
     ctx.translate(this.x, this.y + bob);
     if (this.isHealth) {
-      ctx.fillStyle = '#ff4444';
-      ctx.fillRect(-8, -8, 16, 16);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(-3, -8, 6, 16);
-      ctx.fillRect(-8, -3, 16, 6);
+      ctx.fillStyle = '#ff4444'; ctx.fillRect(-8, -8, 16, 16);
+      ctx.fillStyle = '#fff'; ctx.fillRect(-3, -8, 6, 16); ctx.fillRect(-8, -3, 16, 6);
     } else {
       ctx.rotate(this.phase * 0.25);
       ctx.scale(1.4, 1.4);

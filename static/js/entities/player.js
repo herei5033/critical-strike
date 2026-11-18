@@ -12,7 +12,10 @@ class Player {
     else if (charId === 'daur') { this.maxHp = 2; this.hp = 2; }
 
     this.angle = 0;
+    this.lastAimAngle = 0;
     this.walkPhase = 0;
+    this.stepTimer = 0;
+    
     this.weapon = makeWeapon('glock');
     this.attackTimer = 0;
     this.swingTimer = 0;
@@ -21,13 +24,15 @@ class Player {
     this._qLock = false;
     this._thrownPickup = null;
     this.hurtCooldown = 0;
+    this.isLooking = false; // Флаг для камеры
+    this.particles = []; // Частицы крови
   }
 
   takeDamage(amount) {
     if (this.dead || this.hurtCooldown > 0) return;
     this.hurtCooldown = 0.6;
     this.hp -= amount;
-    AudioSys.play('hurt');
+    AudioSys.play('player_hurt');
     if (this.hp <= 0) { this.hp = 0; this.die(); }
   }
 
@@ -36,7 +41,10 @@ class Player {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
 
-    // --- Движение (Клавиатура + Левый стик) ---
+    // Заглядывание
+    this.isLooking = Input.isDown('ShiftLeft') || Input.isDown('ShiftRight');
+
+    // Движение
     let dx = 0, dy = 0;
     if (Input.isDown('KeyA') || Input.isDown('ArrowLeft')) dx -= 1;
     if (Input.isDown('KeyD') || Input.isDown('ArrowRight')) dx += 1;
@@ -52,8 +60,15 @@ class Player {
     if (len > 0) {
       if (len > 1) { dx /= len; dy /= len; }
       this.walkPhase += dt * 12;
+      
+      this.stepTimer -= dt;
+      if (this.stepTimer <= 0) {
+        AudioSys.play('footstep');
+        this.stepTimer = 0.35;
+      }
     } else {
       this.walkPhase = 0;
+      this.stepTimer = 0;
     }
 
     const nx = this.x + dx * this.speed * dt;
@@ -72,12 +87,13 @@ class Player {
       }
     }
 
-    // --- Прицеливание (Мышь + Правый стик) ---
+    // Прицеливание
     if (Input.touch.aimActive) {
-      // Угол задается направлением правого стика
       this.angle = Math.atan2(Input.touch.aimY, Input.touch.aimX);
+      this.lastAimAngle = this.angle;
+    } else if (Input.touch.aimX !== 0 || Input.touch.aimY !== 0) {
+      this.angle = this.lastAimAngle;
     } else {
-      // Иначе стандартно по мыши
       const mx = cam.x + Input.mouse.x / cam.zoom;
       const my = cam.y + Input.mouse.y / cam.zoom;
       this.angle = Math.atan2(my - (this.y + this.h / 2), mx - (this.x + this.w / 2));
@@ -88,6 +104,17 @@ class Player {
     this.swingTimer = Math.max(0, this.swingTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
 
+    // Обновление частиц крови
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+
     if (Input.isDown('KeyQ') && !this._qLock && this.weapon) {
       this._qLock = true;
       const p = new Pickup(this.x + this.w / 2, this.y + this.h / 2, this.weapon);
@@ -97,48 +124,86 @@ class Player {
     }
     if (!Input.isDown('KeyQ')) this._qLock = false;
 
-    // --- Стрельба (ЛКМ + Кнопка) ---
-    if (Input.mouse.down && this.attackTimer <= 0) {
+    let shouldShoot = Input.mouse.down;
+    if (Input.touch.aimActive && !shouldShoot) {
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const dist = Utils.dist(this.x, this.y, e.x, e.y);
+        if (dist < 350) {
+          const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
+          let diff = Math.abs(aToEnemy - this.angle);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < Math.PI / 4) { shouldShoot = true; break; }
+        }
+      }
+    }
+
+    if (shouldShoot && this.attackTimer <= 0) {
       if (this.weapon) {
         this.attackTimer = this.weapon.cooldown;
         if (this.weapon.type === 'ranged') {
           if (this.weapon.ammo > 0) {
             this.weapon.ammo--;
             this.flashTimer = 0.06;
-            AudioSys.play('shoot');
+            AudioSys.play(this.weapon.sound);
             level.addNoise(this.x + this.w/2, this.y + this.h/2, 400);
-            const bx = this.x + this.w / 2 + Math.cos(this.angle) * 16;
-            const by = this.y + this.h / 2 + Math.sin(this.angle) * 16;
-            bullets.push(new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, true, this.weapon.color));
+            
+            // Дробовик стреляет веером
+            if (this.weapon.id === 'shotgun') {
+              for (let i = 0; i < this.weapon.pellets; i++) {
+                const angleOffset = Utils.rand(-this.weapon.spread, this.weapon.spread);
+                const finalAngle = this.angle + angleOffset;
+                const bx = this.x + this.w / 2 + Math.cos(this.angle) * 16;
+                const by = this.y + this.h / 2 + Math.sin(this.angle) * 16;
+                bullets.push(new Bullet(bx, by, finalAngle, this.weapon.bulletSpeed, true, this.weapon.color));
+              }
+            } else {
+              const bx = this.x + this.w / 2 + Math.cos(this.angle) * 16;
+              const by = this.y + this.h / 2 + Math.sin(this.angle) * 16;
+              bullets.push(new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, true, this.weapon.color));
+            }
           } else {
-            AudioSys.play('empty');
+            AudioSys.play('empty_click');
           }
         } else {
+          // Ближний бой
           this.swingTimer = 0.22;
-          AudioSys.play('melee');
+          AudioSys.play(this.weapon.sound);
           for (const e of enemies) {
-            if (e.dead || e.stunned) continue;
+            if (e.dead) continue;
             const d = Utils.dist(this.x, this.y, e.x, e.y);
             if (d < this.weapon.range) {
               const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
               let diff = Math.abs(aToEnemy - this.angle);
               if (diff > Math.PI) diff = Math.PI * 2 - diff;
-              if (diff < Math.PI / 2.5) e.die(null);
+              if (diff < Math.PI / 2.5) {
+                e.takeDamage(1, enemies);
+                // Много крови от милишного оружия
+                this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
+              }
             }
           }
         }
       } else {
+        // Кулаки
         this.attackTimer = 0.35;
         this.swingTimer = 0.22;
-        AudioSys.play('melee');
+        AudioSys.play('punch');
         for (const e of enemies) {
-          if (e.dead || e.stunned) continue;
+          if (e.dead) continue;
           const d = Utils.dist(this.x, this.y, e.x, e.y);
           if (d < 36) {
             const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
             let diff = Math.abs(aToEnemy - this.angle);
             if (diff > Math.PI) diff = Math.PI * 2 - diff;
-            if (diff < Math.PI / 2.5) e.stun();
+            if (diff < Math.PI / 2.5) {
+              if (e.stunned) {
+                e.die(enemies); 
+                this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
+              } else {
+                e.stun();
+              }
+            }
           }
         }
       }
@@ -148,12 +213,20 @@ class Player {
   die() {
     if (this.dead) return;
     this.dead = true;
-    AudioSys.play('die');
+    AudioSys.play('player_death');
   }
 
   draw(ctx) {
     const cx = this.x + this.w / 2;
     const cy = this.y + this.h / 2;
+
+    // Отрисовка частиц крови
+    for (const p of this.particles) {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
 
     let bodyColor = P.player, bodyDk = P.playerDk, hairColor = '#1a1a1a', skinColor = '#f2c89b';
     if (this.charId === 'dani') { bodyColor = '#2a4a7a'; bodyDk = '#1a2a4a'; hairColor = '#111'; }
@@ -161,9 +234,7 @@ class Player {
     else if (this.charId === 'daur') { bodyColor = '#2a2a2a'; bodyDk = '#111'; hairColor = '#0a0a0a'; }
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 4, 14, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy + 4, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
 
     if (this.dead) {
       ctx.fillStyle = P.blood;
@@ -208,13 +279,11 @@ class Player {
       }
       if (this.flashTimer > 0) weaponOffset = -4;
 
-      ctx.save();
-      ctx.translate(3 + armExtend, 5); ctx.rotate(swingAngle);
+      ctx.save(); ctx.translate(3 + armExtend, 5); ctx.rotate(swingAngle);
       ctx.fillStyle = skinColor; ctx.fillRect(0, -2, 10, 4);
       ctx.restore();
 
-      ctx.save();
-      ctx.translate(10 + weaponOffset + armExtend, 5); ctx.rotate(swingAngle);
+      ctx.save(); ctx.translate(10 + weaponOffset + armExtend, 5); ctx.rotate(swingAngle);
       drawWeapon(ctx, this.weapon, 0, 0, 1);
       if (this.flashTimer > 0 && this.weapon.type === 'ranged') {
         ctx.fillStyle = '#fff8a0'; ctx.beginPath(); ctx.arc(this.weapon.length + 6, 0, 7, 0, Math.PI * 2); ctx.fill();

@@ -1,6 +1,12 @@
 const AudioSys = {
   ctx: null,
   ready: false,
+  musicSource: null,
+  musicGain: null,
+  currentTrack: null,
+  musicEnabled: true,
+
+  sounds: {},
 
   init() {
     if (this.ctx) return;
@@ -9,6 +15,10 @@ const AudioSys = {
       if (!Ctx) { console.warn('WebAudio не поддерживается'); return; }
       this.ctx = new Ctx();
       this.ready = true;
+
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = 0.3;
+      this.musicGain.connect(this.ctx.destination);
     } catch (e) {
       console.warn('AudioSys.init failed:', e);
       this.ready = false;
@@ -21,73 +31,86 @@ const AudioSys = {
     }
   },
 
-  play(type) {
+  // Асинхронная предзагрузка всех звуков
+  async preload() {
+    if (!this.ctx) this.init();
     if (!this.ctx) return;
-    try {
-      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
-      if (this.ctx.state !== 'running') return;
 
-      const t = this.ctx.currentTime;
-      const osc = (freq, type, duration, vol) => {
-        const o = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(freq, t);
-        g.gain.setValueAtTime(vol, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-        o.connect(g);
-        g.connect(this.ctx.destination);
-        o.start(t);
-        o.stop(t + duration);
-      };
-      const noise = (duration, vol) => {
-        const bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
-        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-        const src = this.ctx.createBufferSource();
-        src.buffer = buffer;
-        const g = this.ctx.createGain();
-        g.gain.setValueAtTime(vol, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-        src.connect(g);
-        g.connect(this.ctx.destination);
-        src.start(t);
-      };
+    const soundList = [
+  'shoot_m4', 'shoot_ak47', 'shoot_glock', 'shoot_uzi', 'shoot_shotgun',
+  'door_open', 'stun', 'throw', 'pickup_weapon', 'pickup_health',
+  'enemy_death', 'punch', 'melee_swing', 'menu_move', 'menu_select',
+  'char_select', 'player_hurt', 'player_death', 'empty_click', 'footstep',
+  'game_start',
+  // Новые звуки:
+  'tank_hit', 'hound_bark', 'sniper_charge', 'sniper_shot'
+];
 
-      switch (type) {
-        case 'shoot':
-          osc(150, 'sawtooth', 0.1, 0.3);
-          noise(0.1, 0.2);
-          break;
-        case 'melee':
-          noise(0.12, 0.3);
-          break;
-        case 'hit':
-          osc(100, 'square', 0.1, 0.25);
-          noise(0.1, 0.15);
-          break;
-        case 'die':
-          osc(80, 'sawtooth', 0.3, 0.25);
-          noise(0.3, 0.25);
-          break;
-        case 'pickup':
-          osc(400, 'sine', 0.1, 0.15);
-          break;
-        case 'empty':
-          osc(200, 'square', 0.05, 0.1);
-          break;
-        case 'door':
-          osc(220, 'square', 0.05, 0.15);
-          noise(0.08, 0.1);
-          break;
-        case 'hurt':
-          osc(90, 'square', 0.15, 0.3);
-          noise(0.12, 0.2);
-          break;
+    const promises = soundList.map(async (name) => {
+      const url = `/static/audio/${name}.mp3`;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return; // Файла нет — пропускаем
+        const buffer = await response.arrayBuffer();
+        const decoded = await this.ctx.decodeAudioData(buffer);
+        this.sounds[name] = decoded;
+      } catch (e) {
+        // Игнорируем ошибки отдельных файлов
       }
-    } catch (e) {
-      console.warn('AudioSys.play error:', e);
+    });
+
+    await Promise.all(promises);
+  },
+
+  playMusic(trackPath) {
+    if (!this.ctx || !this.musicEnabled) return;
+    if (this.currentTrack === trackPath && this.musicSource) return;
+
+    this.stopMusic();
+
+    fetch(trackPath)
+      .then(r => {
+        if (!r.ok) throw new Error('404');
+        return r.arrayBuffer();
+      })
+      .then(buffer => this.ctx.decodeAudioData(buffer))
+      .then(decoded => {
+        if (!this.musicEnabled) return;
+        this.musicSource = this.ctx.createBufferSource();
+        this.musicSource.buffer = decoded;
+        this.musicSource.loop = true;
+        this.musicSource.connect(this.musicGain);
+        this.musicSource.start();
+        this.currentTrack = trackPath;
+      })
+      .catch(e => console.warn('Music load failed:', e));
+  },
+
+  stopMusic() {
+    if (this.musicSource) {
+      try { this.musicSource.stop(); } catch (e) {}
+      this.musicSource.disconnect();
+      this.musicSource = null;
     }
+    this.currentTrack = null;
+  },
+
+  toggleMusic() {
+    this.musicEnabled = !this.musicEnabled;
+    if (!this.musicEnabled) this.stopMusic();
+    return this.musicEnabled;
+  },
+
+  play(name) {
+    if (!this.ctx || !this.ready) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+
+    const buffer = this.sounds[name];
+    if (!buffer) return;
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.ctx.destination);
+    source.start();
   }
 };
