@@ -1,5 +1,6 @@
 const Input = {
   keys: {},
+  typing: false,
   mouse: { x: 0, y: 0, down: false, justDown: false },
   _pressedThisFrame: {},
   touch: { 
@@ -14,6 +15,7 @@ const Input = {
     this.canvas = canvas;
     
     window.addEventListener('keydown', (e) => {
+      if (this.typing) return;
       if (!e.repeat) this._pressedThisFrame[e.code] = true;
       this.keys[e.code] = true;
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();

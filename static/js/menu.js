@@ -35,7 +35,7 @@ const WEAPON_INFO = [
 class Menu {
   constructor(game) {
     this.game = game;
-    this.items = ['НАЧАТЬ ЗАБЕГ', 'СПРАВОЧНИК', 'ТАБЛИЦА ЛИДЕРОВ', 'МУЗЫКА: ВКЛ'];
+    this.items = ['НАЧАТЬ ЗАБЕГ', 'КОРПОРАТИВ', 'СПРАВОЧНИК', 'ТАБЛИЦА ЛИДЕРОВ', 'МУЗЫКА: ВКЛ'];
     this.sel = 0;
     this.t = 0;
     this._lastMouse = { x: -1, y: -1 };
@@ -69,6 +69,8 @@ class Menu {
       'Убийства подряд дают комбо и множат очки.',
       'Шкафы и стеллажи — укрытие: пули сквозь них не летят.',
       'Выстрелы слышно издалека, удары холодным оружием — нет.',
+      'В корпоративе раненого напарника можно поднять — встаньте рядом.',
+      'Чем выше общий счёт, тем чаще приходят боссы.',
     ];
 
     this.charsInfo = [
@@ -200,6 +202,8 @@ class Menu {
     const item = this.items[this.sel];
     if (item === 'НАЧАТЬ ЗАБЕГ') {
       this.game.state = 'charSelect';
+    } else if (item === 'КОРПОРАТИВ') {
+      this.game.coopUI.open();
     } else if (item === 'СПРАВОЧНИК') {
       this.showHelp = true;
       this.helpPage = 0;
@@ -209,7 +213,7 @@ class Menu {
       this._fetchLeaderboard();
     } else if (item.startsWith('МУЗЫКА:')) {
       const enabled = AudioSys.toggleMusic();
-      this.items[3] = enabled ? 'МУЗЫКА: ВКЛ' : 'МУЗЫКА: ВЫКЛ';
+      this.items[this.sel] = enabled ? 'МУЗЫКА: ВКЛ' : 'МУЗЫКА: ВЫКЛ';
       if (enabled) AudioSys.playMusic('/static/audio/menu_music.mp3');
     }
   }
@@ -359,9 +363,9 @@ class Menu {
   }
 
   _itemRects(w, h) {
-    const bw = Math.min(340, w * 0.5), bh = Math.min(44, h * 0.075);
-    const y0 = h * 0.5;
-    return this.items.map((_, i) => ({ x: w / 2 - bw / 2, y: y0 + i * (bh + 12), w: bw, h: bh }));
+    const bw = Math.min(340, w * 0.5), bh = Math.min(36, h * 0.064);
+    const y0 = h * 0.47;
+    return this.items.map((_, i) => ({ x: w / 2 - bw / 2, y: y0 + i * (bh + 8), w: bw, h: bh }));
   }
 
   // ================= ГЛАВНЫЙ ЭКРАН =================
@@ -370,7 +374,7 @@ class Menu {
     if (this.showHelp) { this._drawHelp(ctx, w, h); return; }
     if (this.showLeaderboard) { this._drawLeaderboard(ctx, w, h); return; }
 
-    const titleSize = Math.min(72, w * 0.1);
+    const titleSize = Math.min(64, w * 0.09);
     this.drawLogo(ctx, w, h * 0.18 + titleSize * 0.6, titleSize);
     ctx.font = `${Math.max(11, Math.min(15, w * 0.018))}px "Courier New", monospace`;
     ctx.textAlign = 'center';
@@ -717,8 +721,22 @@ class Menu {
         ctx.font = `bold ${Math.min(18, rowH * 0.6)}px "Courier New", monospace`;
         ctx.textAlign = 'left'; ctx.fillStyle = i < 3 ? medal[i] : '#c8c2e0';
         ctx.fillText(String(i + 1).padStart(2, '0'), px + 26, y + rowH * 0.68);
-        ctx.fillStyle = '#ffffff'; ctx.fillText(e.name, px + 70, y + rowH * 0.68);
+        // портреты персонажей и метка командного забега
+        const chars = e.players ? e.players.map(p => p.char) : [e.char];
+        let nx = px + 70;
+        for (const c of chars) {
+          const img = c && this.game.images[c];
+          if (img && img.complete && img.naturalWidth) { ctx.drawImage(img, nx, y + 2, rowH - 6, rowH - 6); nx += rowH - 3; }
+        }
+        if (e.mode === 'coop') {
+          ctx.font = `bold ${Math.min(11, rowH * 0.4)}px "Courier New", monospace`;
+          ctx.fillStyle = '#05d9e8'; ctx.fillText('КОРП', nx + 2, y + rowH * 0.66);
+          nx += 40;
+          ctx.font = `bold ${Math.min(15, rowH * 0.5)}px "Courier New", monospace`;
+        }
+        ctx.fillStyle = '#ffffff'; ctx.fillText(e.name, nx + 4, y + rowH * 0.68, px + pw - 120 - nx);
         ctx.textAlign = 'right'; ctx.fillStyle = i === 0 ? '#ffd319' : '#05d9e8';
+        ctx.font = `bold ${Math.min(18, rowH * 0.6)}px "Courier New", monospace`;
         ctx.fillText(String(e.score), px + pw - 26, y + rowH * 0.68);
         ctx.globalAlpha = 1;
       });

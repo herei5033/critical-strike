@@ -14,6 +14,8 @@
   <!-- Жесткий контейнер -->
   <div id="game-container">
     <canvas id="game"></canvas>
+    <!-- Поле ввода для никнейма, кода комнаты и чата корпоратива -->
+    <input id="text-input" type="text" autocomplete="off" spellcheck="false">
   </div>
 
   <!-- Кнопка фуллскрина -->
@@ -64,7 +66,9 @@
   <script src="{{ url_for('static', filename='js/entities/pickup.js') }}"></script>
   <script src="{{ url_for('static', filename='js/entities/enemy.js') }}"></script>
   <script src="{{ url_for('static', filename='js/entities/player.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/boss.js') }}"></script>
   <script src="{{ url_for('static', filename='js/level.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/coop.js') }}"></script>
   <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
   <script src="{{ url_for('static', filename='js/game.js') }}"></script>
   <script src="{{ url_for('static', filename='js/mobile.js') }}"></script>

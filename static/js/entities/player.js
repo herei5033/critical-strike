@@ -264,6 +264,17 @@ class Player {
     }
   }
 
+  // Поднять раненого напарника в корпоративе
+  revive() {
+    if (!this.dead) return;
+    this.dead = false;
+    this.hp = 1;
+    this.hurtCooldown = 1.5;
+    Effects.ring(this.x + this.w / 2, this.y + this.h / 2, '60,255,140', 34);
+    Effects.burst(this.x + this.w / 2, this.y + this.h / 2, '120,255,170', 16, 160);
+    AudioSys.play('pickup_health');
+  }
+
   die() {
     if (this.dead) return;
     this.dead = true;

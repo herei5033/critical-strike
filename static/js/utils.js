@@ -19,6 +19,21 @@ const Utils = {
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   },
 
+  // Выполняет fn, временно подменив Math.random на генератор с фиксированным зерном.
+  // Так все участники корпоратива строят из одного seed одинаковый уровень.
+  withSeed: (seed, fn) => {
+    const orig = Math.random;
+    let s = (seed >>> 0) || 1;
+    Math.random = () => {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    try { return fn(); } finally { Math.random = orig; }
+  },
+
   // Частицы
   spawnBloodParticles: (x, y, count, angle = null) => {
     if (typeof Effects !== 'undefined') Effects.bloodSplat(x, y, angle, count);

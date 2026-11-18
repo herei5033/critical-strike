@@ -54,6 +54,13 @@ class Game {
 
     this.images = { dani: new Image(), gal: new Image(), daur: new Image() };
 
+    // Корпоратив и боссы
+    this.coopUI = new CoopUI(this);
+    this.coop = null;
+    this.fxBullets = [];      // пули напарников и вражеские пули у клиента — только для вида
+    this.bossDirector = null;
+    TextField.init();
+
     this._loadAssets();
   }
 
@@ -84,7 +91,16 @@ class Game {
     this.isReady = true;
   }
 
+  // Все живые/раненые игроки: свой герой + напарники
+  allPlayers() {
+    const list = this.player ? [this.player] : [];
+    if (this.coop) for (const r of this.coop.remotes.values()) if (r.hasState) list.push(r);
+    return list;
+  }
+
   startRun() {
+    this.coop = null;
+    this.bossDirector = new BossDirector();
     this.score = 0;
     this.kills = 0;
     this.playerName = "";
@@ -99,6 +115,51 @@ class Game {
 
   startLevel() {
     AudioSys.init();
+    this._buildLevel();
+    this._spawnPlayer(0);
+    this._afterLevelStart();
+  }
+
+  // Начало матча корпоратива (после того как хост нажал старт)
+  startCoopMatch(info) {
+    TextField.close();
+    this.coop = new CoopSession(this, info);
+    this.selectedChar = Math.max(0, CHAR_IDS.indexOf(this.coop.me.char));
+    this.bossDirector = new BossDirector();
+    this.score = 0; this.kills = 0;
+    this.nameSubmitted = true;
+    AudioSys.stopMusic();
+    AudioSys.playMusic('/static/audio/game_music.mp3');
+    AudioSys.play('game_start');
+    this.state = 'coopIntro';
+    this.introT = 0;
+    this.startCoopLevel(info.seed);
+  }
+
+  // Уровень корпоратива строится из общего seed — у всех одинаковый
+  startCoopLevel(seed) {
+    const intro = this.state === 'coopIntro';
+    Utils.withSeed(seed, () => this._buildLevel());
+    this._spawnPlayer(this.coop.me.slot || 0);
+    this.coop.prepareLevel();
+    this._afterLevelStart();
+    if (intro) this.state = 'coopIntro';
+  }
+
+  _afterLevelStart() {
+    Effects.reset();
+    this.fxBullets = [];
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.state = 'playing';
+    this.restartTimer = 0;
+    this.shake = 0;
+    this.levelClearTimer = 0;
+    if (this.bossDirector) this.bossDirector.onLevelStart();
+  }
+
+  // Уровень, враги и предметы. Использует только Math.random — поэтому детерминирован при withSeed
+  _buildLevel() {
     const worldW = TILE * 60;
     const worldH = TILE * 45;
     try { this.level = new Level(worldW, worldH); }
@@ -122,7 +183,32 @@ class Game {
       };
     }
 
+    this.enemies = this.level.spawnPoints.map(p => new Enemy(p.x, p.y, p.behavior, p.waypoints, p.type));
+    this.totalEnemies = this.enemies.length;
+    this.bullets = [];
+    this.pickups = [];
+    this.kills = 0;
+
+    const weaponPool = ['m4', 'ak47', 'uzi', 'bat', 'pipe', 'knife', 'sword'];
+    for (let i = 0; i < 5; i++) {
+      const r = Utils.choice(this.level.rooms);
+      if (r === this.level.playerRoom) continue;
+      const p = this.level.randomFreePoint(r);
+      if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
+    }
+    for (let i = 0; i < 2 + (this.coop ? this.coop.players.length - 1 : 0); i++) {
+      const r = Utils.choice(this.level.rooms);
+      const p = this.level.randomFreePoint(r);
+      if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
+    }
+  }
+
+  // Герой появляется у точки старта; в корпоративе — рядом друг с другом
+  _spawnPlayer(slot) {
+    const worldW = this.level.w, worldH = this.level.h;
     let sp = this.level.spawnPoint();
+    const offs = [[0, 0], [26, 0], [-26, 0]][slot] || [0, 0];
+    if (!this.level.collides(sp.x + offs[0], sp.y + offs[1], 18, 18)) sp = { x: sp.x + offs[0], y: sp.y + offs[1] };
     if (this.level.collides(sp.x, sp.y, 18, 18)) {
       let found = false;
       for (let rad = 1; rad < 10 && !found; rad++) {
@@ -152,37 +238,25 @@ class Game {
     const maxY = Math.max(0, worldH - viewH);
     this.cam.x = Utils.clamp(this.player.x - viewW / 2, 0, maxX);
     this.cam.y = Utils.clamp(this.player.y - viewH / 2, 0, maxY);
+  }
 
-    this.enemies = this.level.spawnPoints.map(p => new Enemy(p.x, p.y, p.behavior, p.waypoints, p.type));
-    this.totalEnemies = this.enemies.length;
-    this.bullets = [];
-    this.pickups = [];
-
-    this.kills = 0;
-
-    const weaponPool = ['m4', 'ak47', 'uzi', 'bat', 'pipe', 'knife', 'sword'];
-    for (let i = 0; i < 5; i++) {
-      const r = Utils.choice(this.level.rooms);
-      if (r === this.level.playerRoom) continue;
-      const p = this.level.randomFreePoint(r);
-      if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
+  // Конец корпоратива: все ранены
+  enterTeamOver() {
+    this.state = 'dead';
+    this.shake = 1;
+    this.nameSubmitted = true;
+    if (this.coop) {
+      this.coop.teamOver = true;
+      if (this.coop.isHost && !this.coop.ended) {
+        this.coop.ended = true;
+        this.submitScore(null, this.coop.players.map(p => ({ name: p.name, char: p.char })));
+      }
     }
-    for (let i = 0; i < 2; i++) {
-      const r = Utils.choice(this.level.rooms);
-      const p = this.level.randomFreePoint(r);
-      if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
-    }
-
-    Effects.reset();
-    this.combo = 0;
-    this.comboTimer = 0;
-    this.state = 'playing';
-    this.restartTimer = 0;
-    this.shake = 0;
-    this.levelClearTimer = 0;
   }
 
   toMenu() {
+    TextField.close();
+    if (this.coop) { this.coop.leave(); this.coop = null; this.coopUI.reset(); }
     this.state = 'menu';
     this.player = null;
     this.level = null;
@@ -218,6 +292,25 @@ class Game {
         gameUI.classList.remove('active');
         menuUI.classList.add('active');
       }
+    }
+
+    if (this.state === 'coop') { this.coopUI.update(dt); return; }
+
+    if (this.coop) {
+      this.coop.update(dt);
+      if (this.coop.closed) {
+        const reason = this.coop.closeReason;
+        this.toMenu();
+        this.coopUI.open();
+        this.coopUI.flash(reason);
+        return;
+      }
+    }
+
+    if (this.state === 'coopIntro') {
+      this.introT += dt;
+      if (this.introT > 4.2 || (this.introT > 1.5 && Input.wasPressed('Enter'))) this.state = 'playing';
+      return;
     }
 
     if (this.state === 'charSelect') {
@@ -259,15 +352,29 @@ class Game {
     if (this.state === 'playing' || this.state === 'dead' || this.state === 'levelClear') {
       if (Input.wasPressed('Escape') && this.state !== 'levelClear' && !(this.state === 'dead' && !this.nameSubmitted)) { this.toMenu(); return; }
     }
+    // Чат корпоратива
+    if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
+      TextField.open({ placeholder: 'Сообщение команде (Enter — отправить, Esc — отмена)', maxLength: 120, onSubmit: (v) => this.coop && this.coop.sendChat(v) });
+    }
 
     if (this.state === 'menu') { this.menu.update(dt); return; }
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     if (!this.player || !this.level || !this.cam) return;
 
     if (this.state === 'levelClear') {
+      if (this.coop && !this.coop.isHost) {
+        // клиент ждёт, пока хост пришлёт новый уровень
+        this.coop.updateReplicas(dt);
+        return;
+      }
       this.levelClearTimer -= dt;
-      if (this.levelClearTimer <= 0 || Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.consumeClick()) {
-        this.startLevel();
+      const skip = !this.coop && (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.consumeClick());
+      if (this.levelClearTimer <= 0 || skip) {
+        if (this.coop) {
+          this.coop.levelNo++;
+          this.coop.seed = (Math.random() * 2e9) | 0;
+          this.startCoopLevel(this.coop.seed);
+        } else this.startLevel();
       }
       return;
     }
@@ -277,6 +384,14 @@ class Game {
       this.player.updateParticles(dt);
       Effects.update(dt, this.level);
       this.shake = Math.max(0, this.shake - dt * 2);
+
+      if (this.coop) {
+        if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter') || Input.consumeClick()) {
+          this.toMenu();
+          this.coopUI.open();
+        }
+        return;
+      }
 
       if (!this.nameSubmitted) {
         if (!Input.touch.moveActive) {
@@ -333,23 +448,53 @@ class Game {
       Effects.update(dt, this.level);
       this.comboTimer = Math.max(0, this.comboTimer - dt);
       if (this.comboTimer <= 0) this.combo = 0;
+      const coopClient = this.coop && !this.coop.isHost;
       if (!this.player.dead) {
+        const shotsBefore = this.bullets.length;
         try {
           this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
         } catch (e) { console.error('PLAYER UPDATE ERROR:', e); }
-        if (this.player._thrownPickup) { this.pickups.push(this.player._thrownPickup); this.player._thrownPickup = null; }
+        if (this.bullets.length > shotsBefore) this.player._netShots = (this.player._netShots || 0) + 1;
+        if (this.player._thrownPickup) {
+          const tp = this.player._thrownPickup;
+          if (coopClient) {
+            this.coop.event({ t: 'throw', w: tp.weapon.id, am: tp.weapon.ammo, x: Math.round(tp.x), y: Math.round(tp.y), a: +this.player.angle.toFixed(2) });
+          } else this.pickups.push(tp);
+          this.player._thrownPickup = null;
+        }
       }
       this.player.updateParticles(dt);
+      if (this.coop) this.coop.trackMyBullets();
 
       try { this.level.update(dt, this.enemies, this.player); } catch (e) { console.error('LEVEL UPDATE ERROR:', e); }
 
-      for (const e of this.enemies) {
-        try { e.update(dt, this.level, this.player, this.bullets, this.enemies, this.pickups); }
-        catch (err) { console.error('ENEMY UPDATE ERROR:', err); }
+      if (coopClient) {
+        this.coop.updateReplicas(dt);
+        if (this.bossDirector && this.bossDirector.banner) {
+          this.bossDirector.banner.t -= dt;
+          if (this.bossDirector.banner.t <= 0) this.bossDirector.banner = null;
+        }
+      } else {
+        // каждый враг охотится на ближайшего живого игрока
+        const targets = this.allPlayers().filter(p => !p.dead);
+        for (const e of this.enemies) {
+          let target = this.player;
+          let best = Infinity;
+          for (const t of targets) {
+            const d = Utils.dist(t.x, t.y, e.x, e.y);
+            if (d < best) { best = d; target = t; }
+          }
+          if (e.isBoss) e.targets = targets;
+          try { e.update(dt, this.level, target, this.bullets, this.enemies, this.pickups); }
+          catch (err) { console.error('ENEMY UPDATE ERROR:', err); }
+        }
+        this.totalEnemies = this.enemies.length;
+        if (this.bossDirector) this.bossDirector.update(dt, this);
       }
 
       const pcx = this.player.x + this.player.w / 2;
       const pcy = this.player.y + this.player.h / 2;
+      const remotes = this.coop && this.coop.isHost ? [...this.coop.remotes.values()].filter(r => r.hasState && !r.dead) : [];
       for (const b of this.bullets) {
         try { b.update(dt, this.level); } catch (err) { console.error('BULLET UPDATE ERROR:', err); }
         if (!b.dead && !b.isPlayer && !this.player.dead) {
@@ -359,10 +504,29 @@ class Game {
             this.chromaticOffset = 10;
           }
         }
+        // хост: вражеские пули ранят напарников (урон уходит им по сети)
+        if (!b.dead && !b.isPlayer) {
+          for (const r of remotes) {
+            if (Utils.segDist(b.px, b.py, b.x, b.y, r.x + 9, r.y + 9) < 12) { r.takeDamage(1); b.dead = true; break; }
+          }
+        }
+      }
+      if (coopClient) this.coop.clientBulletHits();
+      // пули напарников и копии вражеских пуль — только картинка, урона не наносят
+      for (const b of this.fxBullets) {
+        b.update(dt, this.level);
+        if (b.enemyNet && !b.dead && !this.player.dead && Utils.segDist(b.px, b.py, b.x, b.y, pcx, pcy) < 10) b.dead = true;
+      }
+      this.fxBullets = this.fxBullets.filter(b => !b.dead || b.enemyNet);
+      if (this.fxBullets.length > 300) this.fxBullets = this.fxBullets.slice(-300);
+
+      if (coopClient) {
+        this.coop.clientPickups();
+        for (const p of this.pickups) p.phase += dt * 2;
       }
 
       // pickups может пополняться во время обхода (дроп из убитых врагов) — идём по индексу
-      for (let i = 0; i < this.pickups.length; i++) {
+      for (let i = 0; i < (coopClient ? 0 : this.pickups.length); i++) {
         const p = this.pickups[i];
         try { p.update(dt, this.level, this.enemies, this.pickups); } catch (err) { console.error('PICKUP UPDATE ERROR:', err); }
         if (p.pickedUp || p.thrown || p.groundTimer > 0) continue;
@@ -383,7 +547,7 @@ class Game {
       }
 
       // Очки с комбо: убийства подряд (до 3 сек между ними) умножают награду
-      for (const e of this.enemies) {
+      for (const e of (coopClient ? [] : this.enemies)) {
         if (!e.dead || e._scored) continue;
         e._scored = true;
         this.combo = this.comboTimer > 0 ? this.combo + 1 : 1;
@@ -397,9 +561,16 @@ class Game {
         this.shake = Math.max(this.shake, 0.35);
       }
 
-      this.pickups = this.pickups.filter(p => !p.pickedUp);
+      if (!coopClient) this.pickups = this.pickups.filter(p => !p.pickedUp);
       this.bullets = this.bullets.filter(b => !b.dead);
       if (this.bullets.length > 300) this.bullets = this.bullets.slice(-300);
+
+      // Раненый в корпоративе смотрит глазами живого напарника
+      if (this.player.dead && this.coop) {
+        const mate = [...this.coop.remotes.values()].find(r => r.hasState && !r.dead);
+        this.cam.follow(mate || this.player, this.level, dt);
+      }
+      if (this.coop && this.coop.isHost) this.coop.hostUpdate(dt);
 
       // Камера: если игрок заглядывает (Shift) — смещаем вперед
       if (!this.player.dead) {
@@ -414,19 +585,28 @@ class Game {
         }
       }
 
-      if (this.player.dead) { this.state = 'dead'; this.shake = 1.0; this.nameSubmitted = false; this.playerName = ""; }
-      if (this.enemies.every(e => e.dead) && this.state === 'playing') { this.state = 'levelClear'; this.levelClearTimer = 1.0; }
+      if (this.player.dead && !this.coop) {
+        this.state = 'dead'; this.shake = 1.0; this.nameSubmitted = false; this.playerName = "";
+        // никнейм из корпоратива — имя вводить не нужно
+        const nick = Nick.get();
+        if (nick) { this.playerName = nick; this.submitScore(nick); this.nameSubmitted = true; }
+      }
+      if (!coopClient && this.state === 'playing' && this.enemies.every(e => e.dead)) {
+        this.state = 'levelClear'; this.levelClearTimer = this.coop ? 1.8 : 1.0;
+      }
     }
 
     this.shake = Math.max(0, this.shake - dt * 2);
   }
 
-  submitScore(name) {
+  submitScore(name, players) {
+    const body = { name: name || 'ANON', score: Math.floor(this.score), char: CHAR_IDS[this.selectedChar] };
+    if (players) body.players = players;
     try {
       fetch('/api/leaderboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name || 'ANON', score: Math.floor(this.score) }),
+        body: JSON.stringify(body),
       }).catch(() => {});
     } catch (e) {}
   }
@@ -492,6 +672,18 @@ class Game {
       return;
     }
 
+    if (this.state === 'coop') {
+      this.coopUI.draw(ctx, this.W, this.H);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
+    if (this.state === 'coopIntro' && this.coop) {
+      this.coop.drawIntro(ctx, this.W, this.H, this.introT);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
     if (!this.player || !this.level || !this.cam) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, this.W, this.H);
@@ -529,8 +721,10 @@ class Game {
 
     Effects.drawFloor(b);
     for (const p of this.pickups) p.draw(b);
+    if (this.coop) for (const r of this.coop.remotes.values()) r.draw(b);
     this.player.draw(b);
     for (const bullet of this.bullets) bullet.draw(b);
+    for (const bullet of this.fxBullets) if (!bullet.dead) bullet.draw(b);
     this.level.drawEffects(b);
     Effects.drawTop(b);
     this._drawMuzzleLights(b, lit);
@@ -546,6 +740,11 @@ class Game {
 
     b.setTransform(1, 0, 0, 1, 0, 0);
     b.drawImage(this.fogCanvas, 0, 0);
+    if (this.coop) {
+      b.save(); this.cam.apply(b); b.translate(shX, shY);
+      this.coop.drawWorldOverlay(b);
+      b.restore();
+    }
 
     // Эффект "хроматической аберрации" при тряске
     if (this.chromaticOffset > 0) {
@@ -611,6 +810,22 @@ class Game {
     ctx.fillStyle = P.white;
     ctx.fillText(`ОЧКИ: ${this.score}`, this.W - rightMargin, 55 * scale);
 
+    if (this.coop) {
+      this.coop.drawPartyHud(ctx, this.W, scale);
+      this.coop.drawChat(ctx, this.W, this.H);
+      if (this.player.dead && this.state === 'playing') {
+        ctx.save();
+        ctx.font = `bold ${22 * scale}px "Courier New", monospace`; ctx.textAlign = 'center';
+        ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 12; ctx.fillStyle = '#ff2a6d';
+        ctx.fillText('ВЫ РАНЕНЫ', this.W / 2, this.H - 70 * scale);
+        ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.font = `${14 * scale}px "Courier New", monospace`;
+        const prog = this.coop.revive[this.coop.pid] || 0;
+        ctx.fillText(prog > 0 ? `Напарник поднимает вас… ${Math.round(prog * 100)}%` : 'Напарник может поднять вас — пусть постоит рядом 2.5 сек', this.W / 2, this.H - 48 * scale);
+        ctx.restore();
+      }
+    }
+    this._drawBossHud(ctx, scale);
+
     // индикатор комбо
     if (this.combo > 1 && this.comboTimer > 0) {
       const k = this.comboTimer / 3;
@@ -640,6 +855,8 @@ class Game {
       ctx.fillText('Тап / ENTER для продолжения', this.W / 2, this.H / 2 + 30);
     }
 
+    if (this.state === 'dead' && this.coop) { this._drawTeamOver(ctx); return; }
+
     if (this.state === 'dead') {
       ctx.fillStyle = 'rgba(0,0,0,0.85)';
       ctx.fillRect(0, 0, this.W, this.H);
@@ -664,7 +881,7 @@ class Game {
       } else {
         ctx.fillStyle = '#fff';
         ctx.font = `${Math.min(24, this.W * 0.04)}px "Courier New", monospace`;
-        ctx.fillText('Очки сохранены!', this.W / 2, this.H / 2 + 20);
+        ctx.fillText(Nick.get() ? `Очки сохранены как ${Nick.get()}` : 'Очки сохранены!', this.W / 2, this.H / 2 + 20);
 
         ctx.fillStyle = P.yellow;
         ctx.fillRect(this.W/2 - 120, this.H/2 + 60, 240, 50);
@@ -678,6 +895,77 @@ class Game {
         ctx.fillText('ВЫЙТИ (ESC)', this.W / 2, this.H / 2 + 162);
       }
     }
+  }
+
+  // Полоса здоровья босса и предупреждение о его появлении
+  _drawBossHud(ctx, scale) {
+    const boss = this.enemies.find(e => e.isBoss && !e.dead);
+    if (boss) {
+      const bw = Math.min(420, this.W * 0.5), bh = 12;
+      const x = this.W / 2 - bw / 2, y = this.H - 34 * scale;
+      ctx.save();
+      ctx.font = `bold ${14 * scale}px "Courier New", monospace`; ctx.textAlign = 'center';
+      ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 10; ctx.fillStyle = '#ff4a4a';
+      ctx.fillText(boss.bossName, this.W / 2, y - 8);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(x - 3, y - 3, bw + 6, bh + 6);
+      ctx.fillStyle = '#3a0a10'; ctx.fillRect(x, y, bw, bh);
+      const k = Utils.clamp(boss.hp / boss.maxHp, 0, 1);
+      const g = ctx.createLinearGradient(x, 0, x + bw, 0);
+      g.addColorStop(0, '#ff2a2a'); g.addColorStop(1, '#ffb040');
+      ctx.fillStyle = g; ctx.fillRect(x, y, bw * k, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x, y, bw * k, 3);
+      ctx.restore();
+    }
+    const bn = this.bossDirector && this.bossDirector.banner;
+    if (bn) {
+      const k = Math.min(1, (3.2 - bn.t) * 3, bn.t * 2);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, k);
+      ctx.fillStyle = 'rgba(40,0,6,0.7)'; ctx.fillRect(0, this.H * 0.32, this.W, this.H * 0.22);
+      ctx.fillStyle = '#ff2a2a'; ctx.fillRect(0, this.H * 0.32, this.W, 3); ctx.fillRect(0, this.H * 0.54 - 3, this.W, 3);
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${14 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
+      ctx.fillText(Math.floor(performance.now() / 250) % 2 ? '!!! ВНИМАНИЕ !!!' : 'ПОЯВИЛСЯ БОСС', this.W / 2, this.H * 0.37);
+      ctx.font = `bold ${Math.min(56, this.W * 0.08)}px "Courier New", monospace`;
+      ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 24; ctx.fillStyle = '#ffffff';
+      ctx.fillText(bn.name, this.W / 2 + (Math.random() - 0.5) * 4, this.H * 0.46);
+      ctx.shadowBlur = 0;
+      ctx.font = `${14 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ff8080';
+      ctx.fillText(bn.title, this.W / 2, this.H * 0.51);
+      ctx.restore();
+    }
+  }
+
+  // Итог корпоратива
+  _drawTeamOver(ctx) {
+    const W = this.W, H = this.H, M = this.menu;
+    ctx.fillStyle = 'rgba(4,2,10,0.86)'; ctx.fillRect(0, 0, W, H);
+    M.glowText(ctx, 'КОРПОРАТИВ ОКОНЧЕН', W / 2, H * 0.18, '#ff2a6d', Math.min(44, W * 0.06), 'center', 22);
+    ctx.font = `bold ${Math.min(30, W * 0.045)}px "Courier New", monospace`; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd319';
+    ctx.fillText(`ОБЩИЙ СЧЁТ: ${this.score}`, W / 2, H * 0.28);
+    ctx.font = '14px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
+    ctx.fillText(`Дошли до этажа ${this.coop.levelNo}`, W / 2, H * 0.33);
+    const ps = this.coop.players.slice().sort((a, b) => a.slot - b.slot);
+    const cw = Math.min(180, (W - 80) / 3), gap = 20;
+    const x0 = W / 2 - (ps.length * cw + (ps.length - 1) * gap) / 2;
+    ps.forEach((p, i) => {
+      const x = x0 + i * (cw + gap), y = H * 0.38;
+      M.panel(ctx, x, y, cw, cw * 1.15, SLOT_COLORS[p.slot % 3], 0.85);
+      const img = this.images[p.char];
+      const is = cw - 40;
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, x + 20, y + 14, is, is);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillStyle = SLOT_COLORS[p.slot % 3];
+      ctx.fillText(p.name, x + cw / 2, y + is + 36, cw - 12);
+      ctx.font = '12px "Courier New", monospace'; ctx.fillStyle = '#fff';
+      ctx.fillText(CHAR_NAMES[p.char] || '', x + cw / 2, y + is + 54);
+    });
+    ctx.textAlign = 'center';
+    ctx.font = '14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
+    ctx.fillText(this.coop.isHost ? 'Результат команды записан в таблицу лидеров' : 'Хост записал результат команды в таблицу лидеров', W / 2, H - 60);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('ENTER / клик — в меню корпоратива', W / 2, H - 34);
   }
 
   // Вспышки выстрелов освещают всё вокруг

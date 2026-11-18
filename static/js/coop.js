@@ -1,0 +1,1246 @@
+// =====================================================================
+// КОРПОРАТИВ — совместная игра до 3 человек.
+// Хост (создатель комнаты) считает весь мир: врагов, двери, предметы, боссов.
+// Каждый игрок сам управляет своим героем и сообщает хосту о попаданиях.
+// Сервер только пересылает данные (HTTP-опрос ~10 раз в секунду).
+// =====================================================================
+
+const CHAR_NAMES = { dani: 'ДАНИ', gal: 'ГАЛ', daur: 'ДАУР' };
+const CHAR_IDS = ['dani', 'gal', 'daur'];
+const SLOT_COLORS = ['#ffd319', '#05d9e8', '#ff2a6d'];
+
+// ---------- Никнейм (хранится только в браузере) ----------
+const Nick = {
+  get() { try { return localStorage.getItem('cs_nick') || ''; } catch (e) { return ''; } },
+  set(v) { try { localStorage.setItem('cs_nick', v); } catch (e) {} },
+};
+
+// ---------- Текстовое поле поверх игры (ник, код комнаты, чат) ----------
+const TextField = {
+  el: null, onSubmit: null, onCancel: null,
+  get active() { return !!(this.el && this.el.style.display === 'block'); },
+
+  init() {
+    this.el = document.getElementById('text-input');
+    if (!this.el) return;
+    this.el.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const v = this.el.value, cb = this.onSubmit;
+        this.close(); if (cb) cb(v);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        const cb = this.onCancel;
+        this.close(); if (cb) cb();
+      }
+    });
+    this.el.addEventListener('keyup', (e) => e.stopPropagation());
+    this.el.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (this.active && document.activeElement !== this.el) { const cb = this.onCancel; this.close(); if (cb) cb(); }
+      }, 120);
+    });
+  },
+
+  open({ value = '', placeholder = '', maxLength = 100, upper = false, onSubmit, onCancel }) {
+    if (!this.el) this.init();
+    if (!this.el) return;
+    this.onSubmit = onSubmit; this.onCancel = onCancel;
+    this.el.value = value;
+    this.el.placeholder = placeholder;
+    this.el.maxLength = maxLength;
+    this.el.style.textTransform = upper ? 'uppercase' : 'none';
+    this.el.style.display = 'block';
+    Input.typing = true;
+    Input.keys = {};
+    Input.mouse.down = false;
+    setTimeout(() => this.el.focus(), 0);
+  },
+
+  close() {
+    if (!this.el) return;
+    this.el.style.display = 'none';
+    this.el.blur();
+    Input.typing = false;
+    this.onSubmit = this.onCancel = null;
+  },
+};
+
+const CoopNet = {
+  async post(url, body) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(j.error || ('Ошибка сети ' + r.status));
+    return j;
+  },
+};
+
+// =====================================================================
+// Меню корпоратива и лобби
+// =====================================================================
+class CoopUI {
+  constructor(game) {
+    this.game = game;
+    this.screen = 'home';
+    this.sel = 0;
+    this.t = 0;
+    this.msg = ''; this.msgT = 0;
+    this.reset();
+  }
+
+  reset() {
+    this.code = null; this.pid = null; this.isHost = false;
+    this.players = []; this.chat = []; this.chatSince = 0;
+    this.pendingChat = null; this.pendingChar = null;
+    this.pollT = 0; this.busy = false; this.starting = false;
+    this.lobbySel = 0;
+  }
+
+  _ensureHeartbeat() {
+    if (this._hb) return;
+    this._hb = setInterval(() => {
+      if (this.screen === 'lobby' && this.code && this.game.state !== 'coop' && !this.starting) return;
+      if (this.screen === 'lobby' && this.code && performance.now() - (this._lastPoll || 0) > 1500) this._poll();
+    }, 1000);
+  }
+
+  open() {
+    this._ensureHeartbeat();
+    this.screen = this.code ? 'lobby' : 'home';
+    this.sel = 0;
+    this.game.state = 'coop';
+  }
+
+  flash(msg) { this.msg = msg; this.msgT = 4; }
+
+  homeItems() {
+    return [`НИКНЕЙМ: ${Nick.get() || '— задать —'}`, 'СОЗДАТЬ КОМНАТУ', 'ВОЙТИ ПО КОДУ', 'НАЗАД'];
+  }
+
+  lobbyButtons() {
+    const b = [];
+    if (this.isHost) b.push('НАЧАТЬ КОРПОРАТИВ');
+    b.push('НАПИСАТЬ В ЧАТ', 'ВЫЙТИ ИЗ КОМНАТЫ');
+    return b;
+  }
+
+  _askNick(then) {
+    TextField.open({
+      value: Nick.get(), placeholder: 'Ваш никнейм (до 14 символов)', maxLength: 14,
+      onSubmit: (v) => {
+        v = v.trim().slice(0, 14);
+        if (v) { Nick.set(v); this.flash('Никнейм сохранён: ' + v); if (then) then(); }
+      },
+    });
+  }
+
+  async _create() {
+    if (!Nick.get()) { this._askNick(() => this._create()); return; }
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const r = await CoopNet.post('/api/coop/create', { name: Nick.get() });
+      this.reset();
+      this.code = r.code; this.pid = r.pid; this.isHost = true;
+      this.screen = 'lobby'; this.lobbySel = 0;
+      AudioSys.play('menu_select');
+    } catch (e) { this.flash(e.message); }
+    this.busy = false;
+  }
+
+  _join() {
+    if (!Nick.get()) { this._askNick(() => this._join()); return; }
+    TextField.open({
+      placeholder: 'Код комнаты (4 символа)', maxLength: 6, upper: true,
+      onSubmit: async (v) => {
+        v = v.trim().toUpperCase();
+        if (!v) return;
+        this.busy = true;
+        try {
+          const r = await CoopNet.post('/api/coop/join', { code: v, name: Nick.get() });
+          this.reset();
+          this.code = r.code; this.pid = r.pid; this.isHost = false;
+          this.screen = 'lobby'; this.lobbySel = 0;
+          AudioSys.play('menu_select');
+        } catch (e) { this.flash(e.message); }
+        this.busy = false;
+      },
+    });
+  }
+
+  async leave(silent) {
+    const code = this.code, pid = this.pid;
+    this.reset();
+    this.screen = 'home';
+    if (code) { try { await CoopNet.post('/api/coop/leave', { code, pid }); } catch (e) {} }
+    if (!silent) this.flash('Вы покинули комнату');
+  }
+
+  _openChat() {
+    TextField.open({ placeholder: 'Сообщение в чат комнаты', maxLength: 120, onSubmit: (v) => { v = v.trim(); if (v) this.pendingChat = v; } });
+  }
+
+  async _poll() {
+    if (this.busy || !this.code) return;
+    this.busy = true;
+    this._lastPoll = performance.now();
+    const body = { code: this.code, pid: this.pid, chatSince: this.chatSince };
+    if (this.pendingChar) { body.char = this.pendingChar; }
+    if (this.pendingChat) { body.chat = this.pendingChat; this.pendingChat = null; }
+    try {
+      const r = await CoopNet.post('/api/coop/lobby', body);
+      if (r.state === 'closed') {
+        this.reset(); this.screen = 'home'; this.flash(r.reason || 'Комната закрыта');
+      } else {
+        this.players = r.players || [];
+        const me = this.players.find(p => p.pid === this.pid);
+        if (me && this.pendingChar && me.char === this.pendingChar) this.pendingChar = null;
+        for (const m of r.chat || []) { this.chat.push(m); this.chatSince = Math.max(this.chatSince, m.n); if (m.n > 0 && !m.sys && m.name !== Nick.get()) AudioSys.play('menu_move'); }
+        this.chat = this.chat.slice(-40);
+        if (r.state === 'playing' && r.seed && !this.starting) {
+          this.starting = true;
+          this.game.startCoopMatch({ code: this.code, pid: this.pid, isHost: this.isHost, players: this.players, seed: r.seed, chat: this.chat, chatSince: this.chatSince });
+        }
+      }
+    } catch (e) { this.flash('Нет связи с сервером…'); }
+    this.busy = false;
+  }
+
+  async _start() {
+    if (!this.isHost || this.busy) return;
+    if (this.players.some(p => !p.char)) { this.flash('Не все выбрали персонажа'); return; }
+    this.busy = true;
+    try { await CoopNet.post('/api/coop/start', { code: this.code, pid: this.pid }); this.pollT = 0; }
+    catch (e) { this.flash(e.message); }
+    this.busy = false;
+  }
+
+  _myChar() {
+    if (this.pendingChar) return this.pendingChar;
+    const me = this.players.find(p => p.pid === this.pid);
+    return me ? me.char : null;
+  }
+
+  _pickChar(id) {
+    const taken = this.players.find(p => p.char === id && p.pid !== this.pid);
+    if (taken) { this.flash(`${CHAR_NAMES[id]} уже выбран игроком ${taken.name}`); return; }
+    this.pendingChar = id;
+    AudioSys.play('char_select');
+  }
+
+  // ---------- ввод ----------
+  update(dt) {
+    this.t += dt;
+    this.msgT = Math.max(0, this.msgT - dt);
+    if (TextField.active) return;
+
+    const W = this.game.W, H = this.game.H;
+    const mx = Input.mouse.x, my = Input.mouse.y;
+    const click = Input.consumeClick();
+    const up = Input.wasPressed('ArrowUp') || Input.wasPressed('KeyW') || Input.wasPressed('MobileUp');
+    const down = Input.wasPressed('ArrowDown') || Input.wasPressed('KeyS') || Input.wasPressed('MobileDown');
+    const enter = Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter');
+
+    if (this.screen === 'home') {
+      const items = this.homeItems();
+      if (up) { this.sel = (this.sel + items.length - 1) % items.length; AudioSys.play('menu_move'); }
+      if (down) { this.sel = (this.sel + 1) % items.length; AudioSys.play('menu_move'); }
+      const rects = this._homeRects(W, H);
+      rects.forEach((r, i) => { if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) this.sel = i; });
+      let act = enter ? this.sel : -1;
+      if (click) rects.forEach((r, i) => { if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) act = i; });
+      if (act === 0) this._askNick();
+      else if (act === 1) this._create();
+      else if (act === 2) this._join();
+      else if (act === 3 || Input.wasPressed('Escape')) { this.game.toMenu(); }
+      if (act >= 0) AudioSys.play('menu_select');
+      return;
+    }
+
+    // --- лобби ---
+    this.pollT -= dt;
+    if (this.pollT <= 0) { this.pollT = 0.5; this._poll(); }
+    if (Input.wasPressed('KeyT')) { this._openChat(); return; }
+    if (Input.wasPressed('Escape')) { this.leave(); return; }
+
+    const cur = CHAR_IDS.indexOf(this._myChar());
+    if (Input.wasPressed('KeyA') || Input.wasPressed('ArrowLeft')) this._pickChar(CHAR_IDS[(cur + 2) % 3]);
+    if (Input.wasPressed('KeyD') || Input.wasPressed('ArrowRight')) this._pickChar(CHAR_IDS[(cur + 1) % 3]);
+
+    const btns = this.lobbyButtons();
+    if (up) { this.lobbySel = (this.lobbySel + btns.length - 1) % btns.length; AudioSys.play('menu_move'); }
+    if (down) { this.lobbySel = (this.lobbySel + 1) % btns.length; AudioSys.play('menu_move'); }
+    const L = this._lobbyLayout(W, H);
+    let act = enter ? this.lobbySel : -1;
+    L.buttons.forEach((r, i) => {
+      if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { this.lobbySel = i; if (click) act = i; }
+    });
+    if (click) L.chars.forEach((r, i) => { if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) this._pickChar(CHAR_IDS[i]); });
+    if (click && this._hit(L.chat, mx, my)) this._openChat();
+    if (act >= 0) {
+      const name = btns[act];
+      AudioSys.play('menu_select');
+      if (name === 'НАЧАТЬ КОРПОРАТИВ') this._start();
+      else if (name === 'НАПИСАТЬ В ЧАТ') this._openChat();
+      else this.leave();
+    }
+  }
+
+  _hit(r, x, y) { return r && x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h; }
+
+  _homeRects(w, h) {
+    const bw = Math.min(380, w * 0.6), bh = 44;
+    return this.homeItems().map((_, i) => ({ x: w / 2 - bw / 2, y: h * 0.42 + i * (bh + 12), w: bw, h: bh }));
+  }
+
+  _lobbyLayout(w, h) {
+    const top = 96;
+    const colW = (w - 80) / 3;
+    const players = { x: 20, y: top, w: colW, h: h - top - 90 };
+    const charsBox = { x: 40 + colW, y: top, w: colW, h: h - top - 90 };
+    const chat = { x: 60 + colW * 2, y: top, w: colW, h: h - top - 90 };
+    const cs = Math.min(84, (colW - 40) / 3);
+    const chars = CHAR_IDS.map((_, i) => ({ x: charsBox.x + 14 + i * (cs + 6), y: charsBox.y + 50, w: cs, h: cs + 40 }));
+    const names = this.lobbyButtons();
+    const bw = Math.min(250, (w - 80) / names.length - 10), bh = 40;
+    const bx0 = w / 2 - (names.length * (bw + 12) - 12) / 2;
+    const buttons = names.map((_, i) => ({ x: bx0 + i * (bw + 12), y: h - 68, w: bw, h: bh }));
+    return { players, charsBox, chat, chars, buttons };
+  }
+
+  // ---------- отрисовка ----------
+  _button(ctx, r, text, active, accent = '#ff2a6d', disabled = false) {
+    const M = this.game.menu;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(r.x + 12, r.y); ctx.lineTo(r.x + r.w, r.y); ctx.lineTo(r.x + r.w - 12, r.y + r.h); ctx.lineTo(r.x, r.y + r.h); ctx.closePath();
+    if (active && !disabled) {
+      const g = ctx.createLinearGradient(r.x, 0, r.x + r.w, 0);
+      g.addColorStop(0, accent); g.addColorStop(1, 'rgba(120,20,200,0.9)');
+      ctx.fillStyle = g; ctx.shadowColor = accent; ctx.shadowBlur = 18; ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(8,4,18,0.75)'; ctx.fill();
+      ctx.strokeStyle = disabled ? 'rgba(255,255,255,0.15)' : 'rgba(5,217,232,0.4)'; ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.font = `bold ${Math.min(17, r.w / 13)}px "Courier New", monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = disabled ? '#666' : active ? '#fff' : '#b8b0d0';
+    ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2 + 1);
+    ctx.restore();
+    void M;
+  }
+
+  draw(ctx, w, h) {
+    const M = this.game.menu;
+    M.drawBackground(ctx, w, h, this.t, 0.45);
+    M.glowText(ctx, 'КОРПОРАТИВ', w / 2, 52, '#ff2a6d', Math.min(40, w * 0.06), 'center', 20);
+    ctx.font = '13px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('совместная игра до 3 человек', w / 2, 74);
+
+    if (this.screen === 'home') this._drawHome(ctx, w, h);
+    else this._drawLobby(ctx, w, h);
+
+    if (this.msgT > 0) {
+      ctx.globalAlpha = Math.min(1, this.msgT);
+      ctx.font = 'bold 15px "Courier New", monospace'; ctx.textAlign = 'center';
+      const tw = ctx.measureText(this.msg).width + 30;
+      ctx.fillStyle = 'rgba(10,4,20,0.9)'; ctx.fillRect(w / 2 - tw / 2, h - 118, tw, 30);
+      ctx.strokeStyle = '#ffd319'; ctx.strokeRect(w / 2 - tw / 2 + 0.5, h - 117.5, tw - 1, 29);
+      ctx.fillStyle = '#ffd319'; ctx.fillText(this.msg, w / 2, h - 98);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _drawHome(ctx, w, h) {
+    const M = this.game.menu;
+    const items = this.homeItems();
+    this._homeRects(w, h).forEach((r, i) => this._button(ctx, r, items[i], i === this.sel, i === 0 ? '#05a9c8' : '#ff2a6d'));
+    ctx.font = '13px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#05d9e8';
+    const lines = [
+      'Никнейм используется в сетевой игре и в таблице лидеров.',
+      'Создайте комнату и сообщите код друзьям — или войдите по их коду.',
+    ];
+    lines.forEach((l, i) => ctx.fillText(l, w / 2, h * 0.42 - 54 + i * 18));
+    // три героя бок о бок
+    const ids = ['dani', 'gal', 'daur'];
+    ids.forEach((id, i) => {
+      ctx.save();
+      ctx.translate(w / 2 - 90 + i * 90, h * 0.42 - 100);
+      ctx.rotate(-Math.PI / 2);
+      ctx.scale(1.7, 1.7);
+      Sprites.drawHuman(ctx, Sprites.HEROES[id], { t: this.t + i, walk: this.t * 9 + i, move: 0.7, weaponId: ['glock', null, 'shotgun'][i] });
+      ctx.restore();
+    });
+    void M;
+  }
+
+  _drawLobby(ctx, w, h) {
+    const M = this.game.menu;
+    const L = this._lobbyLayout(w, h);
+
+    // --- код комнаты
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
+    ctx.fillText('КОД КОМНАТЫ', w / 2, 92);
+    ctx.save();
+    ctx.font = 'bold 30px "Courier New", monospace'; ctx.letterSpacing = '6px';
+    ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 16; ctx.fillStyle = '#ffd319';
+    ctx.fillText(this.code || '----', w / 2, 124);
+    ctx.restore();
+
+    // --- игроки
+    const P = L.players;
+    M.panel(ctx, P.x, P.y + 40, P.w, P.h - 40, '#05d9e8');
+    ctx.textAlign = 'left'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
+    ctx.fillText(`ИГРОКИ ${this.players.length}/3`, P.x + 14, P.y + 64);
+    for (let s = 0; s < 3; s++) {
+      const p = this.players.find(q => q.slot === s);
+      const y = P.y + 78 + s * 66;
+      ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(P.x + 10, y, P.w - 20, 58);
+      ctx.fillStyle = SLOT_COLORS[s]; ctx.fillRect(P.x + 10, y, 3, 58);
+      if (!p) {
+        ctx.globalAlpha = 0.4 + 0.3 * Math.sin(this.t * 3 + s);
+        ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
+        ctx.fillText('ожидание игрока…', P.x + 24, y + 33);
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      const img = p.char ? this.game.images[p.char] : null;
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, P.x + 20, y + 5, 48, 48);
+      else { ctx.fillStyle = '#222'; ctx.fillRect(P.x + 20, y + 5, 48, 48); }
+      ctx.strokeStyle = SLOT_COLORS[s]; ctx.strokeRect(P.x + 19.5, y + 4.5, 49, 49);
+      ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillStyle = '#fff';
+      ctx.fillText(p.name + (p.pid === this.pid ? ' (вы)' : ''), P.x + 78, y + 24, P.w - 96);
+      ctx.font = '12px "Courier New", monospace'; ctx.fillStyle = p.char ? '#ffd319' : '#888';
+      ctx.fillText(p.char ? CHAR_NAMES[p.char] : 'выбирает…', P.x + 78, y + 44);
+      if (p.host) { ctx.fillStyle = '#ff2a6d'; ctx.font = 'bold 11px "Courier New", monospace'; ctx.fillText('ХОСТ', P.x + P.w - 56, y + 44); }
+    }
+
+    // --- выбор персонажа
+    const C = L.charsBox;
+    M.panel(ctx, C.x, C.y + 40, C.w, C.h - 40, '#ffd319');
+    ctx.textAlign = 'center'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#ffd319';
+    ctx.fillText('ВАШ ПЕРСОНАЖ  (A/D или клик)', C.x + C.w / 2, C.y + 64);
+    const mine = this._myChar();
+    L.chars.forEach((r, i) => {
+      const id = CHAR_IDS[i];
+      const owner = this.players.find(p => p.char === id && p.pid !== this.pid);
+      const isMine = id === mine;
+      const rr = { x: r.x, y: r.y + 30, w: r.w, h: r.w };
+      ctx.save();
+      if (owner) ctx.globalAlpha = 0.35;
+      const img = this.game.images[id];
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, rr.x, rr.y, rr.w, rr.h);
+      ctx.strokeStyle = isMine ? '#ffd319' : 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = isMine ? 3 : 1;
+      if (isMine) { ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 14 + 6 * Math.sin(this.t * 5); }
+      ctx.strokeRect(rr.x - 1, rr.y - 1, rr.w + 2, rr.h + 2);
+      ctx.restore();
+      ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = isMine ? '#ffd319' : '#c8c2e0';
+      ctx.fillText(CHAR_NAMES[id], rr.x + rr.w / 2, rr.y + rr.h + 18);
+      if (owner) { ctx.font = '11px "Courier New", monospace'; ctx.fillStyle = '#ff2a6d'; ctx.fillText(owner.name, rr.x + rr.w / 2, rr.y + rr.h + 32, rr.w + 10); }
+    });
+    // живой спрайт выбранного героя
+    if (mine) {
+      ctx.save();
+      ctx.translate(C.x + C.w / 2, C.y + C.h - 52);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 6, 26, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(-Math.PI / 2 + Math.sin(this.t) * 0.3);
+      ctx.scale(2.4, 2.4);
+      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: 'glock', gal: null, daur: 'shotgun' }[mine] });
+      ctx.restore();
+    }
+
+    // --- чат
+    const H = L.chat;
+    M.panel(ctx, H.x, H.y + 40, H.w, H.h - 40, '#ff2a6d');
+    ctx.textAlign = 'left'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#ff2a6d';
+    ctx.fillText('ЧАТ КОМНАТЫ', H.x + 14, H.y + 64);
+    ctx.font = '12px "Courier New", monospace';
+    const lines = [];
+    for (const m of this.chat.slice(-14)) {
+      const text = m.sys ? '• ' + m.text : `${m.name}: ${m.text}`;
+      const words = text.split(' ');
+      let line = '';
+      for (const wd of words) {
+        const test = line ? line + ' ' + wd : wd;
+        if (ctx.measureText(test).width > H.w - 28 && line) { lines.push([line, m.sys]); line = wd; } else line = test;
+      }
+      lines.push([line, m.sys]);
+    }
+    const maxLines = Math.floor((H.h - 110) / 16);
+    lines.slice(-maxLines).forEach(([l, sys], i) => {
+      ctx.fillStyle = sys ? '#05d9e8' : '#e8e4f8';
+      ctx.fillText(l, H.x + 14, H.y + 86 + i * 16);
+    });
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(H.x + 10, H.y + H.h - 34, H.w - 20, 24);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('T / клик — написать сообщение', H.x + 18, H.y + H.h - 18);
+
+    // --- кнопки
+    const btns = this.lobbyButtons();
+    L.buttons.forEach((r, i) => this._button(ctx, r, btns[i], i === this.lobbySel, btns[i] === 'НАЧАТЬ КОРПОРАТИВ' ? '#ff2a6d' : '#05a9c8'));
+    if (!this.isHost) {
+      ctx.textAlign = 'center'; ctx.font = '13px "Courier New", monospace';
+      ctx.fillStyle = `rgba(255,211,25,${0.6 + 0.4 * Math.sin(this.t * 3)})`;
+      ctx.fillText('Ожидаем, пока хост начнёт игру…', w / 2, h - 80);
+    }
+  }
+}
+
+// =====================================================================
+// Напарник на экране (данные приходят по сети)
+// =====================================================================
+class RemotePlayer {
+  constructor(info, session) {
+    this.session = session;
+    this.pid = info.pid;
+    this.name = info.name;
+    this.charId = info.char || 'dani';
+    this.slot = info.slot || 0;
+    this.look = Sprites.HEROES[this.charId] || Sprites.HEROES.dani;
+    this.w = 18; this.h = 18;
+    this.x = this.tx = -9999; this.y = this.ty = -9999;
+    this.angle = this.ta = 0;
+    this.hp = 3; this.maxHp = 3;
+    this.dead = false; this.deathAngle = 0;
+    this.weaponId = null; this.ammo = 0;
+    this.moveAmt = 0; this.walkPhase = 0; this.animT = 0;
+    this.swing = null; this.punch = null; this.flash = false; this.recoil = 0; this.hurt = false;
+    this.hurtCooldown = 0;
+    this.hasState = false;
+    this._shots = 0;
+    this._seenBullets = new Set();
+  }
+
+  applyState(s, game) {
+    if (!s) return;
+    const first = !this.hasState;
+    this.hasState = true;
+    this.tx = s.x; this.ty = s.y; this.ta = s.a;
+    if (first || Math.hypot(s.x - this.x, s.y - this.y) > 140) { this.x = s.x; this.y = s.y; this.angle = s.a; }
+    this.hp = s.hp; this.maxHp = s.mhp;
+    this.weaponId = s.w || null; this.ammo = s.am || 0;
+    this.moveAmt = s.mv || 0;
+    this.flash = !!s.fl; this.hurt = !!s.hc;
+    if (s.sw) {
+      if (!this.swing || s.sw[0] < this.swing.p - 0.25) this.swing = { p: s.sw[0], side: s.sw[1], stab: !!s.sw[2] };
+    }
+    if (s.pu) {
+      if (!this.punch || s.pu[0] < this.punch.p - 0.25) this.punch = { p: s.pu[0], side: s.pu[1] };
+    }
+    if (s.d && !this.dead) {
+      this.dead = true; this.deathAngle = s.da || 0;
+      Effects.bloodSplat(this.x + 9, this.y + 9, this.deathAngle, 30);
+      AudioSys.play('player_death');
+    } else if (!s.d && this.dead) {
+      this.dead = false;
+      Effects.ring(this.x + 9, this.y + 9, '60,255,140', 34);
+    }
+    // выстрелы напарника: звук, гильза, дым
+    if ((s.sh || 0) > this._shots) {
+      if (!first && this.weaponId && WEAPONS[this.weaponId]) {
+        AudioSys.play(WEAPONS[this.weaponId].sound);
+        Effects.casing(this.x + 9, this.y + 9, this.angle, this.weaponId === 'shotgun');
+        this.recoil = 1;
+      }
+      this._shots = s.sh;
+    }
+    for (const b of s.bl || []) {
+      if (this._seenBullets.has(b[0])) continue;
+      this._seenBullets.add(b[0]);
+      if (first) continue;
+      const fb = new Bullet(b[1], b[2], Math.atan2(b[4], b[3]), Math.hypot(b[3], b[4]), true, b[5]);
+      fb.cosmetic = true;
+      game.fxBullets.push(fb);
+    }
+    if (this._seenBullets.size > 400) this._seenBullets = new Set([...this._seenBullets].slice(-200));
+  }
+
+  update(dt) {
+    if (!this.hasState) return;
+    const k = 1 - Math.exp(-dt * 14);
+    this.x += (this.tx - this.x) * k;
+    this.y += (this.ty - this.y) * k;
+    let da = this.ta - this.angle;
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    this.angle += da * Math.min(1, dt * 18);
+    this.animT += dt;
+    this.walkPhase += dt * 13 * this.moveAmt;
+    this.recoil = Math.max(0, this.recoil - dt * 9);
+    this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
+    // удары доигрываем локально, чтобы анимация была плавной
+    const dur = (this.weaponId && MELEE_SWING[this.weaponId]) || 0.22;
+    if (this.swing) { this.swing.p += dt / dur; if (this.swing.p >= 1) this.swing = null; }
+    if (this.punch) { this.punch.p += dt / 0.22; if (this.punch.p >= 1) this.punch = null; }
+  }
+
+  // Урон считает хост: отправляем его владельцу героя
+  takeDamage(amount) {
+    if (this.dead || this.hurtCooldown > 0 || !this.session) return;
+    this.hurtCooldown = 0.6;
+    this.session.sendTo(this.pid, { t: 'dmg', a: amount });
+  }
+
+  draw(ctx) {
+    if (!this.hasState) return;
+    const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+    if (this.dead) {
+      ctx.fillStyle = '#5a0010';
+      ctx.beginPath(); ctx.ellipse(cx, cy, 20, 14, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = P.blood;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 18, 12, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(this.deathAngle + Math.PI); ctx.scale(1.15, 1.15);
+      Sprites.drawHumanDown(ctx, this.look, { seed: this.slot * 991 + 7 });
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
+    // цветной круг под напарником, чтобы отличать от врагов
+    ctx.strokeStyle = SLOT_COLORS[this.slot % 3]; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(cx, cy + 2, 15, 11, 0, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(this.angle); ctx.scale(1.15, 1.15);
+    const st = { t: this.animT, walk: this.walkPhase, move: this.moveAmt, weaponId: this.weaponId, recoil: this.recoil, flash: this.flash, hurt: this.hurt };
+    if (this.swing && this.weaponId && WEAPONS[this.weaponId] && WEAPONS[this.weaponId].type === 'melee') st.swing = this.swing;
+    if (this.punch && !this.weaponId) st.punch = this.punch;
+    Sprites.drawHuman(ctx, this.look, st);
+    ctx.restore();
+  }
+}
+
+// =====================================================================
+// Сетевая сессия матча
+// =====================================================================
+class CoopSession {
+  constructor(game, info) {
+    this.game = game;
+    this.code = info.code;
+    this.pid = info.pid;
+    this.isHost = info.isHost;
+    this.players = info.players.map(p => ({ ...p }));
+    this.me = this.players.find(p => p.pid === this.pid) || { slot: 0, char: 'dani', name: Nick.get() };
+    this.remotes = new Map();
+    for (const p of this.players) if (p.pid !== this.pid) this.remotes.set(p.pid, new RemotePlayer(p, this));
+
+    this.seed = info.seed;
+    this.levelNo = 1;
+    this.chatSince = info.chatSince || 0;
+    this.chatLines = [];
+    this.pendingChat = null;
+    this.events = [];      // клиент → хост
+    this.out = {};         // хост → клиенты
+    this.tickT = 0;
+    this.inFlight = false;
+    this.snapSeq = 0;
+    this.netId = 1;
+    this.recentBullets = [];
+    this.shots = 0;
+    this.revive = {};
+    this.teamOver = false;
+    this.ended = false;
+    this.closed = false;
+    this.closeReason = '';
+    this.overT = 0;
+    this.netFails = 0;
+    this.lastOk = performance.now();
+    this.introT = 0;
+    this._doorEvT = {};
+    this._lastSend = 0;
+    this._hb = setInterval(() => {
+      if (!this.closed && !this.inFlight && performance.now() - this._lastSend > 1500) this._tick();
+    }, 1000);
+  }
+
+  get playerCount() { return 1 + this.remotes.size; }
+
+  event(e) { if (!this.isHost) this.events.push(e); }
+  sendTo(pid, e) { if (!this.out[pid]) this.out[pid] = []; this.out[pid].push(e); }
+
+  sendChat(text) {
+    text = String(text || '').trim();
+    if (text) this.pendingChat = (this.pendingChat ? this.pendingChat + ' ' : '') + text;
+  }
+
+  pushChatLine(m) {
+    this.chatLines.push({ name: m.name, text: m.text, sys: !!m.sys, t: 12 });
+    if (this.chatLines.length > 30) this.chatLines.shift();
+    if (!m.sys && m.name !== this.me.name) AudioSys.play('menu_move');
+  }
+
+  // Подготовка уровня у клиента: враги становятся "репликами" хоста
+  prepareLevel() {
+    const g = this.game;
+    if (!this.isHost) {
+      g.pickups = [];
+      g.enemies.forEach((e, i) => this._markReplica(e, i));
+      g.level.addNoise = (x, y, r) => this.event({ t: 'noise', x: Math.round(x), y: Math.round(y), r });
+      g.level.doors.forEach((d, i) => {
+        const orig = d.push.bind(d);
+        d.push = (en, ex, ey, vx, vy, byPlayer) => {
+          orig(en, ex, ey, vx, vy, byPlayer);
+          if (byPlayer && ex !== undefined) {
+            d._localPushT = 0.4;
+            const now = performance.now();
+            if (!this._doorEvT[i] || now - this._doorEvT[i] > 70) {
+              this._doorEvT[i] = now;
+              this.event({ t: 'door', d: i, x: Math.round(ex), y: Math.round(ey), vx: Math.round(vx), vy: Math.round(vy) });
+            }
+          }
+        };
+      });
+    }
+    for (const rp of this.remotes.values()) { rp.dead = false; rp.hasState = false; }
+    this.revive = {};
+  }
+
+  _markReplica(e, i) {
+    e._replica = true;
+    e._idx = i;
+    e.takeDamage = (a) => this.event({ t: 'hit', e: e._idx, k: 'dmg', a: a || 1 });
+    e.stun = () => { if (!e.stunned && !e.dead) this.event({ t: 'hit', e: e._idx, k: 'stun' }); };
+    e.die = () => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'kill' }); };
+  }
+
+  // ---------- каждый кадр ----------
+  update(dt) {
+    this.tickT -= dt;
+    if (this.tickT <= 0 && !this.inFlight) { this.tickT = 0.09; this._tick(); }
+    for (const rp of this.remotes.values()) rp.update(dt);
+    for (const l of this.chatLines) l.t -= dt;
+    const now = performance.now() / 1000;
+    this.recentBullets = this.recentBullets.filter(b => now - b.t < 0.6);
+    if (!this.isHost) {
+      for (const d of this.game.level ? this.game.level.doors : []) if (d._localPushT > 0) d._localPushT -= dt;
+    }
+  }
+
+  // Новые пули своего героя — чтобы напарники их увидели
+  trackMyBullets() {
+    const now = performance.now() / 1000;
+    for (const b of this.game.bullets) {
+      if (!b.isPlayer || b.netId) continue;
+      b.netId = this.pid + ':' + (this.netId++);
+      this.recentBullets.push({ t: now, d: [b.netId, Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy), b.color] });
+    }
+  }
+
+  _buildMe() {
+    const p = this.game.player;
+    if (!p) return null;
+    const st = p._animState();
+    return {
+      x: Math.round(p.x), y: Math.round(p.y), a: +p.angle.toFixed(2),
+      hp: p.hp, mhp: p.maxHp, w: p.weapon ? p.weapon.id : '', am: p.weapon ? p.weapon.ammo : 0,
+      mv: +p.moveAmt.toFixed(2),
+      sw: st.swing ? [+st.swing.p.toFixed(2), st.swing.side, st.swing.stab ? 1 : 0] : 0,
+      pu: st.punch ? [+st.punch.p.toFixed(2), st.punch.side] : 0,
+      fl: p.flashTimer > 0 ? 1 : 0, hc: p.hurtCooldown > 0.45 ? 1 : 0,
+      d: p.dead ? 1 : 0, da: +(p.deathAngle || 0).toFixed(2),
+      sh: p._netShots || 0,
+      bl: this.recentBullets.map(b => b.d),
+    };
+  }
+
+  _buildSnap() {
+    const g = this.game;
+    if (!g.level || !g.level.doors) return null;
+    for (const p of g.pickups) if (!p.netId) p.netId = this.netId++;
+    for (const b of g.bullets) if (!b.netId) b.netId = this.netId++;
+    let st = 'play';
+    if (this.teamOver) st = 'over';
+    else if (g.state === 'levelClear') st = 'clear';
+    return {
+      lvl: this.levelNo, seed: this.seed, st,
+      sc: g.score, k: g.kills, tot: g.totalEnemies, cb: g.combo, ct: +(g.comboTimer || 0).toFixed(2),
+      en: g.enemies.map(e => [
+        Math.round(e.x), Math.round(e.y), +e.angle.toFixed(2),
+        (e.dead ? 1 : 0) | (e.stunned ? 2 : 0) | (e.type === 'sniper' && e.state === 'attack' ? 4 : 0),
+        e.hp, e.weapon ? e.weapon.id : '', e._shots || 0,
+        e.swingTimer > 0 ? Math.round((1 - e.swingTimer / (e.swingDur || 0.3)) * 100) : 0,
+        e.type, e.seed, e.isBoss ? BOSS_PHASES.indexOf(e.phase) : 0, e.maxHp, e.swingSide || 1,
+      ]),
+      dr: g.level.doors.map(d => Math.round(d.angle * 100) / 100),
+      pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
+      bu: g.bullets.filter(b => !b.isPlayer && !b.dead).map(b => [b.netId, Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy), b.color]),
+      rv: Object.fromEntries(Object.entries(this.revive).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+    };
+  }
+
+  async _tick() {
+    this.inFlight = true;
+    this._lastSend = performance.now();
+    const body = { code: this.code, pid: this.pid, me: this._buildMe(), chatSince: this.chatSince };
+    let chat = null, out = null, events = null;
+    if (this.pendingChat) { chat = this.pendingChat; body.chat = chat; this.pendingChat = null; }
+    if (this.isHost) {
+      if (this.game.state === 'playing' || this.game.state === 'levelClear' || this.teamOver) body.snap = this._buildSnap();
+      out = this.out; body.out = out; this.out = {};
+      if (this.ended) body.ended = true;
+    } else {
+      events = this.events; body.events = events; this.events = [];
+      body.snapSeq = this.snapSeq;
+    }
+    try {
+      const r = await CoopNet.post('/api/coop/tick', body);
+      this.netFails = 0;
+      this.lastOk = performance.now();
+      this._onResponse(r);
+    } catch (e) {
+      this.netFails++;
+      // не теряем важные события при сбое сети
+      if (chat) this.pendingChat = chat;
+      if (out) for (const [k, v] of Object.entries(out)) this.out[k] = v.concat(this.out[k] || []);
+      if (events) this.events = events.concat(this.events);
+      if (performance.now() - this.lastOk > 12000) { this.closed = true; this.closeReason = 'Потеряна связь с сервером'; }
+    }
+    this.inFlight = false;
+  }
+
+  _onResponse(r) {
+    const g = this.game;
+    if (r.state === 'closed') { this.closed = true; this.closeReason = r.reason || 'Комната закрыта'; return; }
+
+    // состав комнаты
+    const present = new Set((r.players || []).map(p => p.pid));
+    for (const pid of [...this.remotes.keys()]) {
+      if (!present.has(pid)) {
+        const rp = this.remotes.get(pid);
+        this.pushChatLine({ name: '', text: `${rp.name} покинул игру`, sys: true });
+        this.remotes.delete(pid);
+      }
+    }
+    for (const [pid, s] of Object.entries(r.states || {})) {
+      const rp = this.remotes.get(pid);
+      if (rp) rp.applyState(s, g);
+    }
+    for (const m of r.chat || []) { this.chatSince = Math.max(this.chatSince, m.n); this.pushChatLine(m); }
+
+    if (this.isHost) {
+      for (const [pid, e] of r.events || []) { try { this._hostEvent(pid, e); } catch (err) { console.error('coop event', err); } }
+    } else {
+      if (r.snap) { this.snapSeq = r.snapSeq; try { this._applySnap(r.snap); } catch (err) { console.error('coop snap', err); } }
+      for (const e of r.events || []) this._clientEvent(e);
+    }
+  }
+
+  // ---------- хост: события от клиентов ----------
+  _hostEvent(pid, e) {
+    const g = this.game;
+    const rp = this.remotes.get(pid);
+    if (!g.level || !e) return;
+    if (e.t === 'hit') {
+      const en = g.enemies[e.e];
+      if (!en || en.dead) return;
+      if (e.k === 'dmg') {
+        en.takeDamage(e.a || 1, g.pickups);
+        en.particles.push(...Utils.spawnBloodParticles(en.cx(), en.cy(), 10));
+      } else if (e.k === 'stun') en.stun();
+      else if (e.k === 'kill') en.die(g.pickups);
+    } else if (e.t === 'door') {
+      const d = g.level.doors[e.d];
+      if (d) d.push(g.enemies, e.x, e.y, e.vx, e.vy, true);
+    } else if (e.t === 'take') {
+      const p = g.pickups.find(q => q.netId === e.p && !q.pickedUp);
+      if (!p || !rp || rp.dead) return;
+      if (p.isHealth) {
+        if (rp.hp < rp.maxHp) { p.pickedUp = true; this.sendTo(pid, { t: 'heal' }); rp.hp++; }
+      } else if (!rp.weaponId && p.weapon) {
+        p.pickedUp = true;
+        rp.weaponId = p.weapon.id;
+        this.sendTo(pid, { t: 'give', w: p.weapon.id, am: p.weapon.ammo });
+      }
+    } else if (e.t === 'throw') {
+      if (!WEAPONS[e.w]) return;
+      const p = new Pickup(e.x, e.y, makeWeapon(e.w, e.am));
+      p.throwAt(e.a, 1200);
+      g.pickups.push(p);
+    } else if (e.t === 'noise') {
+      g.level.addNoise(e.x, e.y, Math.min(600, e.r || 300));
+    }
+  }
+
+  // ---------- клиент: события от хоста ----------
+  _clientEvent(e) {
+    const p = this.game.player;
+    if (!p) return;
+    if (e.t === 'dmg') { p.takeDamage(e.a || 1); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
+    else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
+    else if (e.t === 'give') { if (!p.weapon) { p.weapon = makeWeapon(e.w, e.am); AudioSys.play('pickup_weapon'); } }
+    else if (e.t === 'revive') { p.revive(); }
+  }
+
+  // ---------- клиент: применяем снимок мира ----------
+  _applySnap(s) {
+    const g = this.game;
+    if (s.lvl !== this.levelNo) {
+      this.levelNo = s.lvl;
+      this.seed = s.seed;
+      g.startCoopLevel(s.seed);
+    }
+    if (!g.level || !g.level.doors) return;
+    g.score = s.sc; g.kills = s.k; g.totalEnemies = s.tot; g.combo = s.cb; g.comboTimer = s.ct;
+
+    if (s.st === 'clear' && g.state === 'playing') { g.state = 'levelClear'; g.levelClearTimer = 99; }
+    if (s.st === 'over' && !this.teamOver) { this.teamOver = true; g.enterTeamOver(); }
+
+    // враги
+    s.en.forEach((a, i) => {
+      let e = g.enemies[i];
+      if (!e || e.seed !== a[9]) {
+        e = this._createEnemy(a);
+        g.enemies[i] = e;
+      }
+      if (!e._replica) this._markReplica(e, i);
+      e._idx = i;
+      this._applyEnemy(e, a, s.cb);
+    });
+    if (g.enemies.length > s.en.length) g.enemies.length = s.en.length;
+
+    // двери (кроме тех, что мы только что толкнули сами)
+    s.dr.forEach((ang, i) => {
+      const d = g.level.doors[i];
+      if (d && !(d._localPushT > 0)) { d.angle = ang; d.omega = 0; }
+    });
+
+    // предметы
+    const byId = new Map(g.pickups.map(p => [p.netId, p]));
+    const next = [];
+    for (const a of s.pk) {
+      let p = byId.get(a[0]);
+      if (!p) {
+        p = new Pickup(a[1], a[2], a[4] ? makeWeapon(a[4]) : null, !!a[3]);
+        p.netId = a[0];
+      }
+      p.x = a[1]; p.y = a[2]; p.thrown = !!a[5];
+      if (p.thrown) p.rotation += 0.6;
+      next.push(p);
+    }
+    g.pickups = next;
+
+    // вражеские пули: создаём новые и убираем исчезнувшие
+    const live = new Set(s.bu.map(b => b[0]));
+    g.fxBullets = g.fxBullets.filter(b => !b.enemyNet || live.has(b.netId));
+    const have = new Set(g.fxBullets.filter(b => b.enemyNet).map(b => b.netId));
+    for (const b of s.bu) {
+      if (have.has(b[0])) continue;
+      const fb = new Bullet(b[1], b[2], Math.atan2(b[4], b[3]), Math.hypot(b[3], b[4]), false, b[5]);
+      fb.netId = b[0]; fb.enemyNet = true; fb.cosmetic = true;
+      g.fxBullets.push(fb);
+    }
+
+    this.revive = s.rv || {};
+  }
+
+  _createEnemy(a) {
+    const type = a[8];
+    let e;
+    if (type.startsWith('boss_')) {
+      e = new Boss(a[0], a[1], type.slice(5), this.playerCount);
+      e.maxHp = a[11];
+      if (this.game.bossDirector) this.game.bossDirector.showBanner(e);
+    } else {
+      e = new Enemy(a[0], a[1], 'static', null, type);
+      e.look = Sprites.enemyLook(type, a[9]);
+    }
+    e.seed = a[9];
+    return e;
+  }
+
+  _applyEnemy(e, a, combo) {
+    e._tx = a[0]; e._ty = a[1]; e._ta = a[2];
+    if (!e._hasNet) { e.x = a[0]; e.y = a[1]; e.angle = a[2]; e._px = e.x; e._py = e.y; e._hasNet = true; e._netShots = a[6]; }
+    const dead = !!(a[3] & 1), stunned = !!(a[3] & 2);
+    if (dead && !e.dead) {
+      e.dead = true; e.stunned = false; e.x = a[0]; e.y = a[1];
+      e._deathFx();
+      const pts = 100 * Math.max(1, combo || 1);
+      Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(combo || 1, 5) * 2);
+      if (combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${combo} КОМБО`, '#05d9e8', 11);
+      if (e.isBoss) { Effects.screenFlash(0.45, '255,230,180'); Effects.popup(e.cx(), e.cy() - 44, `БОСС ПОВЕРЖЕН +${e.bossBonus}`, '#ffd319', 16); }
+    } else if (!dead && stunned && !e.stunned) {
+      e.stunned = true; e._stunFx();
+    } else if (!stunned && e.stunned && !dead) e.stunned = false;
+    e.state = (a[3] & 4) ? 'attack' : 'chase';
+    e.laserAngle = a[2];
+    e.hp = a[4];
+    if (e.isBoss) { e.maxHp = a[11]; e.phase = BOSS_PHASES[a[10]] || 'hunt'; e.chargeAngle = e.angle; }
+    const wid = a[5];
+    if (!wid) { if (!e.isBoss) e.weapon = null; }
+    else if (!e.weapon || e.weapon.id !== wid) e.weapon = makeWeapon(wid);
+    if (a[6] > (e._netShots || 0)) {
+      e._netShots = a[6];
+      e.flashTimer = 0.06; e.recoil = 1;
+      if (e.type === 'sniper') AudioSys.play('sniper_shot');
+      else if (e.isBoss) { if (Math.random() < 0.5) AudioSys.play('shoot_uzi'); }
+      else if (e.weapon) AudioSys.play(e.weapon.sound);
+      Effects.casing(e.cx(), e.cy(), e.angle, e.weapon && e.weapon.id === 'shotgun');
+    }
+    if (a[7] > 0 && !(e.swingTimer > 0)) {
+      e.swingDur = e.isBoss ? 0.36 : 0.3;
+      e.swingSide = a[12] || 1;
+      e.swingTimer = e.swingDur * (1 - a[7] / 100);
+    }
+  }
+
+  // Плавное движение реплик врагов между снимками
+  updateReplicas(dt) {
+    const k = 1 - Math.exp(-dt * 12);
+    for (const e of this.game.enemies) {
+      if (e._hasNet && !e.dead) {
+        e.x += (e._tx - e.x) * k;
+        e.y += (e._ty - e.y) * k;
+        let da = e._ta - e.angle;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        e.angle += da * Math.min(1, dt * 14);
+      }
+      e._animTick(dt);
+    }
+  }
+
+  // Пули своего героя попадают во врагов на нашем экране — сообщаем хосту
+  clientBulletHits() {
+    const g = this.game;
+    for (const b of g.bullets) {
+      if (b.dead || !b.isPlayer) continue;
+      for (const e of g.enemies) {
+        if (e.dead) continue;
+        const r = e.isBoss ? 15 : 12;
+        if (Utils.segDist(b.px, b.py, b.x, b.y, e.cx(), e.cy()) < r) {
+          b.dead = true;
+          e.takeDamage(1);
+          e.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 10, Math.atan2(b.vy, b.vx)));
+          break;
+        }
+      }
+    }
+  }
+
+  // Клиент хочет подобрать предмет — решает хост
+  clientPickups() {
+    const g = this.game, pl = g.player;
+    if (!pl || pl.dead) return;
+    this._takeCd = Math.max(0, (this._takeCd || 0) - 1 / 60);
+    for (const p of g.pickups) {
+      if (p.thrown) continue;
+      if (Utils.dist(p.x, p.y, pl.x + 9, pl.y + 9) > 24) continue;
+      if (p.isHealth ? pl.hp >= pl.maxHp : !!pl.weapon) continue;
+      if (p._reqT && performance.now() - p._reqT < 600) continue;
+      if (!p.isHealth && this._takeCd > 0) continue;
+      p._reqT = performance.now();
+      if (!p.isHealth) this._takeCd = 0.6;
+      this.event({ t: 'take', p: p.netId });
+    }
+  }
+
+  // ---------- хост: подъём раненых и конец матча ----------
+  hostUpdate(dt) {
+    const g = this.game;
+    const all = g.allPlayers();
+    for (const P of all) {
+      const id = P === g.player ? this.pid : P.pid;
+      if (!P.dead) { delete this.revive[id]; continue; }
+      if (P._reviveLock > 0) { P._reviveLock -= dt; continue; }
+      const helper = all.find(Q => Q !== P && !Q.dead && Utils.dist(Q.x, Q.y, P.x, P.y) < 40);
+      let v = this.revive[id] || 0;
+      v = helper ? v + dt / 2.5 : Math.max(0, v - dt * 0.5);
+      if (v >= 1) {
+        v = 0;
+        if (P === g.player) P.revive();
+        else { this.sendTo(P.pid, { t: 'revive' }); P._reviveLock = 1.5; }
+      }
+      this.revive[id] = v;
+    }
+    if (!this.teamOver && all.every(P => P.dead)) {
+      this.overT += dt;
+      if (this.overT > 1.8) { this.teamOver = true; g.enterTeamOver(); }
+    } else this.overT = 0;
+  }
+
+  async leave() {
+    clearInterval(this._hb);
+    this.closed = true;
+    try { await CoopNet.post('/api/coop/leave', { code: this.code, pid: this.pid }); } catch (e) {}
+  }
+
+  // ---------- отрисовка ----------
+  // Имена и сердца над напарниками + круги подъёма (поверх тумана)
+  drawWorldOverlay(ctx) {
+    const g = this.game;
+    const list = [[g.player, this.me.name, this.me.slot, this.pid], ...[...this.remotes.values()].map(r => [r, r.name, r.slot, r.pid])];
+    for (const [P, name, slot, id] of list) {
+      if (!P || (P.hasState === false)) continue;
+      const cx = P.x + P.w / 2, cy = P.y + P.h / 2;
+      const prog = this.revive[id] || 0;
+      if (P.dead) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI * 2); ctx.stroke();
+        if (prog > 0) {
+          ctx.strokeStyle = '#3fff8f'; ctx.shadowColor = '#3fff8f'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(cx, cy, 22, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      if (P === g.player) continue;
+      ctx.save();
+      ctx.font = 'bold 9px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#05030a';
+      ctx.strokeText(name, cx, cy - 22);
+      ctx.fillStyle = SLOT_COLORS[slot % 3];
+      ctx.fillText(name, cx, cy - 22);
+      for (let i = 0; i < P.maxHp; i++) {
+        ctx.fillStyle = i < P.hp ? '#ff2a6d' : 'rgba(255,255,255,0.2)';
+        ctx.fillRect(cx - P.maxHp * 4 + i * 8 + 1, cy - 18, 6, 4);
+      }
+      if (P.dead) { ctx.fillStyle = '#ff4060'; ctx.fillText('РАНЕН', cx, cy + 32); }
+      ctx.restore();
+    }
+  }
+
+  // Панель команды: здоровье всех игроков постоянно на экране
+  drawPartyHud(ctx, W, scale) {
+    const g = this.game;
+    let y = 84 * scale;
+    for (const rp of this.remotes.values()) {
+      const x = 14 * scale;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 200 * scale, 30 * scale);
+      ctx.fillStyle = SLOT_COLORS[rp.slot % 3]; ctx.fillRect(x, y, 3 * scale, 30 * scale);
+      const img = g.images[rp.charId];
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, x + 6 * scale, y + 3 * scale, 24 * scale, 24 * scale);
+      ctx.font = `bold ${12 * scale}px "Courier New", monospace`; ctx.textAlign = 'left';
+      ctx.fillStyle = '#fff'; ctx.fillText(rp.name, x + 36 * scale, y + 13 * scale, 120 * scale);
+      if (!rp.hasState) { ctx.fillStyle = '#888'; ctx.fillText('подключается…', x + 36 * scale, y + 26 * scale); }
+      else if (rp.dead) {
+        const prog = this.revive[rp.pid] || 0;
+        ctx.fillStyle = '#ff4060'; ctx.fillText(prog > 0 ? `ПОДНИМАЮТ ${Math.round(prog * 100)}%` : 'РАНЕН — ПОДНИМИТЕ!', x + 36 * scale, y + 26 * scale);
+      } else {
+        for (let i = 0; i < rp.maxHp; i++) {
+          ctx.fillStyle = i < rp.hp ? '#ff2a6d' : '#3a2a3a';
+          ctx.fillRect(x + 36 * scale + i * 14 * scale, y + 18 * scale, 11 * scale, 7 * scale);
+        }
+        ctx.fillStyle = '#9a94b8'; ctx.font = `${10 * scale}px "Courier New", monospace`;
+        ctx.fillText(rp.weaponId ? WEAPONS[rp.weaponId].name : 'кулаки', x + 36 * scale + rp.maxHp * 14 * scale + 6, y + 25 * scale);
+      }
+      y += 34 * scale;
+    }
+  }
+
+  drawChat(ctx, W, H) {
+    const typing = TextField.active;
+    const lines = this.chatLines.filter(l => typing || l.t > 0).slice(-7);
+    const x = 14, y0 = H - 110;
+    ctx.save();
+    ctx.font = '13px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    lines.forEach((l, i) => {
+      const y = y0 - (lines.length - 1 - i) * 18;
+      ctx.globalAlpha = typing ? 1 : Math.min(1, l.t / 2);
+      const text = l.sys ? '• ' + l.text : `${l.name}: ${l.text}`;
+      const tw = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 4, y - 13, tw + 10, 17);
+      ctx.fillStyle = l.sys ? '#05d9e8' : '#ffffff';
+      if (!l.sys) {
+        const p = this.players.find(q => q.name === l.name);
+        ctx.fillStyle = p ? SLOT_COLORS[p.slot % 3] : '#fff';
+        ctx.fillText(l.name + ':', x, y);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(' ' + l.text, x + ctx.measureText(l.name + ':').width, y);
+      } else ctx.fillText(text, x, y);
+    });
+    ctx.globalAlpha = 0.5;
+    ctx.font = '11px "Courier New", monospace'; ctx.fillStyle = '#fff';
+    if (!typing) ctx.fillText('T — чат', x, H - 88);
+    ctx.restore();
+  }
+
+  // Заставка перед началом корпоратива
+  drawIntro(ctx, W, H, t) {
+    const M = this.game.menu;
+    M.drawBackground(ctx, W, H, t, 0.35);
+    // вспышки и полосы
+    if (t < 0.25 || (t > 1.2 && t < 1.3)) { ctx.fillStyle = `rgba(255,255,255,${0.6 - (t % 1) * 2})`; ctx.fillRect(0, 0, W, H); }
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    for (let i = 0; i < 5; i++) {
+      const y = (t * 400 + i * 130) % (H + 100) - 50;
+      ctx.fillStyle = i % 2 ? '#ff2a6d' : '#05d9e8';
+      ctx.fillRect(0, y, W, 3);
+    }
+    ctx.restore();
+
+    // заголовок
+    const ts = Math.min(64, W * 0.09);
+    const tIn = Utils.clamp(t / 0.6, 0, 1);
+    const shake = t < 0.8 ? (Math.random() - 0.5) * 8 * (1 - tIn) : 0;
+    ctx.save();
+    ctx.translate(W / 2 + shake, 70 + (1 - tIn) * -60);
+    ctx.globalAlpha = tIn;
+    ctx.font = `bold ${ts}px "Courier New", monospace`; ctx.textAlign = 'center';
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(5,217,232,0.7)'; ctx.fillText('КОРПОРАТИВ', -3, 0);
+    ctx.fillStyle = 'rgba(255,42,109,0.7)'; ctx.fillText('КОРПОРАТИВ', 3, 2);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 26; ctx.fillStyle = '#ffd319';
+    ctx.fillText('КОРПОРАТИВ', 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.font = `bold ${ts * 0.28}px "Courier New", monospace`; ctx.fillStyle = '#fff';
+    ctx.fillText(`ЭТАЖ ${this.levelNo}  •  ${this.players.length} ${this.players.length === 1 ? 'ИГРОК' : 'ИГРОКА'}  •  КОМНАТА ${this.code}`, 0, ts * 0.55);
+    ctx.restore();
+
+    // карточки игроков вылетают по очереди
+    const n = this.players.length;
+    const cw = Math.min(220, (W - 80) / 3), chh = cw * 1.35;
+    const gap = 26;
+    const x0 = W / 2 - (n * cw + (n - 1) * gap) / 2;
+    this.players.slice().sort((a, b) => a.slot - b.slot).forEach((p, i) => {
+      const start = 0.7 + i * 0.45;
+      const k = Utils.clamp((t - start) / 0.45, 0, 1);
+      if (k <= 0) return;
+      if (!p._introSfx) { p._introSfx = true; AudioSys.play('char_select'); }
+      const e = 1 - Math.pow(1 - k, 3);
+      const x = x0 + i * (cw + gap);
+      const y = H * 0.26 + (1 - e) * H * 0.7;
+      ctx.save();
+      ctx.globalAlpha = e;
+      ctx.translate(x + cw / 2, y + chh / 2);
+      ctx.rotate((1 - e) * (i % 2 ? 0.3 : -0.3));
+      ctx.translate(-cw / 2, -chh / 2);
+      M.panel(ctx, 0, 0, cw, chh, SLOT_COLORS[p.slot % 3], 0.9);
+      const img = this.game.images[p.char];
+      const is = cw - 24;
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, 12, 12, is, is);
+      ctx.strokeStyle = SLOT_COLORS[p.slot % 3]; ctx.lineWidth = 2; ctx.strokeRect(11, 11, is + 2, is + 2);
+      // скан-полоса по портрету
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(12, 12 + ((t * 120 + i * 40) % is), is, 5);
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${Math.min(22, cw / 9)}px "Courier New", monospace`;
+      ctx.shadowColor = SLOT_COLORS[p.slot % 3]; ctx.shadowBlur = 12; ctx.fillStyle = SLOT_COLORS[p.slot % 3];
+      ctx.fillText(p.name, cw / 2, is + 40, cw - 16);
+      ctx.shadowBlur = 0;
+      ctx.font = `bold ${Math.min(14, cw / 14)}px "Courier New", monospace`; ctx.fillStyle = '#fff';
+      ctx.fillText(CHAR_NAMES[p.char] || '', cw / 2, is + 60);
+      ctx.restore();
+    });
+
+    // финальная надпись
+    if (t > 3.2) {
+      const k = Utils.clamp((t - 3.2) / 0.3, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = k;
+      ctx.translate(W / 2, H - 50);
+      ctx.scale(1 + (1 - k) * 1.5, 1 + (1 - k) * 1.5);
+      ctx.font = `bold ${Math.min(44, W * 0.06)}px "Courier New", monospace`; ctx.textAlign = 'center';
+      ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 24; ctx.fillStyle = '#ffffff';
+      ctx.fillText('ВПЕРЁД!', 0, 0);
+      ctx.restore();
+    }
+  }
+}

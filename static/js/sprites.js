@@ -229,6 +229,13 @@ const Sprites = (() => {
       for (const py of [-9.5, 9.5]) { R(ctx, -3, py - 1.6, 6, 3.2, '#050407'); R(ctx, -2.6, py - 1.2, 5.2, 2.4, '#4a4030'); }
       R(ctx, 2.8, -2.6, 2.6, 5.2, '#1a1e18');
       R(ctx, -4, -0.4, 8, 0.8, '#1a1e18');
+    } else if (c === 'apron') {
+      R(ctx, -4.6, -6, 9.2, 12, '#050407');
+      R(ctx, -4, -5.4, 8, 10.8, '#d8d2c4');
+      ctx.globalAlpha = 0.85;
+      for (const [px, py, r] of [[-1, -2, 1.8], [2, 2.5, 1.4], [-2.4, 3, 1.1], [1.5, -3.6, 0.9]]) circ(ctx, px, py, r, '#8a0010');
+      ctx.globalAlpha = 1;
+      line(ctx, -4, -6, 3, -9, 0.8, '#3a3a3a'); line(ctx, -4, 6, 3, 9, 0.8, '#3a3a3a');
     } else if (c === 'camo') {
       const cm = L.camo;
       for (let i = 0; i < 9; i++) ell(ctx, -4 + (i * 37 % 9), -8 + (i * 53 % 16), 2.2, 1.4, i, cm[i % cm.length]);
@@ -371,11 +378,35 @@ const Sprites = (() => {
     },
   };
 
+  // Оружие боссов
+  WEAPON_ART.cleaver = function (ctx) {
+    part(ctx, -5, -1.4, 7, 2.8, '#2a1a10');
+    R(ctx, -4.4, -1.4, 6, 0.8, '#4a3020');
+    ctx.fillStyle = '#050407';
+    ctx.beginPath(); ctx.moveTo(2, -2); ctx.lineTo(20, -3); ctx.lineTo(21, 9); ctx.lineTo(2, 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#c8ccd4';
+    ctx.beginPath(); ctx.moveTo(2.6, -1.4); ctx.lineTo(19.4, -2.3); ctx.lineTo(20.2, 8.2); ctx.lineTo(2.6, 6.4); ctx.closePath(); ctx.fill();
+    R(ctx, 3, 5, 17, 1, '#ffffff');
+    circ(ctx, 6, 0.8, 1.2, '#050407');
+    ctx.globalAlpha = 0.7; R(ctx, 10, 2, 5, 3, '#8a0010'); R(ctx, 15, 5, 3, 2, '#8a0010'); ctx.globalAlpha = 1;
+  };
+  WEAPON_ART.minigun = function (ctx) {
+    part(ctx, -6, -4, 12, 8, '#2a2a30');
+    R(ctx, -5.4, -4, 11, 1.4, '#4a4a54');
+    part(ctx, -3, 4, 6, 4, '#3a3020');                     // короб с лентой
+    for (let i = 0; i < 4; i++) R(ctx, -2.4 + i * 1.4, 7, 0.8, 3, '#d0a040');
+    for (const y of [-2.6, -0.9, 0.9, 2.6]) part(ctx, 6, y - 0.5, 26, 1, '#1a1a1e');
+    part(ctx, 6, -3.6, 2, 7.2, '#3a3a42');
+    part(ctx, 20, -3.6, 2, 7.2, '#3a3a42');
+    part(ctx, 31, -3.4, 2.4, 6.8, '#0e0e10');
+  };
+
   const WEAPON_META = {
     glock: { kind: 'pistol', muzzle: 12 }, uzi: { kind: 'smg', muzzle: 17 }, m4: { kind: 'rifle', muzzle: 28 },
     ak47: { kind: 'rifle', muzzle: 26 }, shotgun: { kind: 'rifle', muzzle: 30 }, sniper: { kind: 'rifle', muzzle: 36 },
     bat: { kind: 'melee', reach: 24, trail: '255,200,140' }, pipe: { kind: 'melee', reach: 22, trail: '200,210,230' },
     knife: { kind: 'melee', reach: 13, trail: '255,255,255' }, sword: { kind: 'melee', reach: 30, trail: '170,230,255' },
+    cleaver: { kind: 'melee', reach: 22, trail: '255,80,80' }, minigun: { kind: 'rifle', muzzle: 34 },
   };
 
   function drawWeapon(ctx, id) {

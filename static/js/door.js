@@ -12,14 +12,15 @@ class Door {
     this.horizontal = horizontal;
 
     this.thick = 7;
-    this.len = TILE * lenTiles - 5;
+    // Петля утоплена в косяк: открытая створка прижимается к стене и не сужает проход
+    this.len = TILE * lenTiles;
     if (horizontal) {
-      this.hx = hingeAtStart ? x + 2 : x + this.w - 2;
+      this.hx = hingeAtStart ? x - 2 : x + this.w + 2;
       this.hy = y + TILE / 2;
       this.base = hingeAtStart ? 0 : Math.PI;
     } else {
       this.hx = x + TILE / 2;
-      this.hy = hingeAtStart ? y + 2 : y + this.h - 2;
+      this.hy = hingeAtStart ? y - 2 : y + this.h + 2;
       this.base = hingeAtStart ? Math.PI / 2 : -Math.PI / 2;
     }
 

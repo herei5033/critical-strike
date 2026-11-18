@@ -76,6 +76,53 @@ class Enemy {
     this._lastY = y;
   }
 
+  // Анимация ходьбы, отдача, вспышки и частицы крови. Вызывается и у "реплик" врагов в корпоративе.
+  _animTick(dt) {
+    this.animT += dt;
+    const v = Math.hypot(this.x - this._px, this.y - this._py) / dt;
+    this._px = this.x; this._py = this.y;
+    const target = Utils.clamp(v / Math.max(60, this.speed), 0, 1);
+    this.moveAmt += (target - this.moveAmt) * Math.min(1, dt * 10);
+    this.walkPhase += dt * (this.type === 'hound' ? 16 : 12) * this.moveAmt;
+    this.recoil = Math.max(0, this.recoil - dt * 9);
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.swingTimer = Math.max(0, this.swingTimer - (this._replica ? dt : 0));
+    this.flashTimer = Math.max(0, this.flashTimer - (this._replica ? dt : 0));
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+  }
+
+  // Звук и вид оглушения (без игровой логики)
+  _stunFx() {
+    this.deathAngle = this.angle + Math.PI;
+    AudioSys.play('stun');
+    Effects.burst(this.cx(), this.cy(), '255,230,120', 10, 140);
+    Effects.ring(this.cx(), this.cy(), '255,230,120', 20);
+  }
+
+  // Звук, лужа крови и поза смерти (без выпадения предметов)
+  _deathFx() {
+    this.deathAngle = this.angle + Math.PI + Utils.rand(-0.5, 0.5);
+    AudioSys.play('enemy_death');
+    Effects.bloodSplat(this.cx(), this.cy(), this.angle + Math.PI, 26);
+    const cx = this.cx(), cy = this.cy();
+    const dir = this.angle + Math.PI;
+    this.bloodStains.push({ x: cx, y: cy, rx: Utils.rand(13, 18), ry: Utils.rand(9, 13), rot: dir, a: 0.9 });
+    for (let i = 0; i < 12; i++) {
+      const a = dir + Utils.rand(-0.8, 0.8);
+      const d = Utils.rand(8, 34);
+      const r = Utils.rand(1.5, 5) * (1 - d / 50);
+      this.bloodStains.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, rx: r * Utils.rand(1.2, 2.4), ry: r, rot: a, a: Utils.rand(0.6, 0.95) });
+    }
+  }
+
   bodyColor() {
     if (this.type === 'tank') return '#4a4a4a';
     if (this.type === 'hound') return '#8a4a2a';
@@ -98,10 +145,7 @@ class Enemy {
     this.stunTimer = 3.0;
     this.state = 'idle';
     this.chargeTimer = 0;
-    this.deathAngle = this.angle + Math.PI;
-    AudioSys.play('stun');
-    Effects.burst(this.cx(), this.cy(), '255,230,120', 10, 140);
-    Effects.ring(this.cx(), this.cy(), '255,230,120', 20);
+    this._stunFx();
 
     if (this.weapon) {
       // Оружие выпадает на пол (создаётся пикап в update, где доступен массив pickups)
@@ -190,9 +234,33 @@ class Enemy {
     return false;
   }
 
+  // Идём к цели по найденному пути в обход мебели; путь пересчитывается раз в ~0.4 с
+  _followPath(tx, ty, speed, dt, level) {
+    this._pathT = (this._pathT || 0) - dt;
+    const moved = this._pathGoal ? Math.hypot(tx - this._pathGoal.x, ty - this._pathGoal.y) : Infinity;
+    if (!this._path || this._pathT <= 0 || moved > 48) {
+      this._path = level.findPath ? level.findPath(this.cx(), this.cy(), tx, ty) : null;
+      this._pathGoal = { x: tx, y: ty };
+      this._pathT = 0.4 + Math.random() * 0.2;
+    }
+    const path = this._path;
+    if (!path || !path.length) return this._moveToward(tx, ty, speed, dt, level);
+    while (path.length > 1 && Utils.dist(this.cx(), this.cy(), path[0].x, path[0].y) < 8) path.shift();
+    const wp = path[0];
+    if (path.length === 1 && Utils.dist(this.cx(), this.cy(), wp.x, wp.y) < 8) return this._moveToward(tx, ty, speed, dt, level);
+    // Путь состоит из прямых отрезков по центрам клеток: сначала встаём на ось отрезка,
+    // потом идём вдоль него — так крупные враги не цепляются за углы проёмов
+    const dx = wp.x - this.cx(), dy = wp.y - this.cy();
+    let gx = wp.x, gy = wp.y;
+    if (Math.abs(dx) >= Math.abs(dy)) { if (Math.abs(dy) > 2) gx = this.cx(); }
+    else if (Math.abs(dx) > 2) gy = this.cy();
+    return this._moveToward(gx, gy, speed, dt, level);
+  }
+
   _checkStuck(dt, level) {
+    // Сравниваем скорость, а не сдвиг за кадр — иначе на мониторах 144+ Гц медленные враги "застревают"
     const moved = Math.hypot(this.x - this._lastX, this.y - this._lastY);
-    if (moved < 0.5) this._stuckTimer += dt;
+    if (moved / Math.max(dt, 0.001) < 12) this._stuckTimer += dt;
     else this._stuckTimer = 0;
     this._lastX = this.x;
     this._lastY = this.y;
@@ -206,28 +274,7 @@ class Enemy {
 
   update(dt, level, player, bullets, enemies, pickups) {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
-    this.animT += dt;
-    {
-      const v = Math.hypot(this.x - this._px, this.y - this._py) / dt;
-      this._px = this.x; this._py = this.y;
-      const target = Utils.clamp(v / Math.max(60, this.speed), 0, 1);
-      this.moveAmt += (target - this.moveAmt) * Math.min(1, dt * 10);
-      this.walkPhase += dt * (this.type === 'hound' ? 16 : 12) * this.moveAmt;
-      this.recoil = Math.max(0, this.recoil - dt * 9);
-      this.hitFlash = Math.max(0, this.hitFlash - dt);
-    }
-
-    // Частицы крови живут и у мёртвых врагов
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vx *= 0.95;
-      p.vy *= 0.95;
-      p.life -= dt;
-      if (p.life <= 0) this.particles.splice(i, 1);
-    }
-
+    this._animTick(dt);
     if (this.dead) return;
 
     // Выпавшее при оглушении оружие превращаем в пикап на полу
@@ -272,6 +319,8 @@ class Enemy {
           this.chargeTimer = 0;
         } else if (this.chargeTimer > 1.5) {
           AudioSys.play('sniper_shot');
+          this._shots = (this._shots || 0) + 1;
+          this.flashTimer = 0.08;
           this.attackTimer = 2.0;
           this.chargeTimer = 0;
 
@@ -391,40 +440,11 @@ class Enemy {
         return;
       }
 
-      const targetRoom = level.getRoomAt(this.noiseTarget.x, this.noiseTarget.y);
-      const myRoom = level.getRoomAt(this.cx(), this.cy());
-
-      if (targetRoom && myRoom && targetRoom !== myRoom) {
-        const path = level._findRoomPath(myRoom, targetRoom);
-        if (path && path.length > 1) {
-          const nextRoom = path[1];
-          const door = level._doorBetween(myRoom, nextRoom);
-          if (door) {
-            const dx = door.x + door.w / 2;
-            const dy = door.y + door.h / 2;
-            const d = Utils.dist(this.cx(), this.cy(), dx, dy);
-            if (d >= 20) {
-              const ok = this._moveToward(dx, dy, this.speed * 0.9, dt, level);
-              if (!ok && this._checkStuck(dt, level)) this._backToIdle();
-            } else {
-              // Дошли до двери — шагаем в следующую комнату
-              const nr = nextRoom;
-              this._moveToward((nr.cx + 0.5) * TILE, (nr.cy + 0.5) * TILE, this.speed * 0.9, dt, level);
-            }
-          } else {
-            this._backToIdle();
-          }
-        } else {
-          this._backToIdle();
-        }
-        return;
-      }
-
       const d = Utils.dist(this.cx(), this.cy(), this.noiseTarget.x, this.noiseTarget.y);
-      if (d < 16) {
+      if (d < 20) {
         this._backToIdle();
       } else {
-        const ok = this._moveToward(this.noiseTarget.x, this.noiseTarget.y, this.speed * 0.9, dt, level);
+        const ok = this._followPath(this.noiseTarget.x, this.noiseTarget.y, this.speed * 0.9, dt, level);
         if (!ok && this._checkStuck(dt, level)) this._backToIdle();
       }
     } else if (this.state === 'chase') {
@@ -438,7 +458,9 @@ class Enemy {
       } else if (!isRanged && dist < 60) {
         this.state = 'attack';
       } else {
-        const ok = this._moveToward(pcx, pcy, this.speed, dt, level);
+        const ok = level.lineOfSight(this.cx(), this.cy(), pcx, pcy)
+          ? this._moveToward(pcx, pcy, this.speed, dt, level)
+          : this._followPath(pcx, pcy, this.speed, dt, level);
         if (!ok && this._checkStuck(dt, level)) {
           this.state = 'investigate';
           this.noiseTarget = { x: player.x, y: player.y };
@@ -473,6 +495,7 @@ class Enemy {
             this.weapon.ammo--;
             this.flashTimer = 0.06;
             this.recoil = 1;
+            this._shots = (this._shots || 0) + 1;
             AudioSys.play(this.weapon.sound);
             level.addNoise(this.x, this.y, 400);
             Effects.casing(this.cx() + Math.cos(this.angle) * 8, this.cy() + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
@@ -510,19 +533,7 @@ class Enemy {
     if (this.dead) return;
     this.dead = true;
     this.stunned = false;
-    this.deathAngle = this.angle + Math.PI + Utils.rand(-0.5, 0.5);
-    AudioSys.play('enemy_death');
-    Effects.bloodSplat(this.cx(), this.cy(), this.angle + Math.PI, 26);
-    // Лужа крови + брызги, вытянутые по направлению удара
-    const cx = this.cx(), cy = this.cy();
-    const dir = this.angle + Math.PI;
-    this.bloodStains.push({ x: cx, y: cy, rx: Utils.rand(13, 18), ry: Utils.rand(9, 13), rot: dir, a: 0.9 });
-    for (let i = 0; i < 12; i++) {
-      const a = dir + Utils.rand(-0.8, 0.8);
-      const d = Utils.rand(8, 34);
-      const r = Utils.rand(1.5, 5) * (1 - d / 50);
-      this.bloodStains.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, rx: r * Utils.rand(1.2, 2.4), ry: r, rot: a, a: Utils.rand(0.6, 0.95) });
-    }
+    this._deathFx();
     if (Array.isArray(pickups)) {
       const drop = this.weapon || this._droppedWeapon;
       if (drop) {

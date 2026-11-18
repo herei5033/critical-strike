@@ -768,6 +768,53 @@ class Level {
     return null;
   }
 
+  // Кратчайший путь по клеткам пола в обход мебели и стен (BFS). Возвращает точки-повороты.
+  findPath(x0, y0, x1, y1) {
+    const C = this.cols, R = this.rows;
+    const walk = (x, y) => x >= 0 && y >= 0 && x < C && y < R && this.grid[y][x] === T_FLOOR;
+    const sx = Math.floor(x0 / TILE), sy = Math.floor(y0 / TILE);
+    let tx = Math.floor(x1 / TILE), ty = Math.floor(y1 / TILE);
+    if (!walk(tx, ty)) {
+      let found = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+        if (walk(tx + dx, ty + dy)) { tx += dx; ty += dy; found = true; break; }
+      }
+      if (!found) return null;
+    }
+    const start = sy * C + sx, goal = ty * C + tx;
+    if (start === goal) return [{ x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE }];
+    const prev = new Int32Array(C * R).fill(-1);
+    prev[start] = start;
+    const queue = [start];
+    let head = 0, ok = false;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      if (cur === goal) { ok = true; break; }
+      const cx = cur % C, cy = (cur / C) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!walk(nx, ny)) continue;
+        const ni = ny * C + nx;
+        if (prev[ni] !== -1) continue;
+        prev[ni] = cur;
+        queue.push(ni);
+      }
+    }
+    if (!ok) return null;
+    const cells = [];
+    for (let c = goal; c !== start; c = prev[c]) cells.push(c);
+    cells.reverse();
+    // оставляем только точки поворота
+    const pts = [];
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      const nxt = cells[i + 1], prv = i > 0 ? cells[i - 1] : start;
+      if (nxt !== undefined && (nxt - c) === (c - prv)) continue;
+      pts.push({ x: (c % C + 0.5) * TILE, y: (((c / C) | 0) + 0.5) * TILE });
+    }
+    return pts;
+  }
+
   getRoomAt(x, y) {
     const id = this._rg(Math.floor(x / TILE), Math.floor(y / TILE));
     return id >= 0 ? this.rooms[id] : null;
