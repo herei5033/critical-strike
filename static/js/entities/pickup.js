@@ -27,7 +27,8 @@ class Pickup {
     AudioSys.play('throw');
   }
 
-  update(dt, level, enemies) {
+  // pickups — массив пикапов (нужен, чтобы убитый врагом дропал оружие/аптечку в правильный массив)
+  update(dt, level, enemies, pickups) {
     if (!isFinite(dt) || dt <= 0) return;
     if (this.pickedUp) return;
     if (this.groundTimer > 0) this.groundTimer -= dt;
@@ -52,15 +53,15 @@ class Pickup {
         const ex = e.x + e.w / 2;
         const ey = e.y + e.h / 2;
         if (Utils.dist(nextX, nextY, ex, ey) < 22) {
-          // Если это милишное оружие — убиваем, иначе оглушаем
           if (this.weapon && this.weapon.type === 'melee') {
-            e.die(enemies);
-            // Кровь от швыряния
+            // Брошенное холодное оружие убивает (танк теряет 1 HP)
+            e.takeDamage(1, pickups);
             if (e.particles) e.particles.push(...Utils.spawnBloodParticles(ex, ey, 20));
           } else {
             e.stun();
           }
           this.thrown = false;
+          this.vx = 0; this.vy = 0;
           this.x = ex + Utils.rand(-10, 10);
           this.y = ey + Utils.rand(-10, 10);
           this.groundTimer = 0.2;

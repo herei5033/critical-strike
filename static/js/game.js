@@ -7,7 +7,7 @@ class Game {
     this.state = 'loading';
     this.menu = new Menu(this);
     this.zoom = 1.15;
-    
+
     this.assetsToLoad = 0;
     this.assetsLoaded = 0;
     this.isReady = false;
@@ -19,7 +19,7 @@ class Game {
     this.pickups = [];
     this.cam = null;
     this.restartTimer = 0;
-    
+
     this.selectedChar = 0;
     this.charSelectAnim = 0;
 
@@ -27,10 +27,10 @@ class Game {
     this.score = 0;
     this.kills = 0;
     this.totalEnemies = 0;
-    
+
     this.playerName = "";
     this.nameSubmitted = false;
-    
+
     // Спецэффекты
     this.lightFlicker = 0;
     this.chromaticOffset = 0;
@@ -53,7 +53,7 @@ class Game {
     }
 
     this.images = { dani: new Image(), gal: new Image(), daur: new Image() };
-    
+
     this._loadAssets();
   }
 
@@ -63,13 +63,13 @@ class Game {
       new Promise(res => { this.images.gal.onload = res; this.images.gal.onerror = res; }),
       new Promise(res => { this.images.daur.onload = res; this.images.daur.onerror = res; })
     ];
-    
+
     this.images.dani.src = '/static/img/dani.png';
     this.images.gal.src = '/static/img/gal.png';
     this.images.daur.src = '/static/img/daur.png';
 
     this.assetsToLoad = imagePromises.length + 1;
-    
+
     for (let p of imagePromises) {
       await p;
       this.assetsLoaded++;
@@ -89,11 +89,11 @@ class Game {
     this.kills = 0;
     this.playerName = "";
     this.nameSubmitted = false;
-    
+
     AudioSys.stopMusic();
     AudioSys.playMusic('/static/audio/game_music.mp3');
     AudioSys.play('game_start');
-    
+
     this.startLevel();
   }
 
@@ -110,11 +110,13 @@ class Game {
         rooms: [{ cx: 5, cy: 5 }], spawnPoints: [], doors: [], decor: [],
         noiseEvents: [],
         collides: () => false, isWallAt: () => false,
+        bulletHitsWall: () => false,
         lineOfSight: () => true,
         spawnPoint: () => ({ x: 160, y: 160 }),
         addNoise: () => {},
         update: () => {}, draw: () => {}, drawFog: () => {},
         getRoomAt: () => null, _findRoomPath: () => null, _doorBetween: () => null,
+        _getGrid: () => 0,
       };
     }
 
@@ -153,7 +155,7 @@ class Game {
     this.totalEnemies = this.enemies.length;
     this.bullets = [];
     this.pickups = [];
-    
+
     this.kills = 0;
 
     const weaponPool = ['m4', 'ak47', 'uzi', 'bat', 'pipe', 'knife', 'sword'];
@@ -189,7 +191,7 @@ class Game {
     this.bullets = [];
     this.pickups = [];
     this.cam = null;
-    
+
     AudioSys.stopMusic();
     AudioSys.playMusic('/static/audio/menu_music.mp3');
   }
@@ -221,18 +223,18 @@ class Game {
 
     if (this.state === 'charSelect') {
       this.charSelectAnim += dt * 10;
-      
+
       const oldChar = this.selectedChar;
       if (Input.wasPressed('MobileUp') || Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA')) this.selectedChar = (this.selectedChar + 2) % 3;
       if (Input.wasPressed('MobileDown') || Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD')) this.selectedChar = (this.selectedChar + 1) % 3;
-      
+
       if (this.selectedChar !== oldChar) {
         AudioSys.play('char_select');
       }
 
       if (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space')) this.startRun();
       if (Input.wasPressed('Escape')) this.toMenu();
-      
+
       if (Input.consumeClick()) {
         const mx = Input.mouse.x;
         const my = Input.mouse.y;
@@ -256,7 +258,7 @@ class Game {
     }
 
     if (this.state === 'playing' || this.state === 'dead' || this.state === 'levelClear') {
-      if (Input.wasPressed('Escape') && this.state !== 'levelClear' && !this.nameSubmitted) { this.toMenu(); return; }
+      if (Input.wasPressed('Escape') && this.state !== 'levelClear' && !(this.state === 'dead' && !this.nameSubmitted)) { this.toMenu(); return; }
     }
 
     if (this.state === 'menu') { this.menu.update(dt); return; }
@@ -272,6 +274,10 @@ class Game {
     }
 
     if (this.state === 'dead') {
+      // Кровь/частицы и тряска продолжают затухать после смерти
+      this.player.updateParticles(dt);
+      this.shake = Math.max(0, this.shake - dt * 2);
+
       if (!this.nameSubmitted) {
         if (!Input.touch.moveActive) {
           if (Input.wasPressed('Enter')) {
@@ -281,6 +287,7 @@ class Game {
             }
           } else {
             for (let key in Input._pressedThisFrame) {
+              if (!Input._pressedThisFrame[key]) continue;
               if (key.startsWith('Key') && key.length === 4) {
                 this.playerName += key[3];
                 if (this.playerName.length > 12) this.playerName = this.playerName.slice(0, 12);
@@ -302,13 +309,13 @@ class Game {
       } else {
         if (Input.wasPressed('KeyR') || Input.wasPressed('Enter') || Input.wasPressed('Space')) this.startRun();
         if (Input.wasPressed('Escape')) this.toMenu();
-        
+
         if (Input.consumeClick()) {
           const mx = Input.mouse.x;
           const my = Input.mouse.y;
           const w = this.W;
           const h = this.H;
-          
+
           if (mx > w/2 - 120 && mx < w/2 + 120 && my > h/2 + 60 && my < h/2 + 110) {
             this.startRun();
           }
@@ -322,26 +329,37 @@ class Game {
 
     if (this.state === 'playing') {
       if (!this.player.dead) {
-        try { this.player.update(dt, this.level, this.cam, this.bullets, this.enemies); } catch (e) {}
+        try {
+          this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
+        } catch (e) { console.error('PLAYER UPDATE ERROR:', e); }
         if (this.player._thrownPickup) { this.pickups.push(this.player._thrownPickup); this.player._thrownPickup = null; }
       }
+      this.player.updateParticles(dt);
 
-      try { this.level.update(dt, this.enemies); } catch (e) {}
+      try { this.level.update(dt, this.enemies); } catch (e) { console.error('LEVEL UPDATE ERROR:', e); }
 
-      for (const e of this.enemies) { try { e.update(dt, this.level, this.player, this.bullets, this.enemies, this.pickups); } catch (err) {} }
+      for (const e of this.enemies) {
+        try { e.update(dt, this.level, this.player, this.bullets, this.enemies, this.pickups); }
+        catch (err) { console.error('ENEMY UPDATE ERROR:', err); }
+      }
 
+      const pcx = this.player.x + this.player.w / 2;
+      const pcy = this.player.y + this.player.h / 2;
       for (const b of this.bullets) {
-        try { b.update(dt, this.level); } catch (err) {}
+        try { b.update(dt, this.level); } catch (err) { console.error('BULLET UPDATE ERROR:', err); }
         if (!b.dead && !b.isPlayer && !this.player.dead) {
-          if (Utils.dist(b.x, b.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2) < 12) {
+          // Проверка по отрезку, чтобы быстрые пули не пролетали сквозь игрока
+          if (Utils.segDist(b.px, b.py, b.x, b.y, pcx, pcy) < 12) {
             this.player.takeDamage(1); b.dead = true; this.shake = Math.max(this.shake, 0.6);
             this.chromaticOffset = 10;
           }
         }
       }
 
-      for (const p of this.pickups) {
-        try { p.update(dt, this.level, this.enemies); } catch (err) {}
+      // pickups может пополняться во время обхода (дроп из убитых врагов) — идём по индексу
+      for (let i = 0; i < this.pickups.length; i++) {
+        const p = this.pickups[i];
+        try { p.update(dt, this.level, this.enemies, this.pickups); } catch (err) { console.error('PICKUP UPDATE ERROR:', err); }
         if (p.pickedUp || p.thrown || p.groundTimer > 0) continue;
         const dist = Utils.dist(p.x, p.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2);
         if (dist < 24 && !this.player.dead) {
@@ -351,7 +369,7 @@ class Game {
               p.pickedUp = true;
               AudioSys.play('pickup_health');
             }
-          } else if (!this.player.weapon) {
+          } else if (!this.player.weapon && p.weapon) {
             this.player.weapon = p.weapon;
             p.pickedUp = true;
             AudioSys.play('pickup_weapon');
@@ -375,7 +393,7 @@ class Game {
           const lookDist = 150; // Насколько далеко заглядываем
           const lookX = this.player.x + Math.cos(this.player.angle) * lookDist;
           const lookY = this.player.y + Math.sin(this.player.angle) * lookDist;
-          
+
           this.cam.follow({x: lookX, y: lookY, w: 0, h: 0}, this.level, dt);
         } else {
           this.cam.follow(this.player, this.level, dt);
@@ -403,7 +421,7 @@ class Game {
     const hp = this.player ? this.player.hp : 0;
     const maxHp = this.player ? this.player.maxHp : 3;
     const scale = Math.min(1, this.W / 960);
-    
+
     for (let i = 0; i < maxHp; i++) {
       const x = 20 * scale + i * 34 * scale;
       const y = 58 * scale;
@@ -437,7 +455,7 @@ class Game {
       ctx.font = 'bold 30px "Courier New", monospace';
       ctx.textAlign = 'center';
       ctx.fillText('ЗАГРУЗКА...', this.W / 2, this.H / 2 - 20);
-      
+
       const barW = 300;
       const barH = 10;
       const progress = this.assetsToLoad > 0 ? this.assetsLoaded / this.assetsToLoad : 1;
@@ -482,7 +500,7 @@ class Game {
     this.cam.apply(b);
     b.translate(shX, shY);
     this.level.draw(b, this.cam, this.player);
-    
+
     const pcx = this.player.x + this.player.w / 2;
     const pcy = this.player.y + this.player.h / 2;
     const playerRoom = this.level.getRoomAt(pcx, pcy);
@@ -493,7 +511,7 @@ class Game {
         e.draw(b);
       }
     }
-    
+
     for (const p of this.pickups) p.draw(b);
     for (const bullet of this.bullets) bullet.draw(b);
     this.player.draw(b);
@@ -541,10 +559,10 @@ class Game {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.W, this.H);
 
-    const scale = Math.min(1, this.W / 960); 
+    const scale = Math.min(1, this.W / 960);
     const wname = this.player.weapon ? this.player.weapon.name : '— КУЛАКИ —';
     const ammoText = this.player.weapon && this.player.weapon.type === 'ranged' ? `   ${this.player.weapon.ammo} / ${this.player.weapon.maxAmmo}` : '';
-      
+
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(10 * scale, 10 * scale, 380 * scale, 30 * scale);
     ctx.fillStyle = P.accent;
@@ -559,7 +577,7 @@ class Game {
     ctx.textAlign = 'right';
     const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
     ctx.fillText(`УБИТО: ${this.kills} / ${this.totalEnemies}`, this.W - rightMargin, 30 * scale);
-    
+
     ctx.fillStyle = P.white;
     ctx.fillText(`ОЧКИ: ${this.score}`, this.W - rightMargin, 55 * scale);
 
@@ -582,7 +600,7 @@ class Game {
       ctx.font = `bold ${Math.min(48, this.W * 0.08)}px "Courier New", monospace`;
       ctx.textAlign = 'center';
       ctx.fillText('ВЫ ПОГИБЛИ', this.W / 2, this.H / 2 - 100);
-      
+
       ctx.fillStyle = P.yellow;
       ctx.font = `${Math.min(28, this.W * 0.05)}px "Courier New", monospace`;
       ctx.fillText(`ОЧКИ: ${this.score}`, this.W / 2, this.H / 2 - 50);
@@ -591,7 +609,7 @@ class Game {
         ctx.fillStyle = '#fff';
         ctx.font = `${Math.min(20, this.W * 0.035)}px "Courier New", monospace`;
         ctx.fillText('Введите имя и нажмите ENTER:', this.W / 2, this.H / 2 + 20);
-        
+
         ctx.font = `bold ${Math.min(32, this.W * 0.06)}px "Courier New", monospace`;
         ctx.fillStyle = P.accent;
         const nameStr = this.playerName + (Math.floor(performance.now() / 500) % 2 === 0 ? '_' : '');
@@ -600,7 +618,7 @@ class Game {
         ctx.fillStyle = '#fff';
         ctx.font = `${Math.min(24, this.W * 0.04)}px "Courier New", monospace`;
         ctx.fillText('Очки сохранены!', this.W / 2, this.H / 2 + 20);
-        
+
         ctx.fillStyle = P.yellow;
         ctx.fillRect(this.W/2 - 120, this.H/2 + 60, 240, 50);
         ctx.fillStyle = '#000';
@@ -649,7 +667,7 @@ class Game {
     for (let i = 0; i < 3; i++) {
       const x = startX + i * spacing;
       const isSel = i === this.selectedChar;
-      
+
       const bob = isSel ? Math.sin(this.charSelectAnim) * 10 : Math.sin(this.charSelectAnim + i) * 3;
       const y = baseY + bob;
 

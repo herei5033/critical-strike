@@ -1,6 +1,8 @@
 class Bullet {
   constructor(x, y, angle, speed, isPlayer, color) {
     this.x = x; this.y = y;
+    // Предыдущая позиция — для проверки попаданий по отрезку (Utils.segDist)
+    this.px = x; this.py = y;
     if (!isFinite(angle)) angle = 0;
     if (!isFinite(speed) || speed <= 0) speed = 600;
     this.vx = Math.cos(angle) * speed;
@@ -19,6 +21,7 @@ class Bullet {
     if (this.life <= 0) { this.dead = true; return; }
     if (!isFinite(this.vx) || !isFinite(this.vy)) { this.dead = true; return; }
 
+    this.px = this.x; this.py = this.y;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 

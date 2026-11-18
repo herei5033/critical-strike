@@ -4,13 +4,13 @@ class Enemy {
     this.y = y;
     this.w = 18; this.h = 18;
     this.type = type;
-    
+
     this.speed = 120;
     this.maxHp = 1;
     this.hp = 1;
-    
+
     const pool = ['m4','ak47','glock','uzi','bat','pipe','knife','sword'];
-    
+
     if (type === 'tank') {
       this.speed = 70;
       this.maxHp = 3;
@@ -38,13 +38,15 @@ class Enemy {
     this.dead = false;
     this.stunned = false;
     this.stunTimer = 0;
-    
+
     this.attackTimer = 0;
     this.alertTimer = 0;
     this.swingTimer = 0;
     this.flashTimer = 0;
     this.bloodStains = [];
+    this.particles = [];
     this.deathAngle = 0;
+    this._droppedWeapon = null;
 
     this.behavior = behavior || 'static';
     this.waypoints = waypoints || [];
@@ -84,10 +86,12 @@ class Enemy {
     this.stunned = true;
     this.stunTimer = 3.0;
     this.state = 'idle';
+    this.chargeTimer = 0;
     this.deathAngle = this.angle + Math.PI / 2;
     AudioSys.play('stun');
-    
+
     if (this.weapon) {
+      // Оружие выпадает на пол (создаётся пикап в update, где доступен массив pickups)
       this._droppedWeapon = this.weapon;
       this.weapon = null;
     }
@@ -122,7 +126,7 @@ class Enemy {
   takeDamage(amount, pickups) {
     if (this.dead) return;
     this.hp -= amount;
-    
+
     if (this.type === 'tank' && this.hp > 0) {
       AudioSys.play('tank_hit');
       this.flashTimer = 0.1;
@@ -189,9 +193,48 @@ class Enemy {
     return this._stuckTimer > 1.5;
   }
 
+  _backToIdle() {
+    this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
+    this.noiseTarget = null;
+  }
+
   update(dt, level, player, bullets, enemies, pickups) {
-    if (this.dead) return;
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
+
+    // Частицы крови живут и у мёртвых врагов
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+
+    if (this.dead) return;
+
+    // Выпавшее при оглушении оружие превращаем в пикап на полу
+    if (this._droppedWeapon) {
+      const dp = new Pickup(this.cx() + Utils.rand(-8, 8), this.cy() + Utils.rand(-8, 8), this._droppedWeapon);
+      dp.groundTimer = 0.3;
+      pickups.push(dp);
+      this._droppedWeapon = null;
+    }
+
+    // Попадания пуль игрока (по отрезку пути пули — не пролетают сквозь врага).
+    // Работает и для оглушённых: их можно добить выстрелом.
+    for (const b of bullets) {
+      if (b.dead || !b.isPlayer) continue;
+      if (Utils.segDist(b.px, b.py, b.x, b.y, this.cx(), this.cy()) < 12) {
+        b.dead = true;
+        this.takeDamage(1, pickups);
+        if (this.dead) {
+          this.particles.push(...Utils.spawnBloodParticles(this.cx(), this.cy(), 12, Math.atan2(b.vy, b.vx)));
+          return;
+        }
+      }
+    }
 
     if (this.stunned) {
       this.stunTimer -= dt;
@@ -199,20 +242,15 @@ class Enemy {
       return;
     }
 
-    for (const b of bullets) {
-      if (b.dead) continue;
-      if (b.isPlayer && Utils.dist(this.cx(), this.cy(), b.x, b.y) < 12) {
-        this.takeDamage(1, pickups);
-        b.dead = true;
-        if (this.dead) return;
-      }
-    }
+    const pcx = player.x + player.w / 2;
+    const pcy = player.y + player.h / 2;
 
     if (this.type === 'sniper') {
       if (this.state === 'attack') {
         this.chargeTimer += dt;
-        this.laserAngle = Math.atan2(player.y - this.cy(), player.x - this.cx());
-        
+        this.laserAngle = Math.atan2(pcy - this.cy(), pcx - this.cx());
+        this.angle = this.laserAngle;
+
         if (!this.canSeePlayer(player, level)) {
           this.state = 'chase';
           this.chargeTimer = 0;
@@ -220,16 +258,16 @@ class Enemy {
           AudioSys.play('sniper_shot');
           this.attackTimer = 2.0;
           this.chargeTimer = 0;
-          
-          const dx = player.x + player.w/2 - this.cx();
-          const dy = player.y + player.h/2 - this.cy();
+
+          const dx = pcx - this.cx();
+          const dy = pcy - this.cy();
           const dist = Math.hypot(dx, dy);
           const steps = Math.ceil(dist / 8);
           for (let i = 1; i < steps; i++) {
             const t = i / steps;
             const px = this.cx() + dx * t;
             const py = this.cy() + dy * t;
-            if (Utils.dist(px, py, player.x + player.w/2, player.y + player.h/2) < 12) {
+            if (Utils.dist(px, py, pcx, pcy) < 12) {
               player.takeDamage(2);
               break;
             }
@@ -251,16 +289,16 @@ class Enemy {
       let nearest = null;
       let minDist = 400;
       for (const p of pickups) {
-        if (p.pickedUp || p.isHealth) continue;
+        if (p.pickedUp || p.isHealth || p.thrown || !p.weapon) continue;
         const d = Utils.dist(this.cx(), this.cy(), p.x, p.y);
         if (d < minDist) {
           minDist = d;
           nearest = p;
         }
       }
-      
+
       if (nearest) {
-        const ok = this._moveToward(nearest.x, nearest.y, this.speed, dt, level);
+        this._moveToward(nearest.x, nearest.y, this.speed, dt, level);
         if (Utils.dist(this.cx(), this.cy(), nearest.x, nearest.y) < 18) {
           this.weapon = nearest.weapon;
           nearest.pickedUp = true;
@@ -333,8 +371,7 @@ class Enemy {
     } else if (this.state === 'investigate') {
       this.investigateTimer -= dt;
       if (this.investigateTimer <= 0 || !this.noiseTarget) {
-        this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-        this.noiseTarget = null;
+        this._backToIdle();
         return;
       }
 
@@ -352,52 +389,40 @@ class Enemy {
             const d = Utils.dist(this.cx(), this.cy(), dx, dy);
             if (d >= 20) {
               const ok = this._moveToward(dx, dy, this.speed * 0.9, dt, level);
-              if (!ok && this._checkStuck(dt, level)) {
-                this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-                this.noiseTarget = null;
-              }
+              if (!ok && this._checkStuck(dt, level)) this._backToIdle();
+            } else {
+              // Дошли до двери — шагаем в следующую комнату
+              const nr = nextRoom;
+              this._moveToward((nr.cx + 0.5) * TILE, (nr.cy + 0.5) * TILE, this.speed * 0.9, dt, level);
             }
           } else {
-            this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-            this.noiseTarget = null;
+            this._backToIdle();
           }
         } else {
-          this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-          this.noiseTarget = null;
+          this._backToIdle();
         }
         return;
       }
 
       const d = Utils.dist(this.cx(), this.cy(), this.noiseTarget.x, this.noiseTarget.y);
       if (d < 16) {
-        this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-        this.noiseTarget = null;
+        this._backToIdle();
       } else {
         const ok = this._moveToward(this.noiseTarget.x, this.noiseTarget.y, this.speed * 0.9, dt, level);
-        if (!ok && this._checkStuck(dt, level)) {
-          this.state = this.behavior === 'patrol' ? 'patrol' : 'idle';
-          this.noiseTarget = null;
-        }
+        if (!ok && this._checkStuck(dt, level)) this._backToIdle();
       }
     } else if (this.state === 'chase') {
       const dist = this.distToPlayer(player);
       const isRanged = this.weapon.type === 'ranged';
 
-      this.angle = Math.atan2(
-        player.y + player.h/2 - this.cy(),
-        player.x + player.w/2 - this.cx()
-      );
+      this.angle = Math.atan2(pcy - this.cy(), pcx - this.cx());
 
       if (isRanged && dist < this.fovRange * 0.8 && this.canSeePlayer(player, level)) {
         this.state = 'attack';
       } else if (!isRanged && dist < 60) {
         this.state = 'attack';
       } else {
-        const ok = this._moveToward(
-          player.x + player.w/2,
-          player.y + player.h/2,
-          this.speed, dt, level
-        );
+        const ok = this._moveToward(pcx, pcy, this.speed, dt, level);
         if (!ok && this._checkStuck(dt, level)) {
           this.state = 'investigate';
           this.noiseTarget = { x: player.x, y: player.y };
@@ -408,10 +433,7 @@ class Enemy {
       const isRanged = this.weapon.type === 'ranged';
       const dist = this.distToPlayer(player);
 
-      this.angle = Math.atan2(
-        player.y + player.h/2 - this.cy(),
-        player.x + player.w/2 - this.cx()
-      );
+      this.angle = Math.atan2(pcy - this.cy(), pcx - this.cx());
 
       if (isRanged) {
         if (dist > this.fovRange * 1.2 || !this.canSeePlayer(player, level)) {
@@ -424,11 +446,7 @@ class Enemy {
           return;
         }
         if (dist > (this.weapon.range || 50) - 4) {
-          this._moveToward(
-            player.x + player.w/2,
-            player.y + player.h/2,
-            this.speed, dt, level
-          );
+          this._moveToward(pcx, pcy, this.speed, dt, level);
         }
       }
 
@@ -440,18 +458,25 @@ class Enemy {
             this.flashTimer = 0.06;
             AudioSys.play(this.weapon.sound);
             level.addNoise(this.x, this.y, 400);
-            bullets.push(new Bullet(
-              this.cx() + Math.cos(this.angle) * 12,
-              this.cy() + Math.sin(this.angle) * 12,
-              this.angle, this.weapon.bulletSpeed, false, this.weapon.color
-            ));
+            const bx = this.cx() + Math.cos(this.angle) * 12;
+            const by = this.cy() + Math.sin(this.angle) * 12;
+            if (this.weapon.id === 'shotgun') {
+              // Дробовик у врага тоже стреляет веером
+              for (let i = 0; i < this.weapon.pellets; i++) {
+                const a = this.angle + Utils.rand(-this.weapon.spread, this.weapon.spread);
+                bullets.push(new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color));
+              }
+            } else {
+              bullets.push(new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, false, this.weapon.color));
+            }
           } else {
             this.weapon = null;
           }
         } else {
           this.swingTimer = 0.22;
           AudioSys.play(this.weapon.sound);
-          if (dist < (this.weapon.range || 50) + 10) {
+          // Удар не проходит сквозь стены
+          if (dist < (this.weapon.range || 50) + 10 && level.lineOfSight(this.cx(), this.cy(), pcx, pcy)) {
             player.takeDamage(1);
           }
         }
@@ -462,6 +487,7 @@ class Enemy {
   die(pickups) {
     if (this.dead) return;
     this.dead = true;
+    this.stunned = false;
     this.deathAngle = this.angle + Math.PI / 2;
     AudioSys.play('enemy_death');
     for (let i = 0; i < 8; i++) {
@@ -471,10 +497,13 @@ class Enemy {
         r: Utils.rand(3, 8)
       });
     }
-    if (pickups) {
-      if (this.weapon) {
-        pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), this.weapon));
+    if (Array.isArray(pickups)) {
+      const drop = this.weapon || this._droppedWeapon;
+      if (drop) {
+        pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), drop));
       }
+      this.weapon = null;
+      this._droppedWeapon = null;
       const healthChance = this.type === 'tank' ? 0.8 : 0.2;
       if (Math.random() < healthChance) {
         pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), null, true));
@@ -486,7 +515,15 @@ class Enemy {
     const cx = this.cx();
     const cy = this.cy();
 
-    if (this.type === 'sniper' && this.state === 'attack') {
+    // Брызги крови
+    for (const p of this.particles) {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    if (this.type === 'sniper' && this.state === 'attack' && !this.dead && !this.stunned) {
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
       ctx.lineWidth = 2;
       ctx.beginPath();

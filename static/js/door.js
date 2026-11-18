@@ -1,8 +1,11 @@
 class Door {
   constructor(x, y, horizontal, lenTiles = 1) {
     this.lenTiles = lenTiles;
-    this.w = TILE * lenTiles;
-    this.h = TILE * lenTiles;
+    // Дверь занимает ОДНУ клетку стены по толщине и lenTiles клеток по длине.
+    // Раньше h/w были TILE*lenTiles в обе стороны, из-за чего дверь и её хитбокс
+    // сдвигались на клетку в комнату, а граф комнат (_buildRoomGraph) не находил соседей.
+    this.w = horizontal ? TILE * lenTiles : TILE;
+    this.h = horizontal ? TILE : TILE * lenTiles;
     this.x = x; this.y = y;
     this.horizontal = horizontal;
     this.open = false;

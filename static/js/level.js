@@ -201,6 +201,7 @@ class Level {
     for (const r of this.rooms) this._roomGraph.set(r.id, []);
 
     for (const d of this.doors) {
+      // Центр двери лежит в клетке стены, на ±TILE от него — комнаты по обе стороны
       const dx = d.x + d.w / 2;
       const dy = d.y + d.h / 2;
 
@@ -277,7 +278,7 @@ class Level {
     for (let cy = y1; cy <= y2; cy++)
       for (let cx = x1; cx <= x2; cx++) {
         const t = this._getGrid(cx, cy);
-        if (t === 1 || t === 3) return true;
+        if (t === 1 || t === 3 || t === 4) return true;
       }
     for (const d of this.doors) {
       if (d.blocks(x, y, w, h)) return true;
@@ -289,7 +290,7 @@ class Level {
     const cx = Math.floor(px / TILE);
     const cy = Math.floor(py / TILE);
     const t = this._getGrid(cx, cy);
-    return t === 1 || t === 3;
+    return t === 1 || t === 3 || t === 4;
   }
 
   bulletHitsWall(px, py) {
@@ -431,20 +432,30 @@ class Level {
     const pcx = player.x + player.w / 2;
     const pcy = player.y + player.h / 2;
 
-    const playerRoom = this.getRoomAt(pcx, pcy);
+    let playerRoom = this.getRoomAt(pcx, pcy);
+
+    // Игрок стоит в дверном проёме (клетка стены между комнатами) — берём ближайшую соседнюю комнату,
+    // чтобы туман не "моргал" при проходе через дверь.
+    if (!playerRoom) {
+      for (const d of this.doors) {
+        if (pcx >= d.x && pcx < d.x + d.w && pcy >= d.y && pcy < d.y + d.h) {
+          playerRoom = this.getRoomAt(pcx - (d.horizontal ? 0 : TILE), pcy - (d.horizontal ? TILE : 0)) ||
+                       this.getRoomAt(pcx + (d.horizontal ? 0 : TILE), pcy + (d.horizontal ? TILE : 0));
+          break;
+        }
+      }
+    }
+
     if (playerRoom) {
       this.exploredRooms.add(playerRoom);
       const litRooms = new Set([playerRoom]);
-      for (const d of this.doors) {
-        if (!d.open) continue;
-        const dx = d.x + d.w / 2;
-        const dy = d.y + d.h / 2;
-        const dr = this.getRoomAt(dx, dy);
-        if (dr && litRooms.has(dr)) {
-          for (const r of this.rooms) {
-            if (r === dr) continue;
-            if (this._areAdjacent(r, dr)) litRooms.add(r);
-          }
+
+      // Соседние комнаты видны, если дверь между ними открыта
+      if (!this._roomGraph) this._buildRoomGraph();
+      for (const e of (this._roomGraph.get(playerRoom.id) || [])) {
+        if (e.door.open) {
+          litRooms.add(e.room);
+          this.exploredRooms.add(e.room);
         }
       }
 

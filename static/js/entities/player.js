@@ -15,7 +15,7 @@ class Player {
     this.lastAimAngle = 0;
     this.walkPhase = 0;
     this.stepTimer = 0;
-    
+
     this.weapon = makeWeapon('glock');
     this.attackTimer = 0;
     this.swingTimer = 0;
@@ -36,7 +36,31 @@ class Player {
     if (this.hp <= 0) { this.hp = 0; this.die(); }
   }
 
-  update(dt, level, cam, bullets, enemies) {
+  // Частицы обновляются отдельно, чтобы продолжать жить и после смерти игрока
+  updateParticles(dt) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+  }
+
+  // Проверка: попадает ли удар по врагу (дистанция, угол и отсутствие стены между ними)
+  _inMeleeArc(e, level, range, arc) {
+    const d = Utils.dist(this.x, this.y, e.x, e.y);
+    if (d >= range) return false;
+    const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
+    let diff = Math.abs(aToEnemy - this.angle);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff >= arc) return false;
+    return level.lineOfSight(this.x + this.w / 2, this.y + this.h / 2, e.x + e.w / 2, e.y + e.h / 2);
+  }
+
+  update(dt, level, cam, bullets, enemies, pickups) {
     if (this.dead) return;
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
@@ -60,7 +84,7 @@ class Player {
     if (len > 0) {
       if (len > 1) { dx /= len; dy /= len; }
       this.walkPhase += dt * 12;
-      
+
       this.stepTimer -= dt;
       if (this.stepTimer <= 0) {
         AudioSys.play('footstep');
@@ -104,17 +128,6 @@ class Player {
     this.swingTimer = Math.max(0, this.swingTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
 
-    // Обновление частиц крови
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vx *= 0.95;
-      p.vy *= 0.95;
-      p.life -= dt;
-      if (p.life <= 0) this.particles.splice(i, 1);
-    }
-
     if (Input.isDown('KeyQ') && !this._qLock && this.weapon) {
       this._qLock = true;
       const p = new Pickup(this.x + this.w / 2, this.y + this.h / 2, this.weapon);
@@ -147,7 +160,7 @@ class Player {
             this.flashTimer = 0.06;
             AudioSys.play(this.weapon.sound);
             level.addNoise(this.x + this.w/2, this.y + this.h/2, 400);
-            
+
             // Дробовик стреляет веером
             if (this.weapon.id === 'shotgun') {
               for (let i = 0; i < this.weapon.pellets; i++) {
@@ -171,16 +184,11 @@ class Player {
           AudioSys.play(this.weapon.sound);
           for (const e of enemies) {
             if (e.dead) continue;
-            const d = Utils.dist(this.x, this.y, e.x, e.y);
-            if (d < this.weapon.range) {
-              const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
-              let diff = Math.abs(aToEnemy - this.angle);
-              if (diff > Math.PI) diff = Math.PI * 2 - diff;
-              if (diff < Math.PI / 2.5) {
-                e.takeDamage(1, enemies);
-                // Много крови от милишного оружия
-                this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
-              }
+            if (this._inMeleeArc(e, level, this.weapon.range, Math.PI / 2.5)) {
+              // ВАЖНО: вторым аргументом передаём массив пикапов (а не врагов),
+              // иначе дроп оружия/аптечки попадал в enemies и игра зависала.
+              e.takeDamage(1, pickups);
+              this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
             }
           }
         }
@@ -191,18 +199,12 @@ class Player {
         AudioSys.play('punch');
         for (const e of enemies) {
           if (e.dead) continue;
-          const d = Utils.dist(this.x, this.y, e.x, e.y);
-          if (d < 36) {
-            const aToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
-            let diff = Math.abs(aToEnemy - this.angle);
-            if (diff > Math.PI) diff = Math.PI * 2 - diff;
-            if (diff < Math.PI / 2.5) {
-              if (e.stunned) {
-                e.die(enemies); 
-                this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
-              } else {
-                e.stun();
-              }
+          if (this._inMeleeArc(e, level, 36, Math.PI / 2.5)) {
+            if (e.stunned) {
+              e.die(pickups);
+              this.particles.push(...Utils.spawnBloodParticles(e.x, e.y, 20, this.angle));
+            } else {
+              e.stun();
             }
           }
         }
