@@ -114,8 +114,10 @@ class Game {
         lineOfSight: () => true,
         spawnPoint: () => ({ x: 160, y: 160 }),
         addNoise: () => {},
-        update: () => {}, draw: () => {}, drawFog: () => {},
+        update: () => {}, draw: () => {}, drawFog: () => {}, drawEffects: () => {},
         getRoomAt: () => null, _findRoomPath: () => null, _doorBetween: () => null,
+        getLitRooms: () => ({ room: null, lit: new Set() }),
+        randomFreePoint: () => null,
         _getGrid: () => 0,
       };
     }
@@ -162,19 +164,13 @@ class Game {
     for (let i = 0; i < 5; i++) {
       const r = Utils.choice(this.level.rooms);
       if (r === this.level.playerRoom) continue;
-      const wx = (r.x + 1 + Utils.randInt(0, r.w - 3)) * TILE;
-      const wy = (r.y + 1 + Utils.randInt(0, r.h - 3)) * TILE;
-      if (this.level._getGrid(Math.floor(wx / TILE), Math.floor(wy / TILE)) === 0) {
-        this.pickups.push(new Pickup(wx, wy, makeWeapon(Utils.choice(weaponPool))));
-      }
+      const p = this.level.randomFreePoint(r);
+      if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
     }
     for (let i = 0; i < 2; i++) {
       const r = Utils.choice(this.level.rooms);
-      const hx = (r.x + 1 + Utils.randInt(0, r.w - 3)) * TILE;
-      const hy = (r.y + 1 + Utils.randInt(0, r.h - 3)) * TILE;
-      if (this.level._getGrid(Math.floor(hx / TILE), Math.floor(hy / TILE)) === 0) {
-        this.pickups.push(new Pickup(hx, hy, null, true));
-      }
+      const p = this.level.randomFreePoint(r);
+      if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
     }
 
     this.state = 'playing';
@@ -336,7 +332,7 @@ class Game {
       }
       this.player.updateParticles(dt);
 
-      try { this.level.update(dt, this.enemies); } catch (e) { console.error('LEVEL UPDATE ERROR:', e); }
+      try { this.level.update(dt, this.enemies, this.player); } catch (e) { console.error('LEVEL UPDATE ERROR:', e); }
 
       for (const e of this.enemies) {
         try { e.update(dt, this.level, this.player, this.bullets, this.enemies, this.pickups); }
@@ -503,18 +499,21 @@ class Game {
 
     const pcx = this.player.x + this.player.w / 2;
     const pcy = this.player.y + this.player.h / 2;
-    const playerRoom = this.level.getRoomAt(pcx, pcy);
+    // Враги видны в комнате игрока и в соседних комнатах за открытыми дверями/арками
+    const { lit } = this.level.getLitRooms(this.player);
 
     for (const e of this.enemies) {
       const er = this.level.getRoomAt(e.cx(), e.cy());
-      if (e.dead || e.stunned || er === playerRoom || Utils.dist(pcx, pcy, e.cx(), e.cy()) < 200) {
+      if (e.dead || e.stunned || (er && lit.has(er)) || Utils.dist(pcx, pcy, e.cx(), e.cy()) < 200) {
         e.draw(b);
       }
     }
 
     for (const p of this.pickups) p.draw(b);
-    for (const bullet of this.bullets) bullet.draw(b);
     this.player.draw(b);
+    for (const bullet of this.bullets) bullet.draw(b);
+    this.level.drawEffects(b);
+    this._drawMuzzleLights(b, lit);
     b.restore();
 
     const fc = this.fogCtx;
@@ -631,6 +630,30 @@ class Game {
         ctx.fillText('ВЫЙТИ (ESC)', this.W / 2, this.H / 2 + 162);
       }
     }
+  }
+
+  // Вспышки выстрелов освещают всё вокруг
+  _drawMuzzleLights(ctx, lit) {
+    const shooters = [this.player, ...this.enemies];
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of shooters) {
+      if (!s || s.dead || !(s.flashTimer > 0) || !s.weapon || s.weapon.type !== 'ranged') continue;
+      if (s !== this.player) {
+        const er = this.level.getRoomAt(s.x + s.w / 2, s.y + s.h / 2);
+        if (!er || !lit.has(er)) continue;
+      }
+      const mx = s.x + s.w / 2 + Math.cos(s.angle) * 22;
+      const my = s.y + s.h / 2 + Math.sin(s.angle) * 22;
+      const r = 70;
+      const g = ctx.createRadialGradient(mx, my, 0, mx, my, r);
+      g.addColorStop(0, 'rgba(255,220,140,0.45)');
+      g.addColorStop(0.4, 'rgba(255,160,60,0.15)');
+      g.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(mx - r, my - r, r * 2, r * 2);
+    }
+    ctx.restore();
   }
 
   _renderCharSelect(ctx) {

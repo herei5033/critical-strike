@@ -98,18 +98,18 @@ class Player {
     const nx = this.x + dx * this.speed * dt;
     const ny = this.y + dy * this.speed * dt;
 
+    // Упёрлись в створку — толкаем её: дверь открывается настолько, насколько давим
+    const pushDoors = (tx, ty) => {
+      for (const d of level.doors) {
+        if (d.blocks(tx, ty, this.w, this.h)) {
+          d.push(enemies, this.x + this.w / 2, this.y + this.h / 2, dx * this.speed, dy * this.speed, true);
+        }
+      }
+    };
     if (!level.collides(nx, this.y, this.w, this.h)) this.x = nx;
-    else {
-      for (const d of level.doors) {
-        if (!d.open && d.blocks(nx, this.y, this.w, this.h)) { d.push(enemies); break; }
-      }
-    }
+    else pushDoors(nx, this.y);
     if (!level.collides(this.x, ny, this.w, this.h)) this.y = ny;
-    else {
-      for (const d of level.doors) {
-        if (!d.open && d.blocks(this.x, ny, this.w, this.h)) { d.push(enemies); break; }
-      }
-    }
+    else pushDoors(this.x, ny);
 
     // Прицеливание
     if (Input.touch.aimActive) {
@@ -261,7 +261,11 @@ class Player {
 
     ctx.fillStyle = skinColor; ctx.fillRect(4, -9, 10, 4);
     ctx.fillStyle = bodyDk; ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.fillStyle = bodyColor; ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+    // объём: блик на плечах и складки куртки
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.ellipse(-2, -3, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(-7, 3, 10, 1); ctx.fillRect(-6, -1, 1, 5);
 
     if (this.charId === 'dani') {
       ctx.fillStyle = '#0a0a0a'; ctx.fillRect(2, -4, 4, 2); ctx.fillRect(2, 2, 4, 2);

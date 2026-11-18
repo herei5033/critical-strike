@@ -151,30 +151,22 @@ class Enemy {
       const stepY = Math.sin(a) * speed * dt;
 
       let moved = false;
+      const vx = Math.cos(a) * speed, vy = Math.sin(a) * speed;
+      const pushDoors = (tx, ty) => {
+        for (const d of level.doors) {
+          if (d.blocks(tx, ty, this.w, this.h)) d.push(null, this.cx(), this.cy(), vx, vy, false);
+        }
+      };
       const nx = this.x + stepX;
       if (!level.collides(nx, this.y, this.w, this.h)) {
         this.x = nx;
         moved = true;
-      } else {
-        for (const d of level.doors) {
-          if (!d.open && d.blocks(nx, this.y, this.w, this.h)) {
-            d.push([]);
-            break;
-          }
-        }
-      }
+      } else pushDoors(nx, this.y);
       const ny = this.y + stepY;
       if (!level.collides(this.x, ny, this.w, this.h)) {
         this.y = ny;
         moved = true;
-      } else {
-        for (const d of level.doors) {
-          if (!d.open && d.blocks(this.x, ny, this.w, this.h)) {
-            d.push([]);
-            break;
-          }
-        }
-      }
+      } else pushDoors(this.x, ny);
 
       if (moved) {
         this.angle = a;
@@ -490,12 +482,15 @@ class Enemy {
     this.stunned = false;
     this.deathAngle = this.angle + Math.PI / 2;
     AudioSys.play('enemy_death');
-    for (let i = 0; i < 8; i++) {
-      this.bloodStains.push({
-        x: this.x + Utils.rand(-14, 14),
-        y: this.y + Utils.rand(-14, 14),
-        r: Utils.rand(3, 8)
-      });
+    // Лужа крови + брызги, вытянутые по направлению удара
+    const cx = this.cx(), cy = this.cy();
+    const dir = this.angle + Math.PI;
+    this.bloodStains.push({ x: cx, y: cy, rx: Utils.rand(13, 18), ry: Utils.rand(9, 13), rot: dir, a: 0.9 });
+    for (let i = 0; i < 12; i++) {
+      const a = dir + Utils.rand(-0.8, 0.8);
+      const d = Utils.rand(8, 34);
+      const r = Utils.rand(1.5, 5) * (1 - d / 50);
+      this.bloodStains.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, rx: r * Utils.rand(1.2, 2.4), ry: r, rot: a, a: Utils.rand(0.6, 0.95) });
     }
     if (Array.isArray(pickups)) {
       const drop = this.weapon || this._droppedWeapon;
@@ -534,10 +529,14 @@ class Enemy {
 
     if (this.dead || this.stunned) {
       if (this.dead) {
-        ctx.fillStyle = P.blood;
         for (const b of this.bloodStains) {
-          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = b.a;
+          ctx.fillStyle = '#5a0010';
+          ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx + 1, b.ry + 1, b.rot, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = P.blood;
+          ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx, b.ry, b.rot, 0, Math.PI * 2); ctx.fill();
         }
+        ctx.globalAlpha = 1;
       }
       ctx.save();
       ctx.translate(cx, cy);
@@ -585,7 +584,9 @@ class Enemy {
       ctx.fillStyle = '#1a1a1a'; ctx.fillRect(-8, -5, 6, 4); ctx.fillRect(-8, 1, 6, 4);
       ctx.fillStyle = '#d9a880'; ctx.fillRect(4, -9, 10, 4);
       ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
       ctx.fillStyle = this.bodyColor(); ctx.beginPath(); ctx.ellipse(0, 0, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.ellipse(-2, -3, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#f2c89b'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(-2, 0, 6, Math.PI * 0.55, Math.PI * 1.45); ctx.fill();
       ctx.fillStyle = '#000'; ctx.fillRect(4, -2, 2, 2); ctx.fillRect(4, 2, 2, 2);

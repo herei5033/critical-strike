@@ -3,6 +3,7 @@ class Bullet {
     this.x = x; this.y = y;
     // Предыдущая позиция — для проверки попаданий по отрезку (Utils.segDist)
     this.px = x; this.py = y;
+    this.sx = x; this.sy = y; // точка вылета — чтобы трассер не тянулся из-за ствола
     if (!isFinite(angle)) angle = 0;
     if (!isFinite(speed) || speed <= 0) speed = 600;
     this.vx = Math.cos(angle) * speed;
@@ -27,13 +28,45 @@ class Bullet {
 
     if (!isFinite(this.x) || !isFinite(this.y)) { this.dead = true; return; }
 
-    if (level.bulletHitsWall(this.x, this.y)) {
-      this.dead = true;
+    // Проверяем путь за кадр по шагам, чтобы пуля не проскакивала тонкие стены и двери
+    const dist = Math.hypot(this.x - this.px, this.y - this.py);
+    const steps = Math.max(1, Math.ceil(dist / 6));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const hx = this.px + (this.x - this.px) * t;
+      const hy = this.py + (this.y - this.py) * t;
+      if (level.bulletHitsWall(hx, hy)) {
+        this.x = hx; this.y = hy;
+        this.dead = true;
+        if (level.addImpact) level.addImpact(hx, hy, this.vx, this.vy);
+        return;
+      }
     }
   }
 
   draw(ctx) {
-    ctx.fillStyle = this.color;
-    ctx.fillRect(this.x - 2, this.y - 2, 4, 4);
+    const sp = Math.hypot(this.vx, this.vy) || 1;
+    let len = 22;
+    const fromStart = Math.hypot(this.x - this.sx, this.y - this.sy);
+    if (fromStart < len) len = fromStart;
+    const tx = this.x - (this.vx / sp) * len;
+    const ty = this.y - (this.vy / sp) * len;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    const g = ctx.createLinearGradient(tx, ty, this.x, this.y);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(1, this.color);
+    ctx.strokeStyle = g;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(this.x, this.y); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(this.x, this.y); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(this.x, this.y, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 }
