@@ -3,34 +3,34 @@
 const BOSS_TYPES = {
   // --- боссы уровней одиночной кампании ---
   watchman: {
-    name: 'ВАХТЁР', title: 'Ночной сторож колледжа', hp: 12, speed: 100, weapon: 'pipe', bonus: 1500, behavior: 'charger',
+    name: 'ВАХТЁР', title: 'Ночной сторож колледжа', hp: 12, speed: 100, weapon: 'nightstick', drop: 'nightstick', bonus: 1500, behavior: 'charger',
     look: { skin: '#c8a080', skinDk: '#906848', hair: '#3a3a40', hairStyle: 'cap', cap: '#1a2030', beard: '#4a4a50',
             jacket: '#262c3a', jacketDk: '#12161e', shirt: '#3a3a42', pants: '#1a1e28', shoes: '#060606', collar: 'jacket', bulk: 1.45, blood: true },
   },
   director: {
-    name: 'ДИРЕКТОР', title: 'Здесь решает он', hp: 20, speed: 85, weapon: 'uzi', bonus: 2000, behavior: 'gunner',
+    name: 'ДИРЕКТОР', title: 'Здесь решает он', hp: 20, speed: 85, weapon: 'goldenUzi', drop: 'goldenUzi', bonus: 2000, behavior: 'gunner',
     look: { skin: '#d8b090', skinDk: '#a07a5a', hair: '#0c0a0e', hairHi: 'rgba(255,255,255,0.15)', hairStyle: 'slick', glasses: 'shades',
             jacket: '#101012', jacketDk: '#050506', shirt: '#d8d8dc', tie: '#6a0a12', pants: '#0e0e10', shoes: '#050505', collar: 'suit', bulk: 1.4 },
   },
   collector: {
-    name: 'ИНКАССАТОР', title: 'Охраняет хранилище', hp: 26, speed: 78, weapon: 'minigun', bonus: 2500, behavior: 'gunner',
+    name: 'ИНКАССАТОР', title: 'Охраняет хранилище', hp: 26, speed: 78, weapon: 'minigun', drop: 'minigun', bonus: 2500, behavior: 'gunner',
     look: { skin: '#c89a78', skinDk: '#94684a', hair: '#121016', hairStyle: 'helmet', helmet: '#1c2018', visor: '#2a0608',
             jacket: '#22261e', jacketDk: '#0e100c', shirt: '#1a1c18', pants: '#1a1c18', shoes: '#060606', collar: 'armor', skull: true, bulk: 1.55 },
   },
   bouncer: {
-    name: 'ВЫШИБАЛА', title: 'Никто не войдёт в VIP', hp: 32, speed: 125, weapon: 'bat', bonus: 3000, behavior: 'charger',
+    name: 'ВЫШИБАЛА', title: 'Никто не войдёт в VIP', hp: 32, speed: 125, weapon: 'spikedBat', drop: 'spikedBat', bonus: 3000, behavior: 'charger',
     look: { skin: '#9a6a48', skinDk: '#6a4428', hair: '#0c0a0e', hairStyle: 'bald', glasses: 'shades', beard: '#0c0a0e',
             jacket: '#121214', jacketDk: '#050506', shirt: '#121214', pants: '#0e0e10', shoes: '#050505', collar: 'hood', bulk: 1.75, scar: true },
   },
   // --- боссы бесконечного режима и корпоратива ---
   butcher: {
-    name: 'МЯСНИК', title: 'Хозяин скотобойни', hp: 14, speed: 110, weapon: 'cleaver', bonus: 1500, behavior: 'charger',
+    name: 'МЯСНИК', title: 'Хозяин скотобойни', hp: 14, speed: 110, weapon: 'cleaver', drop: 'cleaver', bonus: 1500, behavior: 'charger',
     look: { skin: '#e0a07a', skinDk: '#a8704c', hair: '#121016', hairStyle: 'bald', beard: '#2a1a10',
             jacket: '#5a4a44', jacketDk: '#2e2420', shirt: '#d8d2c4', pants: '#2a2422', shoes: '#0a0a0a',
             collar: 'apron', bulk: 1.55 },
   },
   general: {
-    name: 'ГЕНЕРАЛ', title: 'Командир охраны', hp: 18, speed: 82, weapon: 'minigun', bonus: 2000, behavior: 'gunner',
+    name: 'ГЕНЕРАЛ', title: 'Командир охраны', hp: 18, speed: 82, weapon: 'minigun', drop: 'minigun', bonus: 2000, behavior: 'gunner',
     look: { skin: '#d8a07a', skinDk: '#a87050', hair: '#121016', hairStyle: 'cap', cap: '#2a3a22',
             glasses: 'shades', jacket: '#3a4a2a', jacketDk: '#1e2a16', shirt: '#2a3a22', pants: '#2a3020', shoes: '#0a0a0a',
             collar: 'armor', bulk: 1.45 },
@@ -44,6 +44,7 @@ class Boss extends Enemy {
     super(x, y, 'static', null, 'boss_' + kind);
     const def = BOSS_TYPES[kind] || BOSS_TYPES.butcher;
     this.behavior = def.behavior;
+    this.dropWeapon = def.drop;
     this.kind = kind;
     this.isBoss = true;
     this.bossName = def.name;
@@ -75,6 +76,7 @@ class Boss extends Enemy {
 
   takeDamage(amount, pickups, cause) {
     if (this.dead) return;
+    if (cause && cause.by === 'dani') amount *= 1.1;
     this.hp -= amount;
     this.hitFlash = 0.1;
     AudioSys.play('tank_hit');
@@ -93,7 +95,7 @@ class Boss extends Enemy {
     Effects.bloodSplat(this.cx(), this.cy(), null, 60);
     if (Array.isArray(pickups)) {
       for (let i = 0; i < 2; i++) pickups.push(new Pickup(this.cx() + Utils.rand(-16, 16), this.cy() + Utils.rand(-16, 16), null, true));
-      pickups.push(new Pickup(this.cx() + Utils.rand(-12, 12), this.cy() + Utils.rand(-12, 12), makeWeapon(Utils.choice(['m4', 'shotgun', 'sword', 'ak47']))));
+      pickups.push(new Pickup(this.cx() + Utils.rand(-12, 12), this.cy() + Utils.rand(-12, 12), makeWeapon(this.dropWeapon || Utils.choice(['m4', 'shotgun', 'sword', 'ak47']))));
     }
     this.weapon = null;
   }
@@ -111,7 +113,7 @@ class Boss extends Enemy {
       if (b.dead || !b.isPlayer) continue;
       if (Utils.segDist(b.px, b.py, b.x, b.y, this.cx(), this.cy()) < 15) {
         b.dead = true;
-        this.takeDamage(1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) });
+        this.takeDamage(b.dmg || 1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx), by: b.owner });
         this.particles.push(...Utils.spawnBloodParticles(this.cx(), this.cy(), 8, Math.atan2(b.vy, b.vx)));
         if (this.dead) return;
       }

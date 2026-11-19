@@ -486,18 +486,181 @@ const Sprites = (() => {
     for (let i = 0; i < 4; i++) R(ctx, -5 + i * 1.3, 3, 0.8, 1.6, '#d0a040');  // лента
   };
 
+  WEAPON_ART.goldenUzi = function (ctx) {
+    line(ctx, -9, -1.3, -2, -1.1, 0.7, '#a0801a'); line(ctx, -9, 1.3, -2, 1.1, 0.7, '#a0801a');
+    metal(ctx, -2, -1.6, 15, 3.2, '#c8a030', '#ffe070');
+    R(ctx, 2, -0.5, 6, 1, '#8a6a1a');
+    metal(ctx, 13, -0.6, 4.5, 1.2, '#8a6a1a', '#c8a030');
+  };
+  WEAPON_ART.rpg = function (ctx) {
+    metal(ctx, -12, -1.8, 34, 3.6, '#3a4a2a', '#5a6a3a');
+    metal(ctx, 22, -2.8, 8, 5.6, '#4a5a30', '#6a7a40');
+    ctx.fillStyle = '#050407'; ctx.beginPath(); ctx.moveTo(30, -2.8); ctx.lineTo(35, 0); ctx.lineTo(30, 2.8); ctx.fill();
+    ctx.fillStyle = '#6a7a40'; ctx.beginPath(); ctx.moveTo(30, -2.2); ctx.lineTo(33.8, 0); ctx.lineTo(30, 2.2); ctx.fill();
+    metal(ctx, 2, -2.4, 6, 1.6, '#141612', '#2a2e26');
+  };
+  WEAPON_ART.flamer = function (ctx) {
+    metal(ctx, -10, -1.6, 22, 3.2, '#4a4a52', '#6a6a74');
+    metal(ctx, 12, -1, 12, 2, '#2a2a30', '#44444c');
+    metal(ctx, 24, -1.6, 3, 3.2, '#1a1a1e', '#3a3a42');
+    metal(ctx, -7, -3.6, 12, 2, '#a02a1a', '#d04a2a');     // бак сбоку от ствола
+    circ(ctx, 26.6, 0, 0.9, '#ff8a30');
+  };
+  WEAPON_ART.nightstick = function (ctx) {
+    part(ctx, -5, -1.4, 7, 2.8, '#101012');
+    part(ctx, 2, -1.6, 20, 3.2, '#1e1e24');
+    R(ctx, 2.6, -1.6, 19, 0.8, '#3e3e48');
+    part(ctx, 1, -4, 1.6, 4, '#1e1e24');                    // боковая рукоять тонфы
+    circ(ctx, 22, 0, 1.6, '#2a2a32');
+  };
+  WEAPON_ART.spikedBat = function (ctx) {
+    WEAPON_ART.bat(ctx);
+    ctx.strokeStyle = '#c8ccd4'; ctx.lineWidth = 0.7;
+    for (const [x, y, dx, dy] of [[12, -2, 0, -3], [15, 2.2, 1, 3], [18, -2.6, 0, -3.4], [20, 2.8, 0, 3.2], [22.5, -2.8, 1, -3], [17, 0, 3, 0]]) {
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.6; R(ctx, 16, -1, 4, 2, '#6a0010'); ctx.globalAlpha = 1;
+  };
+
   const WEAPON_META = {
     glock: { kind: 'pistol', muzzle: 12, eject: 6 }, uzi: { kind: 'smg', muzzle: 17, eject: 5 }, m4: { kind: 'rifle', muzzle: 28, eject: 5 },
     ak47: { kind: 'rifle', muzzle: 27, eject: 4 }, shotgun: { kind: 'rifle', muzzle: 30, eject: 3 }, sniper: { kind: 'rifle', muzzle: 36, eject: 6 },
     bat: { kind: 'melee', reach: 24, trail: '255,200,140' }, pipe: { kind: 'melee', reach: 22, trail: '200,210,230' },
     knife: { kind: 'melee', reach: 13, trail: '255,255,255' }, sword: { kind: 'melee', reach: 30, trail: '170,230,255' },
-    cleaver: { kind: 'melee', reach: 22, trail: '255,80,80' }, minigun: { kind: 'rifle', muzzle: 34 },
+    cleaver: { kind: 'melee', reach: 22, trail: '255,80,80' }, minigun: { kind: 'rifle', muzzle: 34, eject: 2 },
+    goldenUzi: { kind: 'smg', muzzle: 17, eject: 5 }, rpg: { kind: 'rifle', muzzle: 34 }, flamer: { kind: 'rifle', muzzle: 27 },
+    nightstick: { kind: 'melee', reach: 20, trail: '200,200,255' }, spikedBat: { kind: 'melee', reach: 26, trail: '255,120,90' },
   };
 
-  function drawWeapon(ctx, id) {
-    const f = WEAPON_ART[id];
+
+  // ---------- оружие на земле: вид СБОКУ (узнаваемый силуэт) ----------
+  const WEAPON_SIDE = {
+    glock(ctx) {
+      part(ctx, -2, -1.6, 13, 3.2, '#2a2a30');
+      R(ctx, -1.4, -1.6, 11.6, 0.8, '#4a4a54');
+      for (let i = 0; i < 4; i++) R(ctx, 0.4 + i * 1.1, -1.4, 0.4, 2.6, '#1a1a1e');
+      part(ctx, -1.6, 1.4, 3, 4.6, '#18181c');
+      R(ctx, 10.4, -0.6, 1, 1.2, '#000');
+      R(ctx, 2.6, 1.6, 2.6, 1.4, '#3a3a42');
+    },
+    uzi(ctx, gold) {
+      const b = gold ? '#c8a030' : '#2c2c32', hi = gold ? '#ffe070' : '#50505a', dk = gold ? '#8a6a1a' : '#141418';
+      part(ctx, -4, -2, 17, 4, b);
+      R(ctx, -3.4, -2, 16, 0.9, hi);
+      part(ctx, 13, -0.8, 4, 1.6, dk);
+      part(ctx, 3, 2, 2.4, 7, dk);
+      part(ctx, -1.4, 2, 2.4, 3.6, dk);
+      part(ctx, -9, -1, 5, 1.4, b);
+      R(ctx, 6, -2.8, 1.6, 0.8, hi);
+    },
+    m4(ctx) {
+      part(ctx, -11, -2.2, 8, 4.4, '#1e1e22');
+      R(ctx, -10.4, -2.2, 7, 1, '#3a3a40');
+      part(ctx, -3, -2.4, 13, 4.8, '#2a2a30');
+      part(ctx, 10, -1.8, 9, 3.6, '#24242a');
+      for (let i = 0; i < 4; i++) R(ctx, 11 + i * 2, -1.8, 0.8, 3.6, '#16161a');
+      part(ctx, 19, -0.7, 7, 1.4, '#18181c');
+      part(ctx, 26, -1.1, 2, 2.2, '#0e0e10');
+      part(ctx, 1, -3.8, 6, 1.4, '#16161a');
+      part(ctx, 3.5, 2.4, 3, 6.4, '#141418');
+      part(ctx, -1.6, 2.4, 2.6, 4, '#1a1a1e');
+      R(ctx, -2.4, -0.4, 22, 0.6, 'rgba(255,255,255,0.07)');
+    },
+    ak47(ctx) {
+      part(ctx, -11, -2, 8, 4, '#6a3a1a');
+      R(ctx, -10.4, -2, 7, 1, '#8a5228');
+      part(ctx, -3, -2.2, 12, 4.4, '#2a2a2e');
+      R(ctx, -2.4, -2.2, 11, 0.9, '#4a4a52');
+      part(ctx, 9, -1.8, 8, 3.6, '#7a4220');
+      R(ctx, 9.4, -1.8, 7.2, 1, '#9a5a2c');
+      part(ctx, 17, -0.7, 9, 1.4, '#1a1a1e');
+      part(ctx, 21, -2.2, 1.2, 1.6, '#1a1a1e');
+      part(ctx, 3, 2.2, 3.4, 4, '#3a2a1a');
+      part(ctx, 4.6, 5.6, 3.4, 3.4, '#3a2a1a');
+      part(ctx, -1.6, 2.2, 2.6, 4, '#5a3216');
+    },
+    shotgun(ctx) {
+      part(ctx, -11, -2.2, 9, 4.4, '#5a3216');
+      R(ctx, -10.4, -2.2, 8, 1, '#7a4a24');
+      part(ctx, -2, -2.4, 10, 4.8, '#2a2a30');
+      part(ctx, 8, -1.6, 22, 1.6, '#3a3a42');
+      part(ctx, 8, 0.4, 18, 1.8, '#2a2a30');
+      part(ctx, 12, -2.4, 8, 5.2, '#6a3a1a');
+      for (let i = 0; i < 4; i++) R(ctx, 13 + i * 2, -2.4, 0.7, 5.2, '#4a2810');
+      part(ctx, -1.4, 2.4, 2.6, 3.6, '#4a2810');
+      R(ctx, 29, -1.4, 1, 1.2, '#000');
+    },
+    sniper(ctx) {
+      part(ctx, -13, -2.4, 10, 4.8, '#3a4a2a');
+      R(ctx, -12.4, -2.4, 9, 1, '#5a6a3a');
+      part(ctx, -3, -2.2, 14, 4.4, '#2a2e26');
+      part(ctx, 11, -0.8, 22, 1.6, '#1a1c18');
+      part(ctx, 33, -1.4, 3, 2.8, '#0e0e0c');
+      part(ctx, 0, -4.6, 11, 2.4, '#141612');
+      part(ctx, -1.4, -5.1, 2, 3.4, '#0e0e0c');
+      part(ctx, 10, -5.1, 2, 3.4, '#0e0e0c');
+      R(ctx, 11.5, -4.4, 0.8, 1.8, 'rgba(255,60,60,0.9)');
+      part(ctx, 3, 2.2, 3, 4.4, '#141612');
+      part(ctx, -1.6, 2.2, 2.6, 4, '#2a2e26');
+    },
+    minigun(ctx) {
+      part(ctx, -6, -4, 12, 8, '#2a2a30');
+      R(ctx, -5.4, -4, 11, 1.4, '#4a4a54');
+      part(ctx, -3, 4, 6, 4, '#3a3020');
+      for (let i = 0; i < 4; i++) R(ctx, -2.4 + i * 1.4, 7, 0.8, 3, '#d0a040');
+      for (const y of [-2.6, -0.9, 0.9, 2.6]) part(ctx, 6, y - 0.5, 26, 1, '#1a1a1e');
+      part(ctx, 6, -3.6, 2, 7.2, '#3a3a42');
+      part(ctx, 20, -3.6, 2, 7.2, '#3a3a42');
+      part(ctx, 31, -3.4, 2.4, 6.8, '#0e0e10');
+    },
+    rpg(ctx) {
+      part(ctx, -12, -2.6, 34, 5.2, '#3a4a2a');
+      R(ctx, -11.4, -2.6, 33, 1.2, '#5a6a3a');
+      part(ctx, 22, -4.2, 9, 8.4, '#4a5a30');                 // боеголовка
+      ctx.fillStyle = '#050407'; ctx.beginPath(); ctx.moveTo(31, -4.2); ctx.lineTo(37, 0); ctx.lineTo(31, 4.2); ctx.fill();
+      ctx.fillStyle = '#6a7a40'; ctx.beginPath(); ctx.moveTo(31, -3.4); ctx.lineTo(35.6, 0); ctx.lineTo(31, 3.4); ctx.fill();
+      part(ctx, 0, 2.6, 2.6, 5, '#1a1a1a'); part(ctx, 8, 2.6, 2.6, 4, '#1a1a1a');  // рукояти
+      part(ctx, 2, -5.4, 6, 2.8, '#141612');                  // прицел
+      R(ctx, -12, -1, 2, 2, '#ffb040');
+    },
+    flamer(ctx) {
+      part(ctx, -10, -2.2, 22, 4.4, '#4a4a52');
+      R(ctx, -9.4, -2.2, 21, 1, '#6a6a74');
+      part(ctx, 12, -1.4, 12, 2.8, '#2a2a30');
+      part(ctx, 24, -2.2, 3, 4.4, '#1a1a1e');
+      part(ctx, -6, 2.2, 14, 6, '#a02a1a');                   // бак с топливом
+      R(ctx, -5.4, 2.2, 13, 1.2, '#d04a2a');
+      R(ctx, -2, 3.8, 6, 2.4, '#ffd319');
+      part(ctx, 4, -4.6, 2, 2.6, '#1a1a1e');
+      circ(ctx, 26.6, 0, 1, '#ff8a30');
+    },
+  };
+  WEAPON_SIDE.goldenUzi = ctx => WEAPON_SIDE.uzi(ctx, true);
+
+  function drawWeapon(ctx, id, side = false) {
+    const f = (side && WEAPON_SIDE[id]) || WEAPON_ART[id];
     if (f) f(ctx);
   }
+
+  // ---------- граната и ракета ----------
+  function drawGrenade(ctx, t = 0, armed = false) {
+    circ(ctx, 0, 0, 4.4, '#050407');
+    circ(ctx, 0, 0, 3.8, '#3a4a2a');
+    for (let i = -2; i <= 2; i += 2) R(ctx, -3.4, i - 0.3, 6.8, 0.6, '#22301a');
+    circ(ctx, -1.2, -1.2, 1.1, 'rgba(255,255,255,0.25)');
+    R(ctx, 2.6, -1.4, 3, 2.8, '#6a6a74');                     // запал
+    if (!armed) { ctx.strokeStyle = '#c8c8d0'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(6.2, 0, 1.6, 0, Math.PI * 2); ctx.stroke(); }
+    else if (Math.sin(t * 22) > 0) circ(ctx, 4, 0, 1.2, '#ff3030');
+  }
+
+  function drawRocket(ctx) {
+    R(ctx, -9, -1.6, 13, 3.2, '#050407');
+    R(ctx, -8.4, -1.1, 12, 2.2, '#5a6a3a');
+    ctx.fillStyle = '#7a8a50'; ctx.beginPath(); ctx.moveTo(4, -2); ctx.lineTo(9, 0); ctx.lineTo(4, 2); ctx.fill();
+    ctx.fillStyle = '#3a4a2a'; ctx.beginPath(); ctx.moveTo(-9, -1.4); ctx.lineTo(-12, -3.6); ctx.lineTo(-7, -1.4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-9, 1.4); ctx.lineTo(-12, 3.6); ctx.lineTo(-7, 1.4); ctx.fill();
+  }
+
 
   // ---------- аптечка ----------
   function drawMedkit(ctx) {
@@ -592,7 +755,20 @@ const Sprites = (() => {
     const sR = { x: 0.8, y: 8.3 * b }, sL = { x: 0.8, y: -8.3 * b };
     const rec = (st.recoil || 0) * 3.2;
 
-    if (kind === 'rifle') {
+    if (st.dual) {
+      // по оружию в каждой руке; с CTRL руки разведены в стороны
+      const d = st.dual;
+      const guns = [[sR, 1, d.a, d.f1, d.r1 || 0], [sL, -1, d.b, d.f2, d.r2 || 0]];
+      for (const [sh, side, id, fl, rc] of guns) {
+        const m2 = WEAPON_META[id] || { muzzle: 14 };
+        const big = m2.kind === 'rifle';
+        let hx, hy, ga;
+        if (d.spread) { hx = 2 - rc * 2; hy = side * (14 + (big ? 2 : 0)); ga = side * Math.PI / 2; }
+        else { hx = 11 - rc * 3; hy = side * 4.2; ga = 0; }
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(ga); drawWeapon(ctx, id); if (fl) muzzleFlash(ctx, m2.muzzle, 0, 0.75); ctx.restore();
+        arm(ctx, L, sh.x, sh.y, hx, hy, side);
+      }
+    } else if (kind === 'rifle') {
       ctx.save(); ctx.translate(6 - rec, 2.4); drawWeapon(ctx, st.weaponId); ctx.restore();
       arm(ctx, L, sR.x, sR.y, 6 - rec, 4.2, 1);
       arm(ctx, L, sL.x, sL.y, 16 - rec, 1.2, -1);
@@ -827,5 +1003,5 @@ const Sprites = (() => {
     }
   }
 
-  return { HEROES, enemyLook, drawHuman, drawHumanDown, drawDog, drawDogDown, drawWeapon, drawMedkit, WEAPON_META, muzzleFlash, star, rng };
+  return { WEAPON_SIDE, drawGrenade, drawRocket, HEROES, enemyLook, drawHuman, drawHumanDown, drawDog, drawDogDown, drawWeapon, drawMedkit, WEAPON_META, muzzleFlash, star, rng };
 })();

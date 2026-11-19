@@ -24,7 +24,7 @@ class Enemy {
       this.fovAngle = Math.PI * 1.5;
     } else if (type === 'sniper') {
       this.speed = 90;
-      this.weapon = makeWeapon('m4');
+      this.weapon = makeWeapon('sniper');   // после смерти её может подобрать Дани
       this.fovRange = 600;
       this.fovAngle = Math.PI / 4;
       this.laserAngle = 0;
@@ -116,12 +116,13 @@ class Enemy {
     const ang = cause.angle !== undefined ? cause.angle : this.angle + Math.PI;
     const human = this.type !== 'hound' && !this.isBoss;
     let pose = 'back';
-    if (kind === 'blunt' || kind === 'fist' || kind === 'throw') pose = 'side';
+    if (kind === 'blunt' || kind === 'fist' || kind === 'throw' || kind === 'burn') pose = 'side';
     else if (kind === 'blade') pose = Math.random() < 0.5 ? 'face' : 'side';
     else if (kind === 'bullet') pose = Math.random() < 0.35 ? 'face' : 'back';
-    let crawl = human && kind !== 'shotgun' && kind !== 'crush' && Math.random() < 0.14;
+    let crawl = human && !['shotgun', 'crush', 'explosion', 'burn'].includes(kind) && Math.random() < 0.14;
+    this.charred = kind === 'burn' || (kind === 'explosion' && Math.random() < 0.5);
     if (forced) { pose = forced.pose || pose; crawl = !!forced.crawl; }
-    const slide = { bullet: 70, shotgun: 220, blunt: 70, blade: 30, fist: 55, throw: 45, crush: 140 }[kind] || 60;
+    const slide = { bullet: 70, shotgun: 220, blunt: 70, blade: 30, fist: 55, throw: 45, crush: 140, explosion: 260, burn: 25 }[kind] || 60;
     this.deathAngle = forced && forced.angle !== undefined ? forced.angle : ang + Utils.rand(-0.3, 0.3);
     this.deathAnim = {
       kind, pose: crawl ? 'crawl' : pose, endPose: pose === 'back' ? 'face' : pose, t: 0, crawl,
@@ -132,7 +133,8 @@ class Enemy {
     };
     this.pool = { r: 0, max: (kind === 'blade' ? 20 : kind === 'shotgun' ? 19 : 15) * (this.isBoss ? 1.5 : 1), x: this.cx(), y: this.cy() };
     AudioSys.play('enemy_death');
-    const gore = { shotgun: 30, blade: 22, bullet: 14, blunt: 9, fist: 6, throw: 8, crush: 20 }[kind] || 12;
+    const gore = { shotgun: 30, blade: 22, bullet: 14, blunt: 9, fist: 6, throw: 8, crush: 20, explosion: 34, burn: 2 }[kind] || 12;
+    if (kind === 'burn') { Effects.burst(this.cx(), this.cy(), '255,140,40', 16, 160); Effects.smoke(this.cx(), this.cy(), 0, 8); }
     Effects.bloodSplat(this.cx(), this.cy(), ang, gore);
     if (kind === 'shotgun') Effects.burst(this.cx(), this.cy(), '200,0,20', 18, 260);
     this.bloodStains = [];
@@ -203,8 +205,18 @@ class Enemy {
     ctx.rotate(rot);
     ctx.scale(scale * (0.82 + 0.18 * fall), scale * (0.82 + 0.18 * fall));
     const st = { seed: this.seed, pose: d.pose, crawl: d.crawlPhase || 0 };
-    if (this.type === 'hound') Sprites.drawDogDown(ctx, this.look, st);
-    else Sprites.drawHumanDown(ctx, this.look, st);
+    let look = this.look;
+    if (this.charred) {
+      if (!this._charLook) {
+        this._charLook = this.type === 'hound'
+          ? { ...this.look, coat: '#120c08', tan: '#2a1a10' }
+          : { ...this.look, skin: '#2e1e16', skinDk: '#1a100a', jacket: '#1c1612', jacketDk: '#0c0a08', shirt: '#1c1612', pants: '#141008', hair: '#060505', mask: '#0a0806', blood: false };
+      }
+      look = this._charLook;
+      if (d.t < 4 && Math.random() < 0.08) Effects.smoke(cx, cy, -Math.PI / 2, 1);
+    }
+    if (this.type === 'hound') Sprites.drawDogDown(ctx, look, st);
+    else Sprites.drawHumanDown(ctx, look, st);
     ctx.restore();
   }
 
@@ -376,7 +388,7 @@ class Enemy {
       if (b.dead || !b.isPlayer) continue;
       if (Utils.segDist(b.px, b.py, b.x, b.y, this.cx(), this.cy()) < 12) {
         b.dead = true;
-        this.takeDamage(1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) });
+        this.takeDamage(b.dmg || 1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx), by: b.owner });
         if (this.dead) {
           this.particles.push(...Utils.spawnBloodParticles(this.cx(), this.cy(), 12, Math.atan2(b.vy, b.vx)));
           return;
@@ -439,7 +451,7 @@ class Enemy {
       let nearest = null;
       let minDist = 400;
       for (const p of pickups) {
-        if (p.pickedUp || p.isHealth || p.thrown || !p.weapon) continue;
+        if (p.pickedUp || p.isHealth || p.isGrenade || p.thrown || !p.weapon || p.weapon.rare || p.weapon.special) continue;
         const d = Utils.dist(this.cx(), this.cy(), p.x, p.y);
         if (d < minDist) {
           minDist = d;

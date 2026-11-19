@@ -564,6 +564,16 @@ const DecorArt = (() => {
         ctx.globalAlpha = 0.3; ell(ctx, 0, 0, 12, 9, 0, '#000'); ctx.globalAlpha = 1;
         break;
       }
+      case 'scorch': {
+        // выжженное пятно от взрыва
+        const rr = d.r || 40;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rr);
+        g.addColorStop(0, 'rgba(8,6,4,0.85)'); g.addColorStop(0.6, 'rgba(14,10,8,0.55)'); g.addColorStop(1, 'rgba(14,10,8,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i++) { const a = r() * 6.28, l = rr * (0.5 + r() * 0.6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * l, Math.sin(a) * l); ctx.stroke(); }
+        break;
+      }
       case 'puddle':
         ctx.globalAlpha = 0.3; ell(ctx, 0, 0, 10 + r() * 6, 5 + r() * 4, 0, '#8fd8ff');
         ctx.globalAlpha = 0.25; ell(ctx, -3, -1, 4, 1.5, 0, '#ffffff'); ctx.globalAlpha = 1;

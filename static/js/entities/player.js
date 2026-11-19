@@ -12,7 +12,7 @@ class Player {
 
     if (charId === 'dani') this.speed *= 1.15;
     else if (charId === 'gal') { this.maxHp = 4; this.hp = 4; }
-    else if (charId === 'daur') { this.maxHp = 2; this.hp = 2; }
+    else if (charId === 'daur') { this.maxHp = 3; this.hp = 3; }
 
     this.look = Sprites.HEROES[charId] || Sprites.HEROES.dani;
     this.seed = (Math.random() * 1e9) | 0;
@@ -25,6 +25,14 @@ class Player {
     this.stepTimer = 0;
 
     this.weapon = makeWeapon('glock');
+    this.weapon2 = null;        // второе оружие (только у Даура)
+    this.attackTimer2 = 0;
+    this.flash2 = 0;
+    this.recoil2 = 0;
+    this.dualSpread = false;    // CTRL: руки разведены в стороны
+    this.grenades = 1;
+    this._fired = [];           // ракеты/огонь/гранаты — их создаёт игра
+    this._bumpCd = 0;
     this.attackTimer = 0;
     this.swingTimer = 0;
     this.swingDur = 0.22;
@@ -102,7 +110,13 @@ class Player {
       if (hit.fists) {
         if (!this._inMeleeArc(e, level, 36, Math.PI / 2.5)) continue;
         landed = true;
-        if (e.stunned) {
+        if (this.charId === 'gal' && !e.stunned) {
+          // Гала вырубает насмерть одним ударом (танку и боссу — урон)
+          if (e.isBoss || e.type === 'tank') e.takeDamage(e.isBoss ? 1 : 2, pickups, { kind: 'fist', angle: this.angle, by: this.charId });
+          else e.die(pickups, { kind: 'fist', angle: this.angle });
+          this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
+          Effects.ring(e.cx(), e.cy(), '255,200,120', 26);
+        } else if (e.stunned) {
           e.die(pickups, { kind: 'fist', angle: this.angle });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
         } else {
@@ -114,7 +128,7 @@ class Player {
         landed = true;
         // ВАЖНО: вторым аргументом передаём массив пикапов (а не врагов),
         // иначе дроп оружия/аптечки попадал в enemies и игра зависала.
-        e.takeDamage(1, pickups, { kind: hit.blade ? 'blade' : 'blunt', angle: this.angle });
+        e.takeDamage(1, pickups, { kind: hit.blade ? 'blade' : 'blunt', angle: this.angle, by: this.charId });
         this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
       }
     }
@@ -175,6 +189,20 @@ class Player {
 
     // Анимация ходьбы от реально пройденного пути
     const moved = Math.hypot(this.x - ox, this.y - oy) / dt;
+    this._bumpCd = Math.max(0, this._bumpCd - dt);
+    if (this.charId === 'gal' && moved > this.speed * 0.5 && this._bumpCd <= 0) {
+      for (const e of enemies) {
+        if (e.dead || e.stunned || e.type !== 'normal' || e.isBoss) continue;
+        if (Utils.dist(this.x + 9, this.y + 9, e.cx(), e.cy()) < 21) {
+          e.stun();
+          AudioSys.play('punch');
+          Effects.ring(e.cx(), e.cy(), '255,230,150', 22);
+          Effects.hitstop = Math.max(Effects.hitstop, 0.04);
+          this._bumpCd = 0.25;
+          break;
+        }
+      }
+    }
     const targetMove = Utils.clamp(moved / this.speed, 0, 1);
     this.moveAmt += (targetMove - this.moveAmt) * Math.min(1, dt * 12);
     this.walkPhase += dt * 13 * this.moveAmt;
@@ -206,18 +234,34 @@ class Player {
     this.swingTimer = Math.max(0, this.swingTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
     this.recoil = Math.max(0, this.recoil - dt * 9);
+    this.attackTimer2 = Math.max(0, this.attackTimer2 - dt);
+    this.flash2 = Math.max(0, this.flash2 - dt);
+    this.recoil2 = Math.max(0, this.recoil2 - dt * 9);
+    this.dualSpread = !!this.weapon2 && (Input.isDown('ControlLeft') || Input.isDown('ControlRight'));
+
+    // Граната (G): летит туда, куда смотрит курсор
+    if (Input.wasPressed('KeyG') && this.grenades > 0) {
+      this.grenades--;
+      const cx0 = this.x + 9, cy0 = this.y + 9;
+      const mx = cam.x + Input.mouse.x / cam.zoom, my = cam.y + Input.mouse.y / cam.zoom;
+      const dist = Utils.clamp(Input.touch.aimActive ? 220 : Math.hypot(mx - cx0, my - cy0), 80, 360);
+      const sp = dist * 1.45;
+      this._fired.push({ type: 'grenade', x: cx0 + Math.cos(this.angle) * 12, y: cy0 + Math.sin(this.angle) * 12, vx: Math.cos(this.angle) * sp, vy: Math.sin(this.angle) * sp });
+      this.swingDur = 0.22; this.swingTimer = 0.22; this.punchSide = 1;
+    }
 
     if (this._pendingHit) {
       this._pendingHit.delay -= dt;
       if (this._pendingHit.delay <= 0) this._resolveMelee(level, enemies, pickups);
     }
 
-    if (Input.isDown('KeyQ') && !this._qLock && this.weapon) {
+    if (Input.isDown('KeyQ') && !this._qLock && (this.weapon || this.weapon2)) {
       this._qLock = true;
-      const p = new Pickup(this.x + this.w / 2, this.y + this.h / 2, this.weapon);
+      const w = this.weapon2 || this.weapon;
+      const p = new Pickup(this.x + this.w / 2, this.y + this.h / 2, w);
       p.throwAt(this.angle, 1200);
       this._thrownPickup = p;
-      this.weapon = null;
+      if (this.weapon2) this.weapon2 = null; else this.weapon = null;
     }
     if (!Input.isDown('KeyQ')) this._qLock = false;
 
@@ -235,35 +279,28 @@ class Player {
       }
     }
 
-    if (shouldShoot && this.attackTimer <= 0) {
+    const dual = this.weapon2 && this.weapon && this.weapon.type === 'ranged';
+    if (shouldShoot && dual) {
+      // два ствола: у каждого свой темп; с CTRL стреляет в обе стороны
+      const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+      const guns = [[this.weapon, 1], [this.weapon2, -1]];
+      for (const [w, side] of guns) {
+        const t = side > 0 ? this.attackTimer : this.attackTimer2;
+        if (t > 0) continue;
+        const a = this.dualSpread ? this.angle + side * Math.PI / 2 : this.angle;
+        const hx = cx + Math.cos(this.angle + Math.PI / 2) * side * (this.dualSpread ? 14 : 4.5);
+        const hy = cy + Math.sin(this.angle + Math.PI / 2) * side * (this.dualSpread ? 14 : 4.5);
+        if (side > 0) this.attackTimer = w.cooldown; else this.attackTimer2 = w.cooldown;
+        if (this._fireGun(w, a, hx, hy, bullets, level)) {
+          if (side > 0) { this.flashTimer = 0.06; this.recoil = 1; } else { this.flash2 = 0.06; this.recoil2 = 1; }
+        }
+      }
+    } else if (shouldShoot && this.attackTimer <= 0) {
       const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
       if (this.weapon) {
         this.attackTimer = this.weapon.cooldown;
         if (this.weapon.type === 'ranged') {
-          if (this.weapon.ammo > 0) {
-            this.weapon.ammo--;
-            this.flashTimer = 0.06;
-            this.recoil = 1;
-            AudioSys.play(this.weapon.sound);
-            level.addNoise(cx, cy, 400);
-
-            const bx = cx + Math.cos(this.angle) * 16;
-            const by = cy + Math.sin(this.angle) * 16;
-            // Дробовик стреляет веером
-            if (this.weapon.id === 'shotgun') {
-              for (let i = 0; i < this.weapon.pellets; i++) {
-                const finalAngle = this.angle + Utils.rand(-this.weapon.spread, this.weapon.spread);
-                bullets.push(new Bullet(bx, by, finalAngle, this.weapon.bulletSpeed, true, this.weapon.color));
-              }
-            } else {
-              bullets.push(new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, true, this.weapon.color));
-            }
-            Effects.casing(cx + Math.cos(this.angle) * 8, cy + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
-            const muz = (Sprites.WEAPON_META[this.weapon.id] || {}).muzzle || 16;
-            Effects.muzzle(cx + Math.cos(this.angle) * (muz + 6), cy + Math.sin(this.angle) * (muz + 6), this.angle, this.weapon.id === 'shotgun');
-          } else {
-            AudioSys.play('empty_click');
-          }
+          if (this._fireGun(this.weapon, this.angle, cx, cy, bullets, level)) { this.flashTimer = 0.06; this.recoil = 1; }
         } else {
           // Ближний бой: замах поочерёдно справа и слева, нож чередует выпад и взмах
           this.swingDur = MELEE_SWING[this.weapon.id] || 0.28;
@@ -285,6 +322,34 @@ class Player {
     }
   }
 
+  // Один выстрел из оружия w под углом a из точки (cx,cy). Возвращает true, если выстрел был.
+  _fireGun(w, a, cx, cy, bullets, level) {
+    if (w.ammo <= 0) { AudioSys.play('empty_click'); return false; }
+    w.ammo--;
+    const bx = cx + Math.cos(a) * 16, by = cy + Math.sin(a) * 16;
+    if (w.projectile === 'flame') {
+      // огнемёт: шум и звук реже, гильз нет
+      this._fired.push({ type: 'flame', x: bx, y: by, a });
+      if (Math.random() < 0.25) AudioSys.play('throw');
+      level.addNoise(cx, cy, 250);
+      return true;
+    }
+    AudioSys.play(w.sound);
+    level.addNoise(cx, cy, 400);
+    if (w.projectile === 'rocket') {
+      this._fired.push({ type: 'rocket', x: bx, y: by, a });
+      Effects.smoke(cx - Math.cos(a) * 18, cy - Math.sin(a) * 18, a + Math.PI, 8);
+      return true;
+    }
+    const mk = (ang) => { const b = new Bullet(bx, by, ang, w.bulletSpeed, true, w.color); b.src = w.id; b.dmg = w.damage || 1; b.owner = this.charId; bullets.push(b); };
+    if (w.pellets) for (let i = 0; i < w.pellets; i++) mk(a + Utils.rand(-w.spread, w.spread));
+    else mk(a + (w.spread ? Utils.rand(-w.spread, w.spread) : 0));
+    Effects.casing(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, a, w.id === 'shotgun');
+    const muz = (Sprites.WEAPON_META[w.id] || {}).muzzle || 16;
+    Effects.muzzle(cx + Math.cos(a) * (muz + 6), cy + Math.sin(a) * (muz + 6), a, w.id === 'shotgun');
+    return true;
+  }
+
   // Поднять раненого напарника в корпоративе
   revive() {
     if (!this.dead) return;
@@ -302,7 +367,7 @@ class Player {
     const kind = cause.kind || 'bullet';
     const ang = cause.angle !== undefined ? cause.angle : this.angle + Math.PI;
     this.deathAngle = ang + Utils.rand(-0.3, 0.3);
-    const slide = { bullet: 70, shotgun: 200, blunt: 60, blade: 30, crush: 150 }[kind] || 60;
+    const slide = { bullet: 70, shotgun: 200, blunt: 60, blade: 30, crush: 150, explosion: 240 }[kind] || 60;
     this.deathAnim = { t: 0, kind, pose: kind === 'blunt' || kind === 'crush' ? 'side' : kind === 'blade' ? 'face' : 'back',
                        vx: Math.cos(ang) * slide, vy: Math.sin(ang) * slide, pool: 0, fromAngle: this.angle };
     AudioSys.play('player_death');
@@ -319,6 +384,9 @@ class Player {
       recoil: this.recoil, flash: this.flashTimer > 0,
       hurt: this.hurtCooldown > 0.45,
     };
+    if (this.weapon2 && this.weapon) {
+      st.dual = { a: this.weapon.id, b: this.weapon2.id, spread: this.dualSpread, f1: this.flashTimer > 0, f2: this.flash2 > 0, r1: this.recoil, r2: this.recoil2 };
+    }
     if (this.swingTimer > 0) {
       const p = 1 - this.swingTimer / this.swingDur;
       if (this.weapon && this.weapon.type === 'melee') st.swing = { p, side: this.swingSide, stab: this.swingStab };

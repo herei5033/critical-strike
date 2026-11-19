@@ -70,6 +70,7 @@
 
   bindHold('btn-shoot', () => Input.setShoot(true), () => Input.setShoot(false));
   bindHold('btn-throw', () => Input.setThrow(true), () => Input.setThrow(false));
+  bindHold('btn-grenade', () => Input.simulatePress('KeyG'), () => {});
   bindHold('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 50); }, () => {});
 
   // --- Кнопки МЕНЮ ---

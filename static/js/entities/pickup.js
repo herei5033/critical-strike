@@ -127,7 +127,8 @@ class Pickup {
     }
 
     const pulse = (Math.sin(this.phase) + 1) * 0.5;
-    ctx.fillStyle = this.isHealth ? `rgba(255, 68, 68, ${0.35 + pulse * 0.4})` : `rgba(255, 230, 100, ${0.35 + pulse * 0.4})`;
+    const glow = this.isGrenade ? '120,255,120' : this.isHealth ? '255,68,68' : (this.weapon && this.weapon.special ? '255,120,255' : (this.weapon && this.weapon.rare ? '255,140,40' : '255,230,100'));
+    ctx.fillStyle = `rgba(${glow}, ${0.35 + pulse * 0.4})`;
     ctx.beginPath();
     ctx.arc(this.x, this.y, 18, 0, Math.PI * 2);
     ctx.fill();
@@ -139,7 +140,9 @@ class Pickup {
     const bob = Math.sin(this.phase * 1.5) * 2;
     ctx.save();
     ctx.translate(this.x, this.y + bob);
-    if (this.isHealth) {
+    if (this.isGrenade) {
+      ctx.scale(1.6, 1.6); Sprites.drawGrenade(ctx, 0, false);
+    } else if (this.isHealth) {
       Sprites.drawMedkit(ctx);
     } else {
       ctx.rotate(this.phase * 0.25);
@@ -167,6 +170,6 @@ function drawWeapon(ctx, w, ox, oy, scale) {
   ctx.save();
   ctx.translate(ox, oy);
   if (scale && scale !== 1) ctx.scale(scale, scale);
-  Sprites.drawWeapon(ctx, w.id);
+  Sprites.drawWeapon(ctx, w.id, true);
   ctx.restore();
 }

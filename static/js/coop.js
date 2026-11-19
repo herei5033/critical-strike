@@ -6,7 +6,7 @@
 // =====================================================================
 
 const CHAR_NAMES = { dani: 'ДАНИ', gal: 'ГАЛА', daur: 'ДАУР' };
-const DEATH_KINDS = ['bullet', 'shotgun', 'blunt', 'blade', 'fist', 'throw', 'crush'];
+const DEATH_KINDS = ['bullet', 'shotgun', 'blunt', 'blade', 'fist', 'throw', 'crush', 'explosion', 'burn'];
 const DEATH_POSES = ['back', 'side', 'face', 'crawl'];
 const CHAR_IDS = ['dani', 'gal', 'daur'];
 const SLOT_COLORS = ['#ffd319', '#05d9e8', '#ff2a6d'];
@@ -526,6 +526,7 @@ class RemotePlayer {
     if (first || Math.hypot(s.x - this.x, s.y - this.y) > 140) { this.x = s.x; this.y = s.y; this.angle = s.a; }
     this.hp = s.hp; this.maxHp = s.mhp;
     this.weaponId = s.w || null; this.ammo = s.am || 0;
+    this.weapon2Id = s.w2 || null; this.spread = !!s.sp; this.ff = !!s.ff; this.grenades = s.gr || 0;
     this.moveAmt = s.mv || 0;
     this.flash = !!s.fl; this.hurt = !!s.hc;
     if (s.sw) {
@@ -612,6 +613,7 @@ class RemotePlayer {
     ctx.translate(cx, cy); ctx.rotate(this.angle); ctx.scale(1.15, 1.15);
     const st = { t: this.animT, walk: this.walkPhase, move: this.moveAmt, weaponId: this.weaponId, recoil: this.recoil, flash: this.flash, hurt: this.hurt };
     if (this.swing && this.weaponId && WEAPONS[this.weaponId] && WEAPONS[this.weaponId].type === 'melee') st.swing = this.swing;
+    if (this.weapon2Id && this.weaponId) st.dual = { a: this.weaponId, b: this.weapon2Id, spread: this.spread, f1: this.flash, f2: this.flash, r1: this.recoil, r2: this.recoil };
     if (this.punch && !this.weaponId) st.punch = this.punch;
     Sprites.drawHuman(ctx, this.look, st);
     ctx.restore();
@@ -708,7 +710,7 @@ class CoopSession {
   _markReplica(e, i) {
     e._replica = true;
     e._idx = i;
-    const cz = c => c ? { c: DEATH_KINDS.indexOf(c.kind), g: +(c.angle || 0).toFixed(2) } : {};
+    const cz = c => c ? { c: DEATH_KINDS.indexOf(c.kind), g: +(c.angle || 0).toFixed(2), b: c.by || '' } : {};
     e.takeDamage = (a, pickups, cause) => this.event({ t: 'hit', e: e._idx, k: 'dmg', a: a || 1, ...cz(cause) });
     e.stun = () => { if (!e.stunned && !e.dead) this.event({ t: 'hit', e: e._idx, k: 'stun' }); };
     e.die = (pickups, cause) => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'kill', ...cz(cause) }); };
@@ -750,6 +752,8 @@ class CoopSession {
       fl: p.flashTimer > 0 ? 1 : 0, hc: p.hurtCooldown > 0.45 ? 1 : 0,
       d: p.dead ? 1 : 0, da: +(p.deathAngle || 0).toFixed(2),
       sh: p._netShots || 0,
+      w2: p.weapon2 ? p.weapon2.id : '', am2: p.weapon2 ? p.weapon2.ammo : 0, sp: p.dualSpread ? 1 : 0,
+      ff: (p._ffT || 0) > 0 ? 1 : 0, gr: p.grenades || 0,
       bl: this.recentBullets.map(b => b.d),
     };
   }
@@ -777,7 +781,9 @@ class CoopSession {
       dr: g.level.doors.map(d => d.broken ? 9 : Math.round(d.angle * 100) / 100),
       fd: g.level.destroyed || [],
       wb: g.level.brokenWindows || [],
-      pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
+      pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : p.isGrenade ? 2 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
+      pj: g.projectiles.map(pr => { if (!pr.netId) pr.netId = this.netId++; return [pr.netId, pr.kind === 'rocket' ? 0 : 1, Math.round(pr.x), Math.round(pr.y), +(pr.a || pr.rot || 0).toFixed(2), Math.round(pr.z || 0)]; }),
+      ex: (g.explosions || []).filter(x => performance.now() - x.t < 1500).map(x => [x.id, x.x, x.y, x.r]),
       bu: g.bullets.filter(b => !b.isPlayer && !b.dead).map(b => [b.netId, Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy), b.color]),
       rv: Object.fromEntries(Object.entries(this.revive).map(([k, v]) => [k, Math.round(v * 100) / 100])),
     };
@@ -854,7 +860,7 @@ class CoopSession {
     if (e.t === 'hit') {
       const en = g.enemies[e.e];
       if (!en || en.dead) return;
-      const cause = e.c !== undefined && e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined;
+      const cause = e.c !== undefined && e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g, by: e.b || (rp && rp.charId) } : undefined;
       if (e.k === 'dmg') {
         en.takeDamage(e.a || 1, g.pickups, cause);
         en.particles.push(...Utils.spawnBloodParticles(en.cx(), en.cy(), 10));
@@ -866,13 +872,19 @@ class CoopSession {
     } else if (e.t === 'take') {
       const p = g.pickups.find(q => q.netId === e.p && !q.pickedUp);
       if (!p || !rp || rp.dead) return;
-      if (p.isHealth) {
-        if (rp.hp < rp.maxHp) { p.pickedUp = true; this.sendTo(pid, { t: 'heal' }); rp.hp++; }
-      } else if (!rp.weaponId && p.weapon) {
-        p.pickedUp = true;
-        rp.weaponId = p.weapon.id;
-        this.sendTo(pid, { t: 'give', w: p.weapon.id, am: p.weapon.ammo });
+      const slot = pickupSlot({ hp: rp.hp, maxHp: rp.maxHp, charId: rp.charId, grenades: rp.grenades, w1: rp.weaponId, w2: rp.weapon2Id }, p);
+      if (!slot) return;
+      p.pickedUp = true;
+      if (slot === 'health') { this.sendTo(pid, { t: 'heal' }); rp.hp++; }
+      else if (slot === 'grenade') { this.sendTo(pid, { t: 'gren+' }); rp.grenades = (rp.grenades || 0) + 1; }
+      else {
+        if (slot === 'w1') rp.weaponId = p.weapon.id; else rp.weapon2Id = p.weapon.id;
+        this.sendTo(pid, { t: 'give', w: p.weapon.id, am: p.weapon.ammo, s: slot });
       }
+    } else if (e.t === 'gren') {
+      g.projectiles.push(new Grenade(e.x, e.y, e.vx, e.vy, rp && rp.charId));
+    } else if (e.t === 'rocket') {
+      g.projectiles.push(new Rocket(e.x, e.y, e.a, rp && rp.charId));
     } else if (e.t === 'throw') {
       if (!WEAPONS[e.w]) return;
       const p = new Pickup(e.x, e.y, makeWeapon(e.w, e.am));
@@ -889,7 +901,12 @@ class CoopSession {
     if (!p) return;
     if (e.t === 'dmg') { p.takeDamage(e.a || 1, e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
     else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
-    else if (e.t === 'give') { if (!p.weapon) { p.weapon = makeWeapon(e.w, e.am); AudioSys.play('pickup_weapon'); } }
+    else if (e.t === 'give') {
+      if (e.s === 'w2') { if (!p.weapon2) p.weapon2 = makeWeapon(e.w, e.am); }
+      else if (!p.weapon) p.weapon = makeWeapon(e.w, e.am);
+      AudioSys.play('pickup_weapon');
+    }
+    else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_weapon'); }
     else if (e.t === 'revive') { p.revive(); }
   }
 
@@ -937,7 +954,8 @@ class CoopSession {
     for (const a of s.pk) {
       let p = byId.get(a[0]);
       if (!p) {
-        p = new Pickup(a[1], a[2], a[4] ? makeWeapon(a[4]) : null, !!a[3]);
+        p = new Pickup(a[1], a[2], a[4] ? makeWeapon(a[4]) : null, a[3] === 1);
+        if (a[3] === 2) p.isGrenade = true;
         p.netId = a[0];
       }
       p.x = a[1]; p.y = a[2]; p.thrown = !!a[5];
@@ -958,6 +976,35 @@ class CoopSession {
     }
 
     this.revive = s.rv || {};
+
+    // гранаты и ракеты хоста — только картинка
+    const prev = new Map(g.projectiles.map(pr => [pr.netId, pr]));
+    g.projectiles = (s.pj || []).map(a => {
+      let pr = prev.get(a[0]);
+      if (!pr) { pr = a[1] === 0 ? new Rocket(a[2], a[3], a[4]) : new Grenade(a[2], a[3], 0, 0); pr.netId = a[0]; }
+      pr.x = a[2]; pr.y = a[3];
+      if (a[1] === 0) pr.a = a[4]; else { pr.rot = a[4]; pr.z = a[5]; pr.t += 0.1; pr.fuse = 1; }
+      return pr;
+    });
+    // взрывы — эффекты один раз на каждый
+    this._seenEx = this._seenEx || new Set();
+    for (const x of s.ex || []) {
+      if (this._seenEx.has(x[0])) continue;
+      this._seenEx.add(x[0]);
+      Explosives.explode(g, x[1], x[2], x[3], { cosmetic: true });
+    }
+  }
+
+  // Огнемёт напарников: у хоста огонь наносит урон, у клиента — только картинка
+  remoteFlames(dt) {
+    for (const rp of this.remotes.values()) {
+      if (!rp.hasState || rp.dead || !rp.ff) continue;
+      rp._flT = (rp._flT || 0) - dt;
+      if (rp._flT > 0) continue;
+      rp._flT = 0.05;
+      const a = rp.angle;
+      Flames.spawn(rp.x + 9 + Math.cos(a) * 26, rp.y + 9 + Math.sin(a) * 26, a, this.isHost, rp.charId);
+    }
   }
 
   _createEnemy(a) {
@@ -1039,7 +1086,7 @@ class CoopSession {
         const r = e.isBoss ? 15 : 12;
         if (Utils.segDist(b.px, b.py, b.x, b.y, e.cx(), e.cy()) < r) {
           b.dead = true;
-          e.takeDamage(1);
+          e.takeDamage(b.dmg || 1, null, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx), by: b.owner });
           e.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 10, Math.atan2(b.vy, b.vx)));
           break;
         }
@@ -1055,11 +1102,12 @@ class CoopSession {
     for (const p of g.pickups) {
       if (p.thrown) continue;
       if (Utils.dist(p.x, p.y, pl.x + 9, pl.y + 9) > 24) continue;
-      if (p.isHealth ? pl.hp >= pl.maxHp : !!pl.weapon) continue;
+      const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
+      if (!slot) continue;
       if (p._reqT && performance.now() - p._reqT < 600) continue;
-      if (!p.isHealth && this._takeCd > 0) continue;
+      if (slot.startsWith('w') && this._takeCd > 0) continue;
       p._reqT = performance.now();
-      if (!p.isHealth) this._takeCd = 0.6;
+      if (slot.startsWith('w')) this._takeCd = 0.6;
       this.event({ t: 'take', p: p.netId });
     }
   }

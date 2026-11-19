@@ -27,9 +27,58 @@ const WEAPON_INFO = [
   { id: 'sword', name: 'МЕЧ', type: 'ХОЛОДНОЕ ОРУЖИЕ',
     desc: 'Максимальная дальность среди холодного оружия и широкая дуга удара с ярким следом клинка.',
     tip: 'Задевает сразу нескольких врагов перед вами.' },
+  { id: 'grenade', name: 'ГРАНАТА', type: 'ВЗРЫВЧАТКА',
+    desc: 'Осколочная граната. Бросается клавишей G туда, куда смотрит курсор, отскакивает от стен и взрывается через 1.8 секунды. Взрыв ломает мебель, двери и окна.',
+    tip: 'Не стойте рядом — осколки ранят и вас. На старте у каждого одна граната.' },
+  { id: 'rpg', name: 'РПГ', type: 'РЕДКОЕ ОРУЖИЕ',
+    desc: 'Гранатомёт с двумя ракетами. Ракета разгоняется и взрывается от первой преграды или врага. Встречается редко, врагам не достаётся.',
+    tip: 'Идеально против босса и толпы за дверью. Не стреляйте в стену в упор.' },
+  { id: 'flamer', name: 'ОГНЕМЁТ', type: 'РЕДКОЕ ОРУЖИЕ',
+    desc: 'Короткая струя огня поджигает всех впереди и прожигает мебель. Сгоревшие враги остаются обугленными. Встречается редко.',
+    tip: 'Бьёт недалеко, зато сквозь толпу — держите его у дверей.' },
+  { id: 'sniper', name: 'СНАЙПЕРКА', type: 'ТОЛЬКО ДЛЯ ДАНИ',
+    desc: 'Винтовка убитого снайпера. Самая быстрая пуля в игре и тройной урон — пробивает танка с одного выстрела. Поднять её может только Дани.',
+    tip: 'Убейте снайпера первым — и его оружие станет вашим.' },
+  { id: 'minigun', name: 'МИНИГАН', type: 'ОРУЖИЕ БОССА',
+    desc: 'Трофей Инкассатора и Генерала. 160 патронов и бешеный темп стрельбы. Поднять может только Дани.',
+    tip: 'Короткими очередями — патроны кончаются быстрее, чем кажется.' },
+  { id: 'goldenUzi', name: 'ЗОЛОТОЙ UZI', type: 'ОРУЖИЕ БОССА',
+    desc: 'Позолоченный пистолет-пулемёт Директора: быстрее и вместительнее обычного. Поднять может только Дани.',
+    tip: 'Лучшее оружие для зачистки офисов.' },
+  { id: 'cleaver', name: 'ТЕСАК', type: 'ОРУЖИЕ БОССА',
+    desc: 'Тесак Мясника — длинный и тяжёлый, режет с красным следом. Поднять может только Дани.',
+    tip: 'Дальше и быстрее обычного ножа.' },
+  { id: 'nightstick', name: 'ДУБИНКА', type: 'ОРУЖИЕ БОССА',
+    desc: 'Служебная дубинка Вахтёра. Очень быстрые удары. Поднять может только Дани.',
+    tip: 'Два-три удара в секунду — врагу не успеть ответить.' },
+  { id: 'spikedBat', name: 'БИТА С ГВОЗДЯМИ', type: 'ОРУЖИЕ БОССА',
+    desc: 'Любимая бита Вышибалы: самая длинная дистанция среди холодного оружия. Поднять может только Дани.',
+    tip: 'Задевает сразу несколько врагов.' },
   { id: 'medkit', name: 'АПТЕЧКА', type: 'ЛЕЧЕНИЕ',
     desc: 'Восстанавливает одно сердце. Лежит на уровне и выпадает из врагов: обычные — в 20% случаев, танк — в 80%.',
     tip: 'При полном здоровье не подбирается — вернитесь за ней позже.' },
+];
+
+// Боссы: где встречаются и как их победить
+const BOSS_INFO = [
+  { id: 'watchman', where: 'СОЛО: КОЛЛЕДЖ',
+    desc: 'Старый сторож с тонфой, который ночами гоняет всех из коридоров. Прицеливается и бросается в рывок через всю комнату.',
+    tactic: 'Увидели красную линию — отойдите в сторону. Врезавшись в стену, он оглушён: бейте в этот момент.' },
+  { id: 'director', where: 'СОЛО: ОФИС',
+    desc: 'Хозяин офиса в чёрном костюме. Раскручивает золотой Uzi и поливает комнату веером пуль, на 66% и 33% здоровья зовёт охрану.',
+    tactic: 'Прячьтесь за шкафами и стеллажами — сквозь них пули не летят. Атакуйте в паузах между очередями.' },
+  { id: 'collector', where: 'СОЛО: БАНК',
+    desc: 'Бронированный инкассатор с миниганом в хранилище. Самый живучий стрелок, вызывает подкрепление.',
+    tactic: 'Взрывы — лучший аргумент: граната или РПГ снимают больше всего. Не стойте на открытом месте.' },
+  { id: 'bouncer', where: 'СОЛО: НОЧНОЙ КЛУБ',
+    desc: 'Гора мышц с битой в гвоздях охраняет VIP-зал. Самый быстрый и живучий из тех, кто бросается в рывок.',
+    tactic: 'Заманите его в рывок на колонну или стену. Даур с двумя стволами разносит его за секунды.' },
+  { id: 'butcher', where: 'БЕСКОНЕЧНЫЙ И КОРПОРАТИВ',
+    desc: 'Мясник с окровавленным тесаком. Приходит, когда общий счёт достигает порога, и таранит всех на пути.',
+    tactic: 'Расходитесь в стороны — рывок задевает всех, кто на линии. Добивайте, пока он оглушён у стены.' },
+  { id: 'general', where: 'БЕСКОНЕЧНЫЙ И КОРПОРАТИВ',
+    desc: 'Командир охраны с миниганом. Появляется за очки, стреляет очередями и зовёт подкрепление.',
+    tactic: 'Перед очередью он раскручивает ствол — это ваш сигнал спрятаться. Дани наносит ему +10% урона.' },
 ];
 
 class Menu {
@@ -48,7 +97,7 @@ class Menu {
     this.showHelp = false;
     this.helpPage = 0; // 0 - Управление, 1 - Персонажи, 2 - Враги, 3 - Оружие
     this.cardIndex = 0;
-    this.tabs = ['УПРАВЛЕНИЕ', 'ПЕРСОНАЖИ', 'ВРАГИ', 'ОРУЖИЕ'];
+    this.tabs = ['УПРАВЛЕНИЕ', 'ПЕРСОНАЖИ', 'ВРАГИ', 'БОССЫ', 'ОРУЖИЕ'];
 
     this.enemyImages = { bandit: new Image(), tank: new Image(), hound: new Image(), sniper: new Image() };
     this.enemyImages.bandit.src = '/static/img/enemy_bandit.png';
@@ -58,10 +107,10 @@ class Menu {
 
     this.controls = [
       ['W A S D', 'Движение'], ['МЫШЬ', 'Прицеливание'], ['ЛКМ', 'Стрельба / удар'],
-      ['Q', 'Бросить оружие'], ['SHIFT', 'Заглянуть вперёд'], ['ESC', 'Выход в меню'],
+      ['Q', 'Бросить оружие'], ['G', 'Бросить гранату'], ['CTRL', 'Даур: стволы в стороны'], ['SHIFT', 'Заглянуть вперёд'], ['T', 'Чат (корпоратив)'], ['ESC', 'Выход в меню'],
     ];
     this.mobileControls = [
-      ['Левый стик', 'Движение'], ['Правый стик', 'Прицел + авто-огонь'], ['✶', 'Выстрел / удар'], ['Q', 'Бросок'], ['II', 'Пауза'],
+      ['Левый стик', 'Движение'], ['Правый стик', 'Прицел + авто-огонь'], ['✶', 'Выстрел / удар'], ['Q', 'Бросок'], ['G', 'Граната'], ['II', 'Пауза'],
     ];
     this.tips = [
       'Толкайте двери — резко распахнутая дверь сбивает врага с ног.',
@@ -72,19 +121,25 @@ class Menu {
       'В корпоративе раненого напарника можно поднять — встаньте рядом.',
       'Чем выше общий счёт, тем чаще приходят боссы.',
       'Пули и удары ломают мебель, двери и окна.',
+      'Граната (G) отскакивает от стен — бросайте её за угол.',
+      'РПГ и огнемёт редкие: подбирайте их сразу.',
+      'Дани забирает снайперку убитого снайпера и трофеи боссов.',
+      'Гала сбивает бандитов с ног, просто врезаясь в них.',
+      'Даур с двумя стволами: зажмите CTRL, чтобы стрелять в обе стороны.',
+      'Граната, взорванная вплотную к боссу, ранит его в полтора раза сильнее.',
       'Пройдите колледж, чтобы открыть офис и бесконечный режим.',
     ];
 
     this.charsInfo = [
       { id: 'dani', name: 'ДАНИ', perk: 'Хладнокровие',
-        bio: 'Бывший оперативник спецслужб. Предпочитает действовать тихо и быстро. Его навыки скрытности и высокая скорость позволяют ему уходить от перестрелок.',
-        stats: '+15% к скорости передвижения.\nВраги замечают его на 20% позже.' },
+        bio: 'Бывший оперативник спецслужб. Тихий, быстрый и меткий. Разбирается в любом оружии — даже в трофеях с боссов.',
+        stats: '+15% к скорости, враги замечают позже.\nПодбирает снайперку и оружие боссов.\n+10% урона по боссам.' },
       { id: 'gal', name: 'ГАЛА', perk: 'Танк',
-        bio: 'Уличный боец, привыкший решать вопросы кулаками. Не признаёт огнестрельное оружие, предпочитая чувствовать хруст костей врага.',
-        stats: '+1 дополнительное сердце (4 HP).\nМощный ближний бой.' },
+        bio: 'Уличный боец, привыкший решать вопросы кулаками. Просто идёт напролом — и бандиты отлетают в стороны.',
+        stats: '4 HP. Убивает с одного удара кулаком.\nСбивает обычных бандитов, просто\nврезаясь в них на бегу.' },
       { id: 'daur', name: 'ДАУР', perk: 'Оружейник',
-        bio: 'Бывший наёмник, знающий оружие лучше, чем самого себя. Стреляет быстро и точно, но пренебрегает защитой, полагаясь на огневую мощь.',
-        stats: 'Начинает игру с дробовиком.\nНо у него только 2 HP.' },
+        bio: 'Бывший наёмник, знающий оружие лучше, чем самого себя. Носит по стволу в каждой руке и стреляет в две стороны сразу.',
+        stats: '3 HP, начинает с дробовиком.\nДержит два огнестрела (не холодное).\nCTRL — руки в стороны, Q — бросает по очереди.' },
     ];
 
     this.enemiesInfo = [
@@ -99,7 +154,7 @@ class Menu {
         stats: 'Здоровье: 1 HP.\nСкорость: очень высокая.\nОбзор: почти круговой.' },
       { id: 'sniper', type: 'sniper', name: 'СНАЙПЕР',
         bio: 'Профессионал в камуфляже и шапке. Работает на дистанции с лазерным прицелом. Увидели красный луч — у вас пара секунд, чтобы спрятаться.',
-        stats: 'Здоровье: 1 HP.\nНаводится 1.5 сек.\nВыстрел снимает 2 HP.' },
+        stats: 'Здоровье: 1 HP.\nНаводится 1.5 сек, выстрел — 2 HP.\nРоняет снайперку (для Дани).' },
     ];
 
     // Манекены для превью спрайтов
@@ -163,7 +218,7 @@ class Menu {
 
   _updateHelp() {
     const pages = this.tabs.length;
-    const cardsCount = [0, this.charsInfo.length, this.enemiesInfo.length, WEAPON_INFO.length][this.helpPage];
+    const cardsCount = [0, this.charsInfo.length, this.enemiesInfo.length, BOSS_INFO.length, WEAPON_INFO.length][this.helpPage];
     const setPage = p => { this.helpPage = (p + pages) % pages; this.cardIndex = 0; AudioSys.play('menu_move'); };
     const setCard = d => { if (cardsCount) { this.cardIndex = (this.cardIndex + d + cardsCount) % cardsCount; AudioSys.play('menu_move'); } };
 
@@ -469,8 +524,9 @@ class Menu {
 
   // ================= СПРАВОЧНИК =================
   _helpLayout(w, h) {
-    const tabW = Math.min(170, (w - 80) / 4), tabH = 34;
-    const tx0 = w / 2 - (tabW * 4 + 18) / 2;
+    const n = this.tabs.length;
+    const tabW = Math.min(160, (w - 80) / n), tabH = 34;
+    const tx0 = w / 2 - (tabW * n + 6 * (n - 1)) / 2;
     const tabs = this.tabs.map((_, i) => ({ x: tx0 + i * (tabW + 6), y: 58, w: tabW, h: tabH }));
     const cardW = Math.min(700, w - 120), cardH = Math.min(340, h - 190);
     const card = { x: w / 2 - cardW / 2, y: 108, w: cardW, h: cardH };
@@ -501,15 +557,16 @@ class Menu {
     });
 
     const c = L.card;
-    const accents = ['#05d9e8', '#ffd319', '#ff2a6d', '#c060ff'];
+    const accents = ['#05d9e8', '#ffd319', '#ff2a6d', '#ff5a3a', '#c060ff'];
     this.panel(ctx, c.x, c.y, c.w, c.h, accents[this.helpPage]);
 
     if (this.helpPage === 0) this._drawControls(ctx, c);
     else if (this.helpPage === 1) this._drawCharCard(ctx, c);
     else if (this.helpPage === 2) this._drawEnemyCard(ctx, c);
+    else if (this.helpPage === 3) this._drawBossCard(ctx, c);
     else this._drawWeaponCard(ctx, c);
 
-    const count = [0, this.charsInfo.length, this.enemiesInfo.length, WEAPON_INFO.length][this.helpPage];
+    const count = [0, this.charsInfo.length, this.enemiesInfo.length, BOSS_INFO.length, WEAPON_INFO.length][this.helpPage];
     if (count) {
       for (const [r, dir] of [[L.prev, -1], [L.next, 1]]) {
         ctx.save();
@@ -556,14 +613,14 @@ class Menu {
     ctx.textAlign = 'left';
     this.glowText(ctx, 'КЛАВИАТУРА И МЫШЬ', c.x + 24, c.y + 32, '#ffd319', 15, 'left', 8);
     this.controls.forEach(([k, d], i) => {
-      const y = c.y + 48 + i * 32;
+      const y = c.y + 42 + i * 25;
       const tw = this._keyCap(ctx, c.x + 24, y, k);
       ctx.font = `14px "Courier New", monospace`; ctx.textAlign = 'left';
       ctx.fillStyle = '#e8e4f8'; ctx.fillText(d, c.x + 34 + Math.max(tw, 90), y + 17);
     });
     this.glowText(ctx, 'ТЕЛЕФОН', c.x + colW + 10, c.y + 32, '#ffd319', 15, 'left', 8);
     this.mobileControls.forEach(([k, d], i) => {
-      const y = c.y + 48 + i * 32;
+      const y = c.y + 42 + i * 25;
       const tw = this._keyCap(ctx, c.x + colW + 10, y, k);
       ctx.font = `14px "Courier New", monospace`; ctx.textAlign = 'left';
       ctx.fillStyle = '#e8e4f8'; ctx.fillText(d, c.x + colW + 20 + Math.max(tw, 110), y + 17);
@@ -614,8 +671,44 @@ class Menu {
     this._wrapText(ctx, en.stats, tx, c.y + 112 + bh, tw, 17);
   }
 
+  _drawBossCard(ctx, c) {
+    const b = BOSS_INFO[this.cardIndex];
+    const def = BOSS_TYPES[b.id];
+    // витрина с анимированным боссом
+    const bx = c.x + 22, by = c.y + 22, bw = Math.min(230, c.w * 0.36), bh = c.h - 44;
+    const g = ctx.createRadialGradient(bx + bw / 2, by + bh * 0.45, 10, bx + bw / 2, by + bh * 0.45, bw * 0.8);
+    g.addColorStop(0, 'rgba(255,60,40,0.3)'); g.addColorStop(1, 'rgba(10,5,22,0.9)');
+    ctx.fillStyle = g; ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(255,90,58,0.6)'; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.save();
+    ctx.translate(bx + bw / 2, by + bh * 0.48);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 10, 46, 28, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(-Math.PI / 2 + Math.sin(this.t * 0.9) * 0.25);
+    ctx.scale(3.4, 3.4);
+    Sprites.drawHuman(ctx, def.look, { t: this.t, walk: this.t * 8, move: 0.6, weaponId: def.weapon });
+    ctx.restore();
+    ctx.font = 'bold 12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff5a3a';
+    ctx.fillText(b.where, bx + bw / 2, by + bh - 14);
+
+    const tx = bx + bw + 24, tw = c.x + c.w - tx - 24;
+    this.glowText(ctx, def.name, tx, c.y + 46, '#ff5a3a', 26, 'left', 12);
+    ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = '#ffd319'; ctx.textAlign = 'left';
+    ctx.fillText(def.title, tx, c.y + 68);
+    ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#e8e4f8';
+    let y = c.y + 92;
+    y += this._wrapText(ctx, b.desc, tx, y, tw, 16);
+    ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
+    ctx.fillText('КАК ПОБЕДИТЬ', tx, y + 8);
+    ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#c8c2e0';
+    y += 26 + this._wrapText(ctx, b.tactic, tx, y + 26, tw, 16);
+    ctx.font = 'bold 12px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
+    ctx.fillText(`ЗДОРОВЬЕ: ${def.hp} (+50% за каждого напарника)    НАГРАДА: ${def.bonus}`, tx, Math.min(y + 12, c.y + c.h - 40), tw);
+    ctx.fillStyle = '#ff7aff';
+    ctx.fillText(`ТРОФЕЙ: ${WEAPONS[def.drop] ? WEAPONS[def.drop].name : '—'} (только Дани)`, tx, Math.min(y + 30, c.y + c.h - 22), tw);
+  }
+
   _weaponStats(info) {
-    if (info.id === 'medkit') return null;
+    if (info.id === 'medkit' || info.id === 'grenade') return null;
     const w = WEAPONS[info.id];
     if (w.type === 'ranged') {
       const rate = 1 / w.cooldown;
@@ -653,12 +746,13 @@ class Menu {
     ctx.translate(bx + bw / 2, by + bh * 0.42 + Math.sin(this.t * 2) * 4);
     ctx.rotate(Math.sin(this.t * 0.8) * 0.12 - 0.15);
     if (info.id === 'medkit') { ctx.scale(5, 5); Sprites.drawMedkit(ctx); }
+    else if (info.id === 'grenade') { ctx.scale(8, 8); Sprites.drawGrenade(ctx, this.t, false); }
     else {
-      const len = { glock: 13, uzi: 22, m4: 40, ak47: 38, shotgun: 42, bat: 30, pipe: 28, knife: 19, sword: 39 }[info.id] || 30;
+      const len = { glock: 13, uzi: 22, goldenUzi: 22, m4: 40, ak47: 38, shotgun: 42, sniper: 49, minigun: 40, rpg: 49, flamer: 37, bat: 30, spikedBat: 30, pipe: 28, knife: 19, sword: 39, cleaver: 26, nightstick: 27 }[info.id] || 30;
       const sc = Math.min(7, (bw - 40) / len);
       ctx.scale(sc, sc);
-      ctx.translate(-len / 2 + ({ m4: 11, ak47: 11, shotgun: 11, uzi: 9, bat: 5, pipe: 5, knife: 5, sword: 8 }[info.id] || 2), 0);
-      Sprites.drawWeapon(ctx, info.id);
+      ctx.translate(-len / 2 + ({ m4: 11, ak47: 11, shotgun: 11, sniper: 13, rpg: 12, flamer: 10, minigun: 6, uzi: 9, goldenUzi: 9, bat: 5, spikedBat: 5, pipe: 5, knife: 5, sword: 8, cleaver: 5, nightstick: 5 }[info.id] || 2), 0);
+      Sprites.drawWeapon(ctx, info.id, true);
     }
     ctx.restore();
     ctx.font = `bold 12px "Courier New", monospace`; ctx.textAlign = 'center';

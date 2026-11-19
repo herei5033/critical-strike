@@ -62,6 +62,8 @@ class Game {
     this.levelBanner = null;
     this.coop = null;
     this.fxBullets = [];      // пули напарников и вражеские пули у клиента — только для вида
+    this.projectiles = [];    // гранаты и ракеты
+    this.explosions = [];
     this.bossDirector = null;
     TextField.init();
 
@@ -167,6 +169,9 @@ class Game {
   }
 
   _afterLevelStart() {
+    this.projectiles = [];
+    this.explosions = [];
+    Flames.reset();
     Effects.reset();
     this.fxBullets = [];
     this.combo = 0;
@@ -228,6 +233,18 @@ class Game {
       const r = Utils.choice(this.level.rooms);
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
+    }
+    // гранаты и редкие РПГ/огнемёт (врагам они не достаются)
+    const extra = [['grenade', 2 + (this.coop ? this.coop.players.length - 1 : 0)], ['rpg', Math.random() < 0.35 ? 1 : 0], ['flamer', Math.random() < 0.35 ? 1 : 0]];
+    for (const [kind, n] of extra) {
+      for (let i = 0; i < n; i++) {
+        const r = Utils.choice(this.level.rooms);
+        const p = this.level.randomFreePoint(r);
+        if (!p) continue;
+        const pk = new Pickup(p.x, p.y, kind === 'grenade' ? null : makeWeapon(kind));
+        if (kind === 'grenade') pk.isGrenade = true;
+        this.pickups.push(pk);
+      }
     }
   }
 
@@ -477,8 +494,10 @@ class Game {
         if (this.bullets.length > shotsBefore) {
           this.player._netShots = (this.player._netShots || 0) + 1;
           const wid = this.player.weapon ? this.player.weapon.id : '';
-          for (let i = shotsBefore; i < this.bullets.length; i++) this.bullets[i].src = wid;
+          for (let i = shotsBefore; i < this.bullets.length; i++) if (!this.bullets[i].src) this.bullets[i].src = wid;
         }
+        for (const f of this.player._fired) this._spawnFired(f, this.player.charId, coopClient);
+        this.player._fired.length = 0;
         if (this.player._thrownPickup) {
           const tp = this.player._thrownPickup;
           if (coopClient) {
@@ -536,6 +555,14 @@ class Game {
         }
       }
       if (coopClient) this.coop.clientBulletHits();
+      // гранаты и ракеты (у клиента их позиции приходят от хоста)
+      if (!coopClient) {
+        for (const pr of this.projectiles) pr.update(dt, this);
+        this.projectiles = this.projectiles.filter(pr => !pr.dead);
+      }
+      this.player._ffT = Math.max(0, (this.player._ffT || 0) - dt);
+      if (this.coop) this.coop.remoteFlames(dt);
+      Flames.update(dt, this);
       // пули напарников и копии вражеских пуль — только картинка, урона не наносят
       for (const b of this.fxBullets) {
         b.update(dt, this.level);
@@ -556,16 +583,14 @@ class Game {
         if (p.pickedUp || p.thrown || p.groundTimer > 0) continue;
         const dist = Utils.dist(p.x, p.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2);
         if (dist < 24 && !this.player.dead) {
-          if (p.isHealth) {
-            if (this.player.hp < this.player.maxHp) {
-              this.player.hp++;
-              p.pickedUp = true;
-              AudioSys.play('pickup_health');
-            }
-          } else if (!this.player.weapon && p.weapon) {
-            this.player.weapon = p.weapon;
+          const pl = this.player;
+          const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
+          if (slot) {
             p.pickedUp = true;
-            AudioSys.play('pickup_weapon');
+            if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); }
+            else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
+            else if (slot === 'w1') { pl.weapon = p.weapon; AudioSys.play('pickup_weapon'); }
+            else { pl.weapon2 = p.weapon; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
           }
         }
       }
@@ -763,6 +788,8 @@ class Game {
     this.player.draw(b);
     for (const bullet of this.bullets) bullet.draw(b);
     for (const bullet of this.fxBullets) if (!bullet.dead) bullet.draw(b);
+    for (const pr of this.projectiles) pr.draw(b);
+    Flames.draw(b);
     this.level.drawEffects(b);
     Effects.drawTop(b);
     this._drawMuzzleLights(b, lit);
@@ -827,8 +854,9 @@ class Game {
     }
 
     const scale = Math.min(1, this.W / 960);
-    const wname = this.player.weapon ? this.player.weapon.name : '— КУЛАКИ —';
-    const ammoText = this.player.weapon && this.player.weapon.type === 'ranged' ? `   ${this.player.weapon.ammo} / ${this.player.weapon.maxAmmo}` : '';
+    const wdesc = w => w.name + (w.type === 'ranged' ? ` ${w.ammo}/${w.maxAmmo}` : '');
+    const wname = this.player.weapon ? wdesc(this.player.weapon) + (this.player.weapon2 ? '  |  ' + wdesc(this.player.weapon2) : '') : '— КУЛАКИ —';
+    const ammoText = (this.player.grenades ? `   ГРАНАТ: ${this.player.grenades}` : '') + (this.player.weapon2 ? (this.player.dualSpread ? '  [ВРАЗБРОС]' : '') : '');
 
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(10 * scale, 10 * scale, 380 * scale, 30 * scale);
@@ -934,6 +962,21 @@ class Game {
         ctx.fillText('ВЫЙТИ (ESC)', this.W / 2, this.H / 2 + 162);
       }
     }
+  }
+
+  // Граната/ракета/огонь от героя. Клиент корпоратива только сообщает хосту.
+  _spawnFired(f, by, client) {
+    if (f.type === 'flame') {
+      Flames.spawn(f.x, f.y, f.a, !client, by);
+      this.player._ffT = 0.15;
+      return;
+    }
+    if (client) {
+      if (f.type === 'grenade') this.coop.event({ t: 'gren', x: Math.round(f.x), y: Math.round(f.y), vx: Math.round(f.vx), vy: Math.round(f.vy) });
+      else this.coop.event({ t: 'rocket', x: Math.round(f.x), y: Math.round(f.y), a: +f.a.toFixed(3) });
+      return;
+    }
+    this.projectiles.push(f.type === 'grenade' ? new Grenade(f.x, f.y, f.vx, f.vy, by) : new Rocket(f.x, f.y, f.a, by));
   }
 
   // Полоса здоровья босса и предупреждение о его появлении
@@ -1098,9 +1141,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Хладнокровие', desc: '+15% скорость, враги замечают позже', hp: 3, speed: 1.15, weapon: 'glock' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Танк', desc: '+1 HP, мощный ближний бой', hp: 4, speed: 1, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Оружейник', desc: 'Дробовик со старта, но только 2 HP', hp: 2, speed: 1, weapon: 'shotgun' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Быстрый, берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1.15, weapon: 'glock' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Убивает кулаком с удара, сбивает бандитов на бегу', hp: 4, speed: 1, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Два ствола', desc: 'Огнестрел в каждой руке, CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'shotgun' },
     ];
 
     const isMobile = this.W < 800;
