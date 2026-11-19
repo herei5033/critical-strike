@@ -3,7 +3,7 @@
 //  • левая половина экрана — «плавающий» стик движения: появляется там, где коснулся палец;
 //  • правая половина — стик прицела: тянете в сторону цели, оттянули сильнее — стрельба;
 //    помощь в прицеливании доводит ствол до ближайшего врага;
-//  • кнопки действий подстраиваются под героя: ПИНОК (Гала), ВРАЗБРОС (Даур), БРОСОК, ГРАНАТА;
+//  • кнопки действий подстраиваются под героя: КЛОНЫ (Дани), РЫВОК и БАБАХ (Гала), АРСЕНАЛ (Даур), БРОСОК, ГРАНАТА;
 //  • в меню — ▲ ▼ OK и НАЗАД, плюс можно просто нажимать на пункты на экране.
 // =====================================================================
 (function () {
@@ -81,7 +81,7 @@
   tapBtn('btn-throw', () => Input.setThrow(true), () => Input.setThrow(false));
   tapBtn('btn-grenade', () => Input.simulatePress('KeyG'));
   tapBtn('btn-kick', () => Input.simulatePress('KeyF'));
-  tapBtn('btn-spread', () => { Input.mobileSpread = !Input.mobileSpread; Input.mouse.right = Input.mobileSpread; });
+  tapBtn('btn-ult', () => Input.simulatePress('KeyE'));
   tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
   // меню
   tapBtn('btn-up', () => Input.simulatePress('MobileUp'));
@@ -107,14 +107,13 @@
     gb.classList.toggle('off', !(p.grenades > 0));
     // бросок — только если есть что бросать
     $('btn-throw').classList.toggle('off', !(p.weapon || p.weapon2));
-    // пинок: перезарядка кольцом
-    const kb = $('btn-kick');
-    kb.style.setProperty('--cd', p.kickCd > 0 ? String(1 - p.kickCd / KICK_CD) : '1');
-    kb.classList.toggle('off', p.kickCd > 0);
-    // вразброс: включается только с двумя стволами
-    if (!p.weapon2 && Input.mobileSpread) { Input.mobileSpread = false; Input.mouse.right = false; }
-    $('btn-spread').classList.toggle('on', !!Input.mobileSpread);
-    $('btn-spread').classList.toggle('off', !p.weapon2);
+    // навык: перезарядка кольцом
+    // навык F: КЛОНЫ (Дани) / РЫВОК (Гала), кольцо — перезарядка
+    const kb = $('btn-kick'), cdMax = SKILL_CD[p.charId] || 1;
+    kb.querySelector('span').textContent = { dani: 'КЛОНЫ', gal: 'РЫВОК', daur: 'АРСЕНАЛ' }[p.charId] || 'НАВЫК';
+    kb.style.setProperty('--cd', p.skillCd > 0 ? String(1 - p.skillCd / cdMax) : '1');
+    kb.classList.toggle('off', p.skillCd > 0);
+    $('btn-ult').classList.toggle('ready', !!p.babahReady);
   }
   requestAnimationFrame(sync);
 

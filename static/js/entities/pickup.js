@@ -127,7 +127,7 @@ class Pickup {
     }
 
     const pulse = (Math.sin(this.phase) + 1) * 0.5;
-    const glow = this.isArmor ? '90,170,255' : this.isGrenade ? '120,255,120' : this.isHealth ? '255,68,68' : (this.weapon && this.weapon.special ? '255,120,255' : (this.weapon && this.weapon.rare ? '255,140,40' : '255,230,100'));
+    const glow = this.isArmor ? '90,170,255' : this.isGrenade ? '120,255,120' : this.isHealth ? '255,68,68' : (this.weapon && (this.weapon.special || this.weapon.boss) ? '255,120,255' : (this.weapon && this.weapon.rare ? '255,140,40' : '255,230,100'));
     ctx.fillStyle = `rgba(${glow}, ${0.35 + pulse * 0.4})`;
     ctx.beginPath();
     ctx.arc(this.x, this.y, 18, 0, Math.PI * 2);

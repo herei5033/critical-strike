@@ -1,7 +1,12 @@
 // Длительность анимации удара для каждого вида холодного оружия (сек)
 const MELEE_SWING = { bat: 0.34, pipe: 0.3, sword: 0.3, knife: 0.2 };
-const KICK_DUR = 0.42;      // пинок-вертушка Галы: длительность прыжка
-const KICK_CD = 2.0;        // перезарядка пинка (при 1 с Гала был неуязвим почти половину времени)
+// Активные навыки (клавиша F): Дани — клоны, Гала — рывок
+const SKILL_CD = { dani: 10, gal: 1.6, daur: 7 };   // Дани — клоны, Гала — рывок, Даур — арсенал
+const PULL_TIME = 0.55;     // сколько летят притянутые стволы
+const DASH_SPEED = 720;     // рывок Галы, пикселей в секунду
+const DASH_MAX = 0.9;       // максимум секунд в рывке
+const RAGE_AURA = 44;       // аура смерти Даура в ярости (радиус)
+const BABAH_R = 160;        // взрыв «БАБАХ» Галы
 const MODE_TIME = 6;        // ярость Даура / лотерея Дани
 // Ценность огнестрела: Даур первым выбрасывает самое бесполезное
 const WEAPON_VALUE = { glock: 1, uzi: 1.3, m4: 2, ak47: 2, shotgun: 1.8, m4s: 2.6, goldenUzi: 2.3, minigun: 3, sniper: 2.6, rpg: 3, flamer: 2.6 };
@@ -22,11 +27,12 @@ class Player {
     this.armor = 0;             // синие сердца бронежилета (сгорают первыми)
     this.charId = charId;
 
-    // Гала: 7 HP и +20% к скорости (оружие не берёт)
-    if (charId === 'gal') { this.maxHp = 7; this.hp = 7; this.speed *= 1.2; }
-    this.kickT = 0; this.kickCd = 0; this._kickHit = null; this._kickDir = 0;
-    this.rageT = 0; this.lottoT = 0;   // режимы Даура и Дани
-    this._bossHits = 0;
+    // у всех по 6 HP: у Галы есть неуязвимый рывок, у Дани — клоны, у Даура — два ствола
+    this.skillCd = 0;                 // перезарядка навыка F
+    this.dashT = 0; this._dashHit = null; this._dashDir = 0;   // рывок Галы
+    this.rageT = 0;                   // ярость Даура
+    this.babahReady = false;          // «БАБАХ» Галы заряжен (тело в огне)
+    this._wantClones = false; this._wantBabah = false; this._wantPull = false;
     this._safeX = x; this._safeY = y;
     this.kills = 0;             // лично убитые враги (Гала лечится за каждого 5-го)
 
@@ -46,7 +52,7 @@ class Player {
     this.attackTimer2 = 0;
     this.flash2 = 0;
     this.recoil2 = 0;
-    this.dualSpread = false;    // CTRL: руки разведены в стороны
+    this.dualSpread = false;    // (больше не используется: оба ствола смотрят вперёд)
     this.grenades = 1;
     this._fired = [];           // ракеты/огонь/гранаты — их создаёт игра
     this._bumpCd = 0;
@@ -69,7 +75,7 @@ class Player {
   }
 
   takeDamage(amount, cause) {
-    if (this.dead || this.hurtCooldown > 0 || this.kickT > 0) return;
+    if (this.dead || this.hurtCooldown > 0 || this.dashT > 0) return;
     this._lastCause = cause;
     this.hurtCooldown = Input.isMobile ? 0.9 : 0.6;
     if (this.armor > 0) {
@@ -136,21 +142,7 @@ class Player {
       if (hit.fists) {
         if (!this._inMeleeArc(e, level, 36, Math.PI / 2.5)) continue;
         landed = true;
-        if (this.charId === 'gal' && !e.stunned) {
-          // Гала вырубает насмерть одним ударом (танку и боссу — урон)
-          if (e.isBoss || e.type === 'tank') e.takeDamage(e.isBoss ? 1 : 2, pickups, { kind: 'fist', angle: this.angle, by: this.charId });
-          if (e.isBoss && !e.dead) {
-            this._bossHits++;
-            if (this._bossHits % 5 === 0 && e.bossStun) {
-              // после оглушения босс несколько секунд устойчив — вечного стана больше нет
-              const ok = e.bossStun(1.0);
-              if (!e._replica) Effects.popup(e.cx(), e.cy() - 30, ok === false ? 'УСТОЙЧИВ' : 'ОГЛУШЁН!', ok === false ? '#9a94b8' : '#ffd319', 12);
-            }
-          }
-          else e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
-          this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
-          Effects.ring(e.cx(), e.cy(), '255,200,120', 26);
-        } else if (e.stunned) {
+        if (e.stunned) {
           e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
         } else {
@@ -185,9 +177,8 @@ class Player {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     this._level = level;
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
-    this.kickCd = Math.max(0, this.kickCd - dt);
+    this.skillCd = Math.max(0, this.skillCd - dt);
     this.rageT = Math.max(0, this.rageT - dt);
-    this.lottoT = Math.max(0, this.lottoT - dt);
     // застряли в стене или двери (толчок, прыжок, рывок босса) — возвращаемся на свободное место
     if (level.collides(this.x, this.y, this.w, this.h)) this._unstick(level);
     else { this._safeX = this.x; this._safeY = this.y; }
@@ -210,26 +201,46 @@ class Player {
     const len = Math.hypot(dx, dy);
     if (len > 0 && len > 1) { dx /= len; dy /= len; }
 
-    // Гала: пинок-вертушка (F) — прыжок вперёд, оглушает всех вокруг, в прыжке неуязвим
-    if (this.charId === 'gal' && this.kickT <= 0 && this.kickCd <= 0 && (Input.wasPressed('KeyF') || Input.wasPressed('MobileKick'))) {
-      this.kickT = KICK_DUR; this.kickCd = KICK_CD;
-      this._kickDir = len > 0.2 ? Math.atan2(dy, dx) : this.angle;
-      this._kickHit = new Set();
-      AudioSys.play('melee_swing');
-      Effects.dust(this.x + 9, this.y + 13, 4);
+    // Навык F: Дани — теневые клоны, Гала — рывок
+    if (this.skillCd <= 0 && this.dashT <= 0 && SKILL_CD[this.charId] && Input.wasPressed('KeyF')) {
+      this.skillCd = SKILL_CD[this.charId];
+      if (this.charId === 'dani') this._wantClones = true;
+      else if (this.charId === 'daur') this._wantPull = true;
+      else {
+        this.dashT = DASH_MAX;
+        this._dashDir = len > 0.2 ? Math.atan2(dy, dx) : this.angle;
+        this._dashHit = new Set();
+        AudioSys.play('melee_swing');
+        Effects.dust(this.x + 9, this.y + 13, 6);
+      }
     }
-    const kicking = this.kickT > 0;
-    if (kicking) {
-      // в прыжке летим по направлению пинка, управление не действует
-      const p = 1 - this.kickT / KICK_DUR;
-      const v = 270 * (1 - p * 0.55);
-      dx = Math.cos(this._kickDir) * v / this.speed; dy = Math.sin(this._kickDir) * v / this.speed;
-      this.kickT = Math.max(0, this.kickT - dt);
-      this._kickHits(enemies, pickups);
-      if (this.kickT <= 0) { Effects.dust(this.x + 9, this.y + 13, 6); Effects.ring(this.x + 9, this.y + 9, '255,230,150', 30); }
-    }
+    // E — «БАБАХ» Галы (когда заряжен)
+    if (this.charId === 'gal' && this.babahReady && Input.wasPressed('KeyE')) { this.babahReady = false; this._wantBabah = true; }
 
     const ox = this.x, oy = this.y;
+    if (this.dashT > 0) {
+      // рывок: несёмся вперёд, пока не упрёмся в препятствие
+      this.dashT -= dt;
+      const steps = 3;
+      let hitWall = false;
+      for (let i = 0; i < steps && !hitWall; i++) {
+        const sx = this.x + Math.cos(this._dashDir) * DASH_SPEED * dt / steps;
+        const sy = this.y + Math.sin(this._dashDir) * DASH_SPEED * dt / steps;
+        if (level.collides(sx, sy, this.w, this.h)) {
+          hitWall = true;
+          for (const d of level.doors) if (d.blocks(sx, sy, this.w, this.h)) d.push(enemies, this.x + 9, this.y + 9, Math.cos(this._dashDir) * 900, Math.sin(this._dashDir) * 900, true);
+        } else { this.x = sx; this.y = sy; }
+        this._dashHits(enemies, pickups);
+      }
+      if (Math.random() < 0.7) Effects.dust(this.x + 9, this.y + 12, 1);
+      if (hitWall || this.dashT <= 0) {
+        this.dashT = 0;
+        Effects.ring(this.x + 9, this.y + 9, '255,160,60', 34);
+        Effects.dust(this.x + 9, this.y + 9, 8);
+        if (hitWall) { AudioSys.play('punch'); Effects.hitstop = Math.max(Effects.hitstop, 0.04); }
+      }
+      dx = 0; dy = 0;
+    }
     const spd = this.speed * (this.rageT > 0 ? 1.3 : 1);
     const nx = this.x + dx * spd * dt;
     const ny = this.y + dy * spd * dt;
@@ -249,20 +260,6 @@ class Player {
 
     // Анимация ходьбы от реально пройденного пути
     const moved = Math.hypot(this.x - ox, this.y - oy) / dt;
-    this._bumpCd = Math.max(0, this._bumpCd - dt);
-    if (this.charId === 'gal' && moved > this.speed * 0.5 && this._bumpCd <= 0) {
-      for (const e of enemies) {
-        if (e.dead || e.stunned || e.type !== 'normal' || e.isBoss) continue;
-        if (Utils.dist(this.x + 9, this.y + 9, e.cx(), e.cy()) < 21) {
-          e.stun();
-          AudioSys.play('punch');
-          Effects.ring(e.cx(), e.cy(), '255,230,150', 22);
-          Effects.hitstop = Math.max(Effects.hitstop, 0.04);
-          this._bumpCd = 0.25;
-          break;
-        }
-      }
-    }
     const targetMove = Utils.clamp(moved / this.speed, 0, 1);
     this.moveAmt += (targetMove - this.moveAmt) * Math.min(1, dt * 12);
     this.walkPhase += dt * 13 * this.moveAmt;
@@ -297,7 +294,7 @@ class Player {
     this.attackTimer2 = Math.max(0, this.attackTimer2 - dt);
     this.flash2 = Math.max(0, this.flash2 - dt);
     this.recoil2 = Math.max(0, this.recoil2 - dt * 9);
-    this.dualSpread = !!this.weapon2 && (Input.mouse.right || Input.isDown('ControlLeft') || Input.isDown('ControlRight'));
+    this.dualSpread = false;
 
     // Граната (G): летит туда, куда смотрит курсор
     if (Input.wasPressed('KeyG') && this.grenades > 0) {
@@ -344,7 +341,7 @@ class Player {
 
     const dual = this.weapon2 && this.weapon && this.weapon.type === 'ranged';
     if (shouldShoot && dual) {
-      // два ствола: у каждого свой темп; с CTRL стреляет в обе стороны
+      // два ствола: у каждого свой темп, оба смотрят на прицел
       const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
       const guns = [[this.weapon, 1], [this.weapon2, -1]];
       for (const [w, side] of guns) {
@@ -376,9 +373,8 @@ class Player {
         }
       } else {
         // Кулаки: удары левой и правой по очереди
-        const fast = this.charId === 'gal';
-        this.attackTimer = fast ? 0.32 / 1.5 : 0.32;
-        this.swingDur = fast ? 0.16 : 0.22;
+        this.attackTimer = 0.32;
+        this.swingDur = 0.22;
         this.swingTimer = this.swingDur;
         this.punchSide = -this.punchSide;
         AudioSys.play('punch');
@@ -436,21 +432,19 @@ class Player {
     return best === null ? a : best;
   }
 
-  // Пинок задевает всех рядом: обычных врагов оглушает и отбрасывает, боссу — урон
-  _kickHits(enemies, pickups) {
+  // Рывок Галы оглушает всех на пути и отбрасывает в сторону (кроме боссов)
+  _dashHits(enemies, pickups) {
     const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
     for (const e of enemies) {
-      if (e.dead || this._kickHit.has(e)) continue;
-      if (Utils.dist(cx, cy, e.cx(), e.cy()) > (e.isBoss ? 40 : 36)) continue;
-      this._kickHit.add(e);
-      const a = Math.atan2(e.cy() - cy, e.cx() - cx);
-      if (e.isBoss) e.takeDamage(1, pickups, { kind: 'fist', angle: a, by: this.charId });
-      else {
-        e.stun();
-        const lv = this._level;
-        const nx = e.x + Math.cos(a) * 14, ny = e.y + Math.sin(a) * 14;
-        if (lv && !lv.collides(nx, ny, e.w, e.h)) { e.x = nx; e.y = ny; }
-      }
+      if (e.dead || e.isBoss || this._dashHit.has(e)) continue;
+      if (Utils.dist(cx, cy, e.cx(), e.cy()) > 28) continue;
+      this._dashHit.add(e);
+      const side = ((e.cx() - cx) * Math.sin(this._dashDir) - (e.cy() - cy) * Math.cos(this._dashDir)) > 0 ? -1 : 1;
+      const a = this._dashDir + side * Math.PI / 2;
+      e.stun();
+      const lv = this._level;
+      const nx = e.x + Math.cos(a) * 18, ny = e.y + Math.sin(a) * 18;
+      if (lv && !lv.collides(nx, ny, e.w, e.h)) { e.x = nx; e.y = ny; }
       AudioSys.play('punch');
       Effects.ring(e.cx(), e.cy(), '255,230,150', 24);
       Effects.burst(e.cx(), e.cy(), '255,255,255', 8, 160);
@@ -550,24 +544,28 @@ class Player {
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
 
-    drawModeAura(ctx, cx, cy, this.rageT > 0 ? 1 : this.lottoT > 0 ? 2 : 0, this.animT);
+    drawModeAura(ctx, cx, cy, this.rageT > 0 ? 1 : this.babahReady ? 4 : 0, this.animT);
     if (this.hurtCooldown > 0 && Math.floor(this.hurtCooldown * 20) % 2 === 0) ctx.globalAlpha = 0.55;
 
     ctx.save();
     ctx.translate(cx, cy);
-    if (this.kickT > 0) {
-      // вертушка: два оборота в прыжке, герой «подлетает» над тенью
-      const p = 1 - this.kickT / KICK_DUR;
-      const lift = Math.sin(p * Math.PI);
-      ctx.translate(0, -lift * 6);
-      ctx.rotate(this._kickDir + p * Math.PI * 4);
-      ctx.scale(1.15 + lift * 0.2, 1.15 + lift * 0.2);
-      Sprites.drawHuman(ctx, this.look, { ...this._animState(), punch: { p: 0.5, side: 1 } });
+    if (this.dashT > 0) {
+      // рывок: шлейф из силуэтов позади
+      ctx.restore();
+      ctx.save();
+      for (let i = 3; i >= 1; i--) {
+        ctx.globalAlpha = 0.18 * (4 - i) / 3;
+        ctx.save();
+        ctx.translate(cx - Math.cos(this._dashDir) * i * 14, cy - Math.sin(this._dashDir) * i * 14);
+        ctx.rotate(this._dashDir); ctx.scale(1.15, 1.15);
+        Sprites.drawHuman(ctx, this.look, { ...this._animState(), move: 1 });
+        ctx.restore();
+      }
       ctx.restore();
       ctx.globalAlpha = 1;
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = `rgba(255,230,150,${0.5 * lift})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(cx, cy - lift * 6, 26, 0, Math.PI * 2); ctx.stroke();
+      ctx.save(); ctx.translate(cx, cy);
+      ctx.rotate(this._dashDir); ctx.scale(1.15, 1.15);
+      Sprites.drawHuman(ctx, this.look, { ...this._animState(), move: 1 });
       ctx.restore();
       return;
     }
@@ -584,19 +582,27 @@ function drawModeAura(ctx, cx, cy, mode, t) {
   if (!mode || mode === 3) return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const col = mode === 1 ? '255,30,40' : '255,210,60';
+  const col = mode === 1 ? '255,30,40' : mode === 4 ? '255,120,30' : '255,210,60';
   const pulse = 0.5 + 0.5 * Math.sin(t * (mode === 1 ? 14 : 6));
   const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 30 + pulse * 6);
   g.addColorStop(0, `rgba(${col},0.45)`); g.addColorStop(1, `rgba(${col},0)`);
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2); ctx.fill();
-  if (mode === 2) {
-    // радиус лотереи
-    ctx.strokeStyle = `rgba(255,210,60,${0.18 + 0.12 * pulse})`; ctx.lineWidth = 2;
-    ctx.setLineDash([8, 10]); ctx.lineDashOffset = -t * 30;
-    ctx.beginPath(); ctx.arc(cx, cy, LOTTO_RADIUS, 0, Math.PI * 2); ctx.stroke();
+  if (mode === 1) {
+    // аура смерти Даура: всё внутри круга (кроме боссов) погибает
+    ctx.strokeStyle = `rgba(255,40,40,${0.45 + 0.3 * pulse})`; ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); ctx.lineDashOffset = -t * 40;
+    ctx.beginPath(); ctx.arc(cx, cy, RAGE_AURA, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
+  }
+  if (mode === 4) {
+    // Гала в огне, пока «БАБАХ» заряжен
+    for (let i = 0; i < 9; i++) {
+      const a = t * 3 + i * 0.7, rr = 10 + ((t * 40 + i * 13) % 14);
+      ctx.fillStyle = `rgba(255,${120 + (i * 17) % 100},30,${0.35})`;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * rr * 0.6, cy + Math.sin(a) * rr * 0.6 - rr * 0.4, 5 + (i % 3) * 2, 0, Math.PI * 2); ctx.fill();
+    }
   }
   ctx.restore();
 }
-const LOTTO_RADIUS = 230;
+const LOTTO_RADIUS = 230;   // (больше не используется)

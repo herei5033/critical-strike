@@ -556,7 +556,7 @@ class CoopUI {
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 6, 26, 14, 0, 0, Math.PI * 2); ctx.fill();
       ctx.rotate(-Math.PI / 2 + Math.sin(this.t) * 0.3);
       ctx.scale(2.4, 2.4);
-      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: 'm4s', gal: null, daur: 'uzi' }[mine] });
+      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: 'm4s', gal: 'flamer', daur: 'uzi' }[mine] });
       ctx.restore();
     }
 
@@ -631,7 +631,7 @@ class RemotePlayer {
     this.hp = s.hp; this.maxHp = s.mhp;
     this.weaponId = s.w || null; this.ammo = s.am || 0;
     this.weapon2Id = s.w2 || null; this.spread = !!s.sp; this.ff = !!s.ff; this.grenades = s.gr || 0;
-    this.armor = s.ar || 0; this.mode = s.md || 0;
+    this.armor = s.ar || 0; this.mode = s.md || 0; this.pc = s.pc || 0; this.allies = s.al || [];
     this.moveAmt = s.mv || 0;
     this.flash = !!s.fl; this.hurt = !!s.hc;
     if (s.sw) {
@@ -712,11 +712,16 @@ class RemotePlayer {
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
     drawModeAura(ctx, cx, cy, this.mode, this.animT);
+    for (const [ax, ay, aa, perf] of this.allies || []) {
+      ctx.save(); ctx.translate(ax + 8, ay + 8); ctx.rotate(aa); ctx.globalAlpha = perf ? 1 : 0.55;
+      Sprites.drawHuman(ctx, perf ? Sprites.HEROES.dani : Ally.shadowLook(), { t: this.animT, walk: this.walkPhase, move: 0.5, weaponId: perf ? 'm4s' : 'glock' });
+      ctx.restore();
+    }
     // цветной круг под напарником, чтобы отличать от врагов
     ctx.strokeStyle = SLOT_COLORS[this.slot % 3]; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(cx, cy + 2, 15, 11, 0, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.save();
-    ctx.translate(cx, cy); ctx.rotate(this.mode === 3 ? this.animT * 28 : this.angle); ctx.scale(1.15, 1.15);
+    ctx.translate(cx, cy); ctx.rotate(this.angle); ctx.scale(1.15, 1.15);
     const st = { t: this.animT, walk: this.walkPhase, move: this.moveAmt, weaponId: this.weaponId, recoil: this.recoil, flash: this.flash, hurt: this.hurt };
     if (this.swing && this.weaponId && WEAPONS[this.weaponId] && WEAPONS[this.weaponId].type === 'melee') st.swing = this.swing;
     if (this.weapon2Id && this.weaponId) st.dual = { a: this.weaponId, b: this.weapon2Id, spread: this.spread, f1: this.flash, f2: this.flash, r1: this.recoil, r2: this.recoil };
@@ -869,7 +874,9 @@ class CoopSession {
       sh: p._netShots || 0,
       w2: p.weapon2 ? p.weapon2.id : '', am2: p.weapon2 ? p.weapon2.ammo : 0, sp: p.dualSpread ? 1 : 0,
       ff: (p._ffT || 0) > 0 ? 1 : 0, gr: p.grenades || 0,
-      ar: p.armor || 0, md: p.kickT > 0 ? 3 : p.rageT > 0 ? 1 : p.lottoT > 0 ? 2 : 0,
+      ar: p.armor || 0, md: p.dashT > 0 ? 3 : p.rageT > 0 ? 1 : p.babahReady ? 4 : 0,
+      pc: this.game.allies.some(a => a.kind === 'perfect' && !a.dead) ? 1 : 0,
+      al: this.game.allies.filter(a => !a.dead).map(a => [Math.round(a.x), Math.round(a.y), +a.angle.toFixed(2), a.kind === 'perfect' ? 1 : 0]),
       bl: this.recentBullets.map(b => b.d),
     };
   }
@@ -1015,6 +1022,8 @@ class CoopSession {
       const p = new Pickup(e.x, e.y, makeWeapon(e.w, e.am));
       p.throwAt(e.a, 1200);
       g.pickups.push(p);
+    } else if (e.t === 'pull') {
+      if (rp && !rp.dead) g._arsenalFor(rp, pid, e.n);
     } else if (e.t === 'noise') {
       g.level.addNoise(e.x, e.y, Math.min(600, e.r || 300));
     }
@@ -1026,6 +1035,10 @@ class CoopSession {
     if (!p) return;
     if (e.t === 'dmg') { p.takeDamage(e.a || 1, e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
     else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
+    else if (e.t === 'give' && e.fx !== undefined) {
+      // арсенал: ствол летит к Дауру и попадает в руку по прилёту
+      this.game.pulls.push({ w: makeWeapon(e.w, e.am), sx: e.fx, sy: e.fy, x: e.fx, y: e.fy, t: 0, target: p, equip: true });
+    }
     else if (e.t === 'give') {
       if (e.s === 'w2') { if (!p.weapon2) p.weapon2 = prepWeapon(p.charId, makeWeapon(e.w, e.am)); }
       else if (!p.weapon) p.weapon = prepWeapon(p.charId, makeWeapon(e.w, e.am));
@@ -1036,8 +1049,7 @@ class CoopSession {
     else if (e.t === 'kc') { p.kills = e.n; }
     else if (e.t === 'chg') { p.charge = e.n; }
     else if (e.t === 'mode') {
-      if (e.m === 'rage') p.rageT = MODE_TIME; else p.lottoT = MODE_TIME;
-      announceMode(p, e.m);
+      this.game._applyMode(p, e.m);
     }
     else if (e.t === 'revive') { p.revive(); }
   }

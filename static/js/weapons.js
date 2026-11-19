@@ -22,16 +22,16 @@ const WEAPONS = {
   m4s: { id: 'm4s', name: 'M4 с глушителем', type: 'ranged', cooldown: 0.12, ammo: 30, maxAmmo: 30, bulletSpeed: 880, spread: 0.02,
          color: '#9fe0ff', length: 28, sound: 'shoot_m4', silent: true, special: 'dani' },
 
-  // Оружие снайперов и боссов — его может подобрать только Дани
+  // Оружие снайперов и боссов — трофей для любого героя
   sniper: { id: 'sniper', name: 'Снайперка', type: 'ranged', cooldown: 0.9, ammo: 7, maxAmmo: 7, bulletSpeed: 1600, damage: 3,
-            color: '#ff6060', length: 36, sound: 'sniper_shot', special: 'dani' },
+            color: '#ff6060', length: 36, sound: 'sniper_shot', boss: true },
   minigun: { id: 'minigun', name: 'Миниган', type: 'ranged', cooldown: 0.055, ammo: 180, maxAmmo: 180, bulletSpeed: 740, spread: 0.11,
-             color: '#ffb040', length: 34, sound: 'shoot_uzi', special: 'dani' },
+             color: '#ffb040', length: 34, sound: 'shoot_uzi', boss: true },
   goldenUzi: { id: 'goldenUzi', name: 'Золотой Uzi', type: 'ranged', cooldown: 0.06, ammo: 70, maxAmmo: 70, bulletSpeed: 800, spread: 0.05,
-               color: '#ffd319', length: 16, sound: 'shoot_uzi', special: 'dani' },
-  cleaver: { id: 'cleaver', name: 'Тесак', type: 'melee', cooldown: 0.36, range: 58, color: '#c8ccd4', length: 20, sound: 'melee_swing', special: 'dani' },
-  nightstick: { id: 'nightstick', name: 'Дубинка', type: 'melee', cooldown: 0.24, range: 50, color: '#2a2a30', length: 18, sound: 'melee_swing', special: 'dani' },
-  spikedBat: { id: 'spikedBat', name: 'Бита с гвоздями', type: 'melee', cooldown: 0.4, range: 62, color: '#7a4a22', length: 22, sound: 'melee_swing', special: 'dani' },
+               color: '#ffd319', length: 16, sound: 'shoot_uzi', boss: true },
+  cleaver: { id: 'cleaver', name: 'Тесак', type: 'melee', cooldown: 0.36, range: 58, color: '#c8ccd4', length: 20, sound: 'melee_swing', boss: true },
+  nightstick: { id: 'nightstick', name: 'Дубинка', type: 'melee', cooldown: 0.24, range: 50, color: '#2a2a30', length: 18, sound: 'melee_swing', boss: true },
+  spikedBat: { id: 'spikedBat', name: 'Бита с гвоздями', type: 'melee', cooldown: 0.4, range: 62, color: '#7a4a22', length: 22, sound: 'melee_swing', boss: true },
 };
 
 function makeWeapon(id, ammo) {
@@ -52,7 +52,6 @@ function pickupSlot(d, p) {
   if (p.isGrenade) return (d.grenades || 0) < 5 ? 'grenade' : null;
   if (p.isArmor) return (d.armor || 0) < 2 ? 'armor' : null;
   const w = p.weapon;
-  if (d.charId === 'gal') return null;   // Гала дерётся только кулаками
   if (!w || !canWield(d.charId, w)) return null;
   if (!d.w1) return 'w1';
   // Даур держит по огнестрелу в каждой руке (но не два ножа/биты)
@@ -71,4 +70,4 @@ function prepWeapon(charId, w) {
 }
 
 // Стартовое оружие героев
-const START_WEAPONS = { dani: ['m4s'], gal: [], daur: ['uzi', 'uzi'] };
+const START_WEAPONS = { dani: ['m4s'], gal: ['flamer'], daur: ['uzi', 'uzi'] };

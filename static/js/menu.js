@@ -40,22 +40,22 @@ const WEAPON_INFO = [
     desc: 'Короткая струя огня поджигает всех впереди и прожигает мебель. Сгоревшие враги остаются обугленными. Встречается редко.',
     tip: 'Бьёт недалеко, зато сквозь толпу — держите его у дверей.' },
   { id: 'sniper', name: 'СНАЙПЕРКА', type: 'ТОЛЬКО ДЛЯ ДАНИ',
-    desc: 'Винтовка убитого снайпера. Самая быстрая пуля в игре и тройной урон — пробивает танка с одного выстрела. Поднять её может только Дани.',
+    desc: 'Винтовка убитого снайпера. Самая быстрая пуля в игре и тройной урон — пробивает танка с одного выстрела. Трофей — подберёт любой герой.',
     tip: 'Убейте снайпера первым — и его оружие станет вашим.' },
   { id: 'minigun', name: 'МИНИГАН', type: 'ОРУЖИЕ БОССА',
-    desc: 'Трофей Инкассатора и Генерала. 180 патронов и бешеный темп стрельбы. Поднять может только Дани.',
+    desc: 'Трофей Инкассатора и Генерала. 180 патронов и бешеный темп стрельбы. Трофей босса — подберёт любой герой.',
     tip: 'Короткими очередями — патроны кончаются быстрее, чем кажется.' },
   { id: 'goldenUzi', name: 'ЗОЛОТОЙ UZI', type: 'ОРУЖИЕ БОССА',
-    desc: 'Позолоченный пистолет-пулемёт Директора: быстрее и вместительнее обычного. Поднять может только Дани.',
+    desc: 'Позолоченный пистолет-пулемёт Директора: быстрее и вместительнее обычного. Трофей босса — подберёт любой герой.',
     tip: 'Лучшее оружие для зачистки офисов.' },
   { id: 'cleaver', name: 'ТЕСАК', type: 'ОРУЖИЕ БОССА',
-    desc: 'Тесак Мясника — длинный и тяжёлый, режет с красным следом. Поднять может только Дани.',
+    desc: 'Тесак Мясника — длинный и тяжёлый, режет с красным следом. Трофей босса — подберёт любой герой.',
     tip: 'Дальше и быстрее обычного ножа.' },
   { id: 'nightstick', name: 'ДУБИНКА', type: 'ОРУЖИЕ БОССА',
-    desc: 'Служебная дубинка Вахтёра. Очень быстрые удары. Поднять может только Дани.',
+    desc: 'Служебная дубинка Вахтёра. Очень быстрые удары. Трофей босса — подберёт любой герой.',
     tip: 'Два-три удара в секунду — врагу не успеть ответить.' },
   { id: 'spikedBat', name: 'БИТА С ГВОЗДЯМИ', type: 'ОРУЖИЕ БОССА',
-    desc: 'Любимая бита Вышибалы: самая длинная дистанция среди холодного оружия. Поднять может только Дани.',
+    desc: 'Любимая бита Вышибалы: самая длинная дистанция среди холодного оружия. Трофей босса — подберёт любой герой.',
     tip: 'Задевает сразу несколько врагов.' },
   { id: 'vest', name: 'БРОНЕЖИЛЕТ', type: 'ОЧЕНЬ РЕДКИЙ',
     desc: 'Всего три штуки на весь уровень. Даёт два синих сердца сверх обычных: урон сначала снимает броню. Не носится выше двух синих сердец.',
@@ -79,13 +79,19 @@ const BOSS_INFO = [
   { id: 'bouncer', where: 'СЮЖЕТ, ГЛАВА 4 / СОЛО: КЛУБ VIBE',
     desc: 'Гора мышц с битой в гвоздях охраняет VIP-зал, где спрятаны деньги. Самый быстрый и живучий из тех, кто бросается в рывок.',
     tactic: 'Заманите его в рывок на колонну или стену. Даур с двумя стволами разносит его за секунды.' },
+  { id: 'racer', where: 'СЮЖЕТ, ГЛАВА 7 / СОЛО: НОЧНОЙ ГОРОД',
+    desc: 'Водитель Депозита в кепке, возит зарплаты по ночам. Бросается на вас как машина — два рывка подряд.',
+    tactic: 'Уходите с линии рывка за машины и фонари. Врезавшись, он на секунду оглушён.' },
+  { id: 'gardener', where: 'СЮЖЕТ, ГЛАВА 8 / СОЛО: ДЖУНГЛИ',
+    desc: 'Садовник тропического сада Депозита. Медленный и огромный, бьёт о землю — волна ранит всех рядом.',
+    tactic: 'Красный круг — выбегайте. Огнемёт и гранаты — лучшее средство против «садовода».' },
   { id: 'revisor', where: 'СЮЖЕТ, ГЛАВА 5',
     desc: 'Ряженый ревизор с одинаковым чемоданом и плохим париком. Пришёл в день «проверки» за печатями и подписями. Стреляет очередями, зовёт помощников.',
     tactic: 'Когда раскручивает очередь — за укрытие. Помощники прибегают на 66% и 33% здоровья.' },
   { id: 'brigadir', where: 'СЮЖЕТ, ГЛАВА 6',
     desc: 'Бригадир складов в порту Актау, шкаф размером с контейнер. Бьёт о землю — волна ранит всех рядом.',
     tactic: 'Красный круг — выбегайте. После удара он медленно выпрямляется: это окно для атаки.' },
-  { id: 'deposit', where: 'СЮЖЕТ, ГЛАВА 7 — ФИНАЛ',
+  { id: 'deposit', where: 'СЮЖЕТ, ГЛАВА 9 — ФИНАЛ',
     desc: 'Тот самый Мистер Депозит, у которого все зарплаты Актау. Выпускает кольца «денег», бьёт залпами, зовёт охрану и телепортируется.',
     tactic: 'В кольцах есть промежутки — проходите сквозь них. Не стойте на месте, а после телепорта сначала разберитесь с охраной.' },
   { id: 'butcher', where: 'БЕСКОНЕЧНЫЙ И КОРПОРАТИВ',
@@ -99,7 +105,7 @@ const BOSS_INFO = [
     tactic: 'После первого рывка не расслабляйтесь: второй идёт сразу. Врезавшись в стену, он оглушён.' },
   { id: 'bride', where: 'БЕСКОНЕЧНЫЙ И КОРПОРАТИВ',
     desc: 'Невеста в белом с катаной. Очень быстрая: три коротких выпада подряд почти без замаха.',
-    tactic: 'Держите дистанцию и стреляйте между выпадами. Пинок Галы и оглушение кулаками сбивают её серию.' },
+    tactic: 'Держите дистанцию и стреляйте между выпадами. Рывок Галы и гранаты сбивают её серию.' },
   { id: 'devil', where: 'БЕСКОНЕЧНЫЙ И КОРПОРАТИВ',
     desc: 'Красный рогатый «бизнесмен». Выпускает кольца огня во все стороны, бьёт прицельными залпами, зовёт бесов и телепортируется.',
     tactic: 'В кольцах есть промежутки — проходите сквозь них. После телепорта сначала разберитесь с бесами.' },
@@ -131,13 +137,13 @@ class Menu {
 
     this.controls = [
       ['W A S D', 'Движение'], ['МЫШЬ', 'Прицеливание'], ['ЛКМ', 'Стрельба / удар'],
-      ['Q', 'Бросить оружие'], ['G', 'Бросить гранату'], ['F', 'Гала: пинок-вертушка'], ['ПКМ / CTRL', 'Даур: стволы в стороны'], ['SHIFT', 'Заглянуть вперёд'], ['T', 'Чат (корпоратив)'], ['ESC', 'Выход в меню'],
+      ['Q', 'Бросить оружие'], ['G', 'Бросить гранату'], ['F', 'Навык: клоны / рывок / арсенал'], ['E', 'Гала: БАБАХ'], ['SHIFT', 'Заглянуть вперёд'], ['T', 'Чат (корпоратив)'], ['ESC', 'Выход в меню'],
     ];
     this.mobileControls = [
-      ['Левая половина', 'Стик движения'], ['Правая половина', 'Прицел; дальше — огонь'], ['ПИНОК', 'Гала: вертушка'], ['ВРАЗБРОС', 'Даур: вкл/выкл'], ['БРОС / ГРАН', 'Бросок, граната'], ['II', 'Пауза'],
+      ['Левая половина', 'Стик движения'], ['Правая половина', 'Прицел; дальше — огонь'], ['НАВЫК', 'Клоны / рывок / арсенал'], ['БАБАХ', 'Гала: взрыв'], ['БРОС / ГРАН', 'Бросок, граната'], ['II', 'Пауза'],
     ];
     this.tips = [
-      'Сюжет «Преподы. Перезапуск»: семь глав о том, куда на самом деле уходит зарплата.',
+      'Сюжет «Преподы. Перезапуск»: девять глав о том, куда на самом деле уходит зарплата.',
       'Новичок? В разделе СЮЖЕТ есть вкладка ОБУЧЕНИЕ — по уроку на каждого героя.',
       'Самса из столовой восстанавливает сердце. Главное — чтобы была горячая.',
       'Асеке видит всё по камерам. Кроме того, что внутри кабинетов.',
@@ -151,33 +157,34 @@ class Menu {
       'Пули и удары ломают мебель, двери и окна.',
       'Граната (G) отскакивает от стен — бросайте её за угол.',
       'РПГ и огнемёт редкие: подбирайте их сразу.',
-      'Дани забирает снайперку убитого снайпера и трофеи боссов.',
-      'Гала сбивает бандитов с ног, просто врезаясь в них.',
-      'Гала восстанавливает сердце за каждого пятого лично убитого врага.',
-      'Пинок Галы (F): в прыжке он неуязвим, а все враги вокруг оглушены.',
-      'Каждый пятый удар кулаком Галы оглушает даже босса — но потом босс 5 секунд устойчив.',
       'Даур первым выбрасывает самый пустой и слабый ствол.',
-      'Даур после 10 убийств впадает в ярость. Заряд не сгорает при переходе на новый этаж.',
-      'Лотерея Дани: враги вокруг могут лопнуть, а ножи и биты — стать аптечками.',
+      'Клоны Дани (F) держатся рядом 5 секунд и стреляют сами.',
+      'Каждые 10 убийств у Дани появляется идеальный клон — он сам лечится самсой.',
+      'Рывок Галы (F) несёт его до первой стены и сбивает всех на пути.',
+      'Гала в огне — значит, «БАБАХ» заряжен. Жмите E в толпе.',
+      'В ярости вокруг Даура — аура смерти: подошедшие враги падают сразу.',
+      'Оружие боссов теперь может подобрать любой герой.',
+      'В сюжете у каждой главы свои задания — следите за панелью сверху.',
       'Когда врагов почти не осталось, они сами идут на вас — не придётся искать по углам.',
       'В бесконечном режиме и корпоративе после половины зачистки приходят волны подкрепления.',
       'Бронежилет даёт два синих сердца — на уровне их всего три.',
       'Дани стреляет из M4 с глушителем — враги в соседних комнатах не слышат выстрелов.',
-      'Даур с двумя стволами: зажмите ПКМ или CTRL, чтобы стрелять в обе стороны.',
+      'АРСЕНАЛ Даура притягивает два лучших ствола с карты — разбросайте трофеи и жмите F.',
+      'Рывок Галы перезаряжается за 1,6 секунды — им удобно уходить из-под огня.',
       'Граната, взорванная вплотную к боссу, ранит его в полтора раза сильнее.',
-      'Пройдите колледж, чтобы открыть офис и бесконечный режим.',
+      'Пройдите колледж, чтобы открыть следующие уровни и бесконечный режим.',
     ];
 
     this.charsInfo = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик',
-        bio: 'Данияр, IT, кабинет 316. Любит короткие дни и энергетики, всегда первым узнаёт о зарплате. Умеет «одолжить» оружие даже у боссов.',
-        stats: '6 HP, M4 с глушителем (только у него).\nВраги замечают его позже. +10% урона по боссам,\nподбирает снайперку и оружие боссов.\nЛОТЕРЕЯ (каждые 10 убийств, 6 с): враги вокруг\nс шансом 25% лопаются, холодное оружие\nна полу может стать аптечкой.' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран',
-        bio: 'Галымжан, IT, кабинет 321. Самый адекватный в коллективе — пока его не довести. Очки, бородка, хорошо играет в футбол. Оружие ему не нужно.',
-        stats: '7 HP, +20% к скорости, только кулаки (+50% темпа).\nУбивает с удара, на бегу сбивает бандитов.\nПИНОК-ВЕРТУШКА [F], перезарядка 2 с: прыжок,\nоглушает всех вокруг, в прыжке неуязвим.\nКаждый 5-й убитый: +1 HP. Каждый 5-й удар\nоглушает босса (потом 5 с иммунитета).' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Теневой',
+        bio: 'Данияр, IT, кабинет 316. Любит короткие дни и энергетики, всегда первым узнаёт о зарплате. Работает тихо — и никогда не работает один.',
+        stats: '6 HP, M4 с глушителем (только у него).\nКЛОНЫ [F], перезарядка 10 с: три теневых клона\n(2 HP, пистолет) 5 секунд воюют рядом.\nИДЕАЛЬНЫЙ КЛОН (каждые 10 убийств): 6 HP, M4,\nходит рядом, пока жив, сам подбирает самсу.' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель',
+        bio: 'Галымжан, IT, кабинет 321. Самый адекватный в коллективе — пока его не довести. Очки, бородка и огнемёт.',
+        stats: '6 HP, начинает с огнемётом, берёт любое оружие.\nРЫВОК [F], перезарядка 1,6 с: несётся до стены,\nоглушает всех на пути (кроме боссов), неуязвим.\nБАБАХ (каждые 10 убийств): тело в огне, E —\nвзрыв вокруг: простых врагов убивает сразу.' },
       { id: 'daur', name: 'ДАУР', perk: 'Стрелок',
         bio: 'Даурен, IT, кабинет 319. Разбирается в технике и машинах, всё время собирается уйти в айти. Скептик. Носит по стволу в каждой руке.',
-        stats: '6 HP, два Uzi, +30% патронов в любом стволе.\nПКМ/CTRL — руки в стороны. Q сначала бросает\nсамый пустой и слабый ствол.\nЯРОСТЬ (каждые 10 убийств, 6 с): бесконечные\nпатроны, +35% скорострельности, +30% скорости.' },
+        stats: '6 HP, два Uzi, +30% патронов в любом стволе.\nАРСЕНАЛ [F], перезарядка 7 с: телекинезом тянет\nдва лучших ствола с карты, свои — на пол.\nЯРОСТЬ (каждые 10 убийств, 6 с): бесконечные\nпатроны, +35% темпа, +30% скорости, АУРА СМЕРТИ.' },
     ];
 
     this.enemiesInfo = [
@@ -192,7 +199,7 @@ class Menu {
         stats: 'Здоровье: 1 HP.\nСкорость: очень высокая.\nОбзор: почти круговой.' },
       { id: 'sniper', type: 'sniper', name: 'СНАЙПЕР',
         bio: 'Наёмник Депозита с лазерным прицелом. Сидит в дальнем конце коридора. Увидели красный луч — у вас пара секунд, чтобы спрятаться.',
-        stats: 'Здоровье: 1 HP.\nНаводится 1.5 сек, выстрел — 2 HP.\nРоняет снайперку (для Дани).' },
+        stats: 'Здоровье: 1 HP.\nНаводится 1.5 сек, выстрел — 2 HP.\nРоняет снайперку — трофей для любого.' },
     ];
 
     // Манекены для превью спрайтов
@@ -201,18 +208,6 @@ class Menu {
     this._previewEnemies[1].weapon = 'shotgun';
     this._previewEnemies[3].weapon = 'sniper';
 
-    // Силуэты города для фона
-    this._skyline = [];
-    let x = 0, s = 7;
-    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-    while (x < 1100) {
-      const bw = 30 + rnd() * 60, bh = 40 + rnd() * 140;
-      const wins = [];
-      for (let wy = 8; wy < bh - 6; wy += 9) for (let wx = 5; wx < bw - 5; wx += 8) if (rnd() < 0.35) wins.push([wx, wy, rnd()]);
-      this._skyline.push({ x, w: bw, h: bh, wins, antenna: rnd() < 0.25 });
-      x += bw + 2;
-    }
-    this._stars = Array.from({ length: 70 }, () => ({ x: rnd(), y: rnd() * 0.5, s: rnd() * 1.6 + 0.4, p: rnd() * 6 }));
   }
 
   // ================= ВВОД =================
@@ -325,81 +320,195 @@ class Menu {
   }
 
   // ================= ОБЩИЕ ЭЛЕМЕНТЫ =================
-  // Неоновый фон: закат, город, перспективная сетка
+  // Фон: ночной клуб — прожекторы, диско-шар, неон, танцпол и толпа.
+  // Иногда по танцполу пробегают герои, а за ними гонятся боссы.
   drawBackground(ctx, w, h, t, dim = 0) {
-    const hor = h * 0.58;
-    const sky = ctx.createLinearGradient(0, 0, 0, hor);
-    sky.addColorStop(0, '#05030c');
-    sky.addColorStop(0.55, '#1a0730');
-    sky.addColorStop(1, '#4a0e4a');
-    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, hor);
+    const beat = (t * 2.066) % 1, pulse = Math.pow(1 - beat, 3);   // ~124 BPM
+    const hor = h * 0.6;
+    const S = Math.max(0.55, Math.min(w / 1000, h / 640));
 
-    for (const s of this._stars) {
-      ctx.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(t * 1.3 + s.p));
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(s.x * w, s.y * h, s.s, s.s);
-    }
-    ctx.globalAlpha = 1;
+    // стена
+    const wall = ctx.createLinearGradient(0, 0, 0, hor);
+    wall.addColorStop(0, '#040208'); wall.addColorStop(0.6, '#0e0620'); wall.addColorStop(1, '#1c0a30');
+    ctx.fillStyle = wall; ctx.fillRect(0, 0, w, hor);
+    // акустические панели
+    ctx.fillStyle = 'rgba(255,255,255,0.025)';
+    const pw = 70 * S;
+    for (let x = (w / 2) % pw - pw; x < w; x += pw) ctx.fillRect(x, hor * 0.18, pw - 6 * S, hor * 0.74);
 
-    // солнце с полосами
-    const sr = Math.min(w, h) * 0.24, sx = w / 2, sy = hor - sr * 0.3;
-    const glow = ctx.createRadialGradient(sx, sy, sr * 0.6, sx, sy, sr * 2.2);
-    glow.addColorStop(0, 'rgba(255,60,140,0.35)'); glow.addColorStop(1, 'rgba(255,60,140,0)');
-    ctx.fillStyle = glow; ctx.fillRect(sx - sr * 2.2, sy - sr * 2.2, sr * 4.4, sr * 4.4);
+    // неоновые вывески (иногда мигают)
+    const flick = (k) => (Math.sin(t * 23 + k) > -0.96 && Math.sin(t * 1.7 + k * 3) > -0.995) ? 1 : 0.25;
     ctx.save();
-    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.clip();
-    const sg = ctx.createLinearGradient(0, sy - sr, 0, sy + sr);
-    sg.addColorStop(0, '#ffe66a'); sg.addColorStop(0.5, '#ff7a5a'); sg.addColorStop(1, '#ff2a8d');
-    ctx.fillStyle = sg; ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
-    ctx.fillStyle = '#1a0730';
-    for (let i = 0; i < 7; i++) {
-      const yy = sy + i * sr * 0.14 + ((t * 8) % (sr * 0.14));
-      ctx.fillRect(sx - sr, yy, sr * 2, 1.5 + i * 1.1);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.round(34 * S)}px "Courier New", monospace`;
+    ctx.shadowBlur = 18 * S;
+    ctx.globalAlpha = flick(1);
+    ctx.shadowColor = '#ff2a6d'; ctx.fillStyle = '#ff8ab4';
+    ctx.fillText('NEON', w * 0.14, hor * 0.32);
+    ctx.globalAlpha = flick(4);
+    ctx.shadowColor = '#05d9e8'; ctx.fillStyle = '#9af6ff';
+    ctx.fillText('CLUB', w * 0.86, hor * 0.32);
+    ctx.globalAlpha = 0.8 + 0.2 * pulse;
+    ctx.font = `bold ${Math.round(16 * S)}px "Courier New", monospace`;
+    ctx.shadowColor = '#ffd319'; ctx.fillStyle = '#ffe680';
+    ctx.fillText('★ VIP ★', w * 0.14, hor * 0.47);
+    ctx.shadowColor = '#c060ff'; ctx.fillStyle = '#e0b0ff';
+    ctx.fillText('OPEN 24/7', w * 0.86, hor * 0.47);
+    ctx.restore();
+
+    // диджейский пульт с эквалайзером
+    const dx = w / 2, dy = hor - 6 * S;
+    ctx.fillStyle = '#0a0414'; ctx.fillRect(dx - 90 * S, dy - 34 * S, 180 * S, 34 * S);
+    ctx.fillStyle = `rgba(255,42,109,${0.5 + 0.5 * pulse})`; ctx.fillRect(dx - 90 * S, dy - 34 * S, 180 * S, 2 * S);
+    for (let i = 0; i < 12; i++) {
+      const lv = 0.3 + 0.7 * Math.abs(Math.sin(t * 3 + i * 1.3)) * (0.6 + 0.4 * pulse);
+      ctx.fillStyle = i % 3 ? 'rgba(5,217,232,0.8)' : 'rgba(255,211,25,0.8)';
+      ctx.fillRect(dx - 80 * S + i * 13.5 * S, dy - 8 * S - lv * 18 * S, 8 * S, lv * 18 * S);
+    }
+    // диджей
+    ctx.fillStyle = '#05020a';
+    const bob = pulse * 3 * S;
+    ctx.beginPath(); ctx.arc(dx, dy - 56 * S + bob, 11 * S, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(dx - 18 * S, dy - 46 * S + bob, 36 * S, 14 * S);
+    ctx.fillStyle = '#ff2a6d'; ctx.fillRect(dx - 13 * S, dy - 60 * S + bob, 26 * S, 3 * S);   // наушники
+
+    // диско-шар
+    const bx = w / 2, by = hor * 0.16, br = 22 * S;
+    ctx.strokeStyle = 'rgba(200,200,220,0.4)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, by - br); ctx.stroke();
+    const bg = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 2, bx, by, br);
+    bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.4, '#a8a8c8'); bg.addColorStop(1, '#30304a');
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) {
+      if (Math.sin(t * 6 + i * 2.1 + j * 1.3) > 0.6) ctx.fillRect(bx - br + i * br / 4.5, by - br + j * br / 4.5, br / 6, br / 6);
     }
     ctx.restore();
 
-    // город
-    const scale = w / 1000;
+    // прожекторы с потолка (аддитивные лучи)
     ctx.save();
-    ctx.translate(0, hor);
-    for (const b of this._skyline) {
-      const bx = b.x * scale - 40, bh = b.h * scale * 0.9;
-      ctx.fillStyle = '#0a0414';
-      ctx.fillRect(bx, -bh, b.w * scale, bh);
-      if (b.antenna) { ctx.fillRect(bx + b.w * scale / 2, -bh - 14 * scale, 1.5, 14 * scale); ctx.fillStyle = Math.sin(t * 3 + b.x) > 0 ? '#ff2a6d' : '#3a0a1a'; ctx.fillRect(bx + b.w * scale / 2 - 1, -bh - 16 * scale, 3, 3); }
-      for (const [wx, wy, f] of b.wins) {
-        const on = Math.sin(t * 0.7 + f * 40) > -0.6;
-        if (!on) continue;
-        ctx.fillStyle = f < 0.5 ? 'rgba(255,200,120,0.55)' : 'rgba(5,217,232,0.45)';
-        ctx.fillRect(bx + wx * scale, -bh + wy * scale * 0.9, 3 * scale, 3 * scale);
-      }
+    ctx.globalCompositeOperation = 'lighter';
+    const beams = [['255,42,109', 0.12, 0.9], ['5,217,232', 0.88, -1.1], ['192,96,255', 0.32, 1.4], ['255,211,25', 0.68, -0.7]];
+    for (const [c, fx, sp] of beams) {
+      const ox = w * fx, a = Math.PI / 2 + Math.sin(t * sp * 0.6 + fx * 7) * 0.65, len = h * 1.1, spread = 0.09;
+      const g = ctx.createLinearGradient(ox, 0, ox + Math.cos(a) * len, Math.sin(a) * len);
+      g.addColorStop(0, `rgba(${c},${0.3 + 0.18 * pulse})`); g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(ox, 0);
+      ctx.lineTo(ox + Math.cos(a - spread) * len, Math.sin(a - spread) * len);
+      ctx.lineTo(ox + Math.cos(a + spread) * len, Math.sin(a + spread) * len);
+      ctx.closePath(); ctx.fill();
+    }
+    // зайчики от диско-шара по стене
+    for (let i = 0; i < 26; i++) {
+      const ang = i * 2.4 + t * 0.35;
+      const x = ((Math.cos(ang) * 0.5 + 0.5) * w * 1.2 + i * 97) % w;
+      const y = (Math.sin(ang * 1.3) * 0.5 + 0.5) * hor * 0.9;
+      ctx.fillStyle = `rgba(255,255,255,${0.12 + 0.12 * Math.sin(t * 4 + i)})`;
+      ctx.fillRect(x, y, 3 * S, 3 * S);
     }
     ctx.restore();
 
-    // пол с сеткой
+    // танцпол: светящиеся плитки в перспективе
     const fg = ctx.createLinearGradient(0, hor, 0, h);
-    fg.addColorStop(0, '#2a0838'); fg.addColorStop(1, '#05020a');
+    fg.addColorStop(0, '#12061e'); fg.addColorStop(1, '#030106');
     ctx.fillStyle = fg; ctx.fillRect(0, hor, w, h - hor);
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, hor, w, h - hor); ctx.clip();
-    ctx.strokeStyle = 'rgba(255,42,180,0.55)';
-    ctx.shadowColor = '#ff2ab4'; ctx.shadowBlur = 6;
-    ctx.lineWidth = 1.2;
-    const off = (t * 0.6) % 1;
-    for (let i = 0; i < 18; i++) {
-      const z = (i + off) / 18;
-      const yy = hor + (h - hor) * z * z;
-      ctx.globalAlpha = Math.min(1, z * 2.5);
-      ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(w, yy); ctx.stroke();
+    const rows = 7, cols = 12, tint = ['255,42,109', '5,217,232', '192,96,255', '255,211,25'];
+    const beatN = Math.floor(t * 2.066);
+    const proj = (u, v) => [w / 2 + (u - 0.5) * w * (0.9 + 1.6 * v * v), hor + (h - hor) * v * v];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if ((r * 7 + c * 13 + beatN * 5) % 11 > 3) continue;
+      const v0 = r / rows, v1 = (r + 1) / rows, u0 = c / cols, u1 = (c + 1) / cols;
+      const [ax, ay] = proj(u0, v0), [bx2] = proj(u1, v0), [cx2, cy2] = proj(u1, v1), [dx2] = proj(u0, v1);
+      ctx.fillStyle = `rgba(${tint[(r + c + beatN) % 4]},${(0.1 + 0.22 * pulse) * (0.4 + v1)})`;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx2, ay); ctx.lineTo(cx2, cy2); ctx.lineTo(dx2, cy2); ctx.closePath(); ctx.fill();
     }
-    ctx.globalAlpha = 1;
-    for (let i = -14; i <= 14; i++) {
-      ctx.beginPath(); ctx.moveTo(w / 2 + i * 12, hor); ctx.lineTo(w / 2 + i * w * 0.16, h); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,42,180,0.22)'; ctx.lineWidth = 1;
+    for (let r = 0; r <= rows; r++) { const [, y] = proj(0, r / rows); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    for (let c = 0; c <= cols; c++) { const [x0, y0] = proj(c / cols, 0), [x1, y1] = proj(c / cols, 1); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+    ctx.fillStyle = `rgba(255,42,180,${0.5 + 0.4 * pulse})`; ctx.fillRect(0, hor - 1, w, 2);
+
+    // толпа у края сцены
+    if (!this._crowd) {
+      let s = 11; const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+      this._crowd = Array.from({ length: 34 }, (_, i) => ({ x: (i + rnd() * 0.6) / 34, s: 0.8 + rnd() * 0.45, p: rnd() * 6, arm: rnd() < 0.3 }));
+    }
+    ctx.fillStyle = '#020104';
+    for (const m of this._crowd) {
+      if (Math.abs(m.x - 0.5) < 0.1) continue;          // проход к пульту
+      const x = m.x * w, k = m.s * S, jump = Math.max(0, Math.sin(t * 6.5 + m.p)) * 6 * k * (0.4 + pulse);
+      const y = hor + 30 * k - jump;
+      ctx.beginPath(); ctx.arc(x, y - 44 * k, 8 * k, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x, y - 18 * k, 13 * k, 22 * k, 0, 0, Math.PI * 2); ctx.fill();
+      if (m.arm) ctx.fillRect(x + 6 * k, y - 66 * k + Math.sin(t * 6.5 + m.p) * 4 * k, 4 * k, 28 * k);
+    }
+
+    // пробегающие герои и боссы
+    this._drawRunners(ctx, w, h, t, hor, S);
+
+    // дымка
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const x = ((t * (12 + i * 7) + i * 400) % (w + 600)) - 300, y = hor + (h - hor) * (0.25 + i * 0.25);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 260 * S);
+      g.addColorStop(0, 'rgba(120,60,200,0.08)'); g.addColorStop(1, 'rgba(120,60,200,0)');
+      ctx.fillStyle = g; ctx.fillRect(x - 260 * S, y - 260 * S, 520 * S, 520 * S);
     }
     ctx.restore();
-    ctx.fillStyle = 'rgba(255,42,180,0.8)'; ctx.fillRect(0, hor - 1, w, 2);
+    // виньетка
+    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
 
     if (dim > 0) { ctx.fillStyle = `rgba(4,2,10,${dim})`; ctx.fillRect(0, 0, w, h); }
+  }
+
+  // Время от времени по танцполу пробегает герой, иногда за ним гонится босс
+  _drawRunners(ctx, w, h, t, hor, S) {
+    if (!this._runners) { this._runners = []; this._runT = 2.5; this._lastBgT = t; }
+    const dt = Math.min(0.1, Math.max(0, t - this._lastBgT)); this._lastBgT = t;
+    this._runT -= dt;
+    if (this._runT <= 0) {
+      this._runT = 5 + Math.random() * 6;
+      const dir = Math.random() < 0.5 ? 1 : -1, y = hor + (h - hor) * (0.62 + Math.random() * 0.28);
+      const heroes = ['dani', 'gal', 'daur'], hw = { dani: 'm4s', gal: 'flamer', daur: 'uzi' };
+      const bosses = Object.keys(BOSS_TYPES);
+      const pick = () => bosses[Math.floor(Math.random() * bosses.length)];
+      const hero = heroes[Math.floor(Math.random() * 3)], boss = pick();
+      const sp = (0.2 + Math.random() * 0.08) * w;
+      const x0 = dir > 0 ? -60 : w + 60;
+      const kind = Math.random();
+      const add = (look, weaponId, off, speed, big, dy = 0) =>
+        this._runners.push({ look, weaponId, x: x0 - dir * off, y: y + dy, dir, speed, big, walk: Math.random() * 6 });
+      if (kind < 0.45) {        // погоня: босс за героем
+        add(Sprites.HEROES[hero], hw[hero], 0, sp * 1.05, false);
+        add(BOSS_TYPES[boss].look, BOSS_TYPES[boss].weapon, 110 * S, sp, true);
+      } else if (kind < 0.7) {  // все трое героев
+        heroes.forEach((id, i) => add(Sprites.HEROES[id], hw[id], i * 46 * S, sp, false, [0, 16, -14][i] * S));
+      } else if (kind < 0.85) { // босс бродит сам
+        add(BOSS_TYPES[boss].look, BOSS_TYPES[boss].weapon, 0, sp * 0.6, true);
+      } else {                  // герой удирает от двух боссов
+        const b2 = pick();
+        add(Sprites.HEROES[hero], hw[hero], 0, sp * 1.1, false);
+        add(BOSS_TYPES[boss].look, BOSS_TYPES[boss].weapon, 100 * S, sp, true, -12 * S);
+        add(BOSS_TYPES[b2].look, BOSS_TYPES[b2].weapon, 170 * S, sp * 0.98, true, 12 * S);
+      }
+    }
+    for (const r of this._runners) {
+      r.x += r.dir * r.speed * dt; r.walk += dt * 12;
+      const k = (1.2 + (r.y - hor) / (h - hor) * 0.8) * S * (r.big ? 1.2 : 1);
+      ctx.save();
+      ctx.translate(r.x, r.y);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.ellipse(0, 8 * k, 14 * k, 6 * k, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(r.dir > 0 ? 0 : Math.PI);
+      ctx.scale(k, k);
+      Sprites.drawHuman(ctx, r.look, { t, walk: r.walk, move: 1, weaponId: r.weaponId || null });
+      ctx.restore();
+    }
+    this._runners = this._runners.filter(r => r.x > -300 && r.x < w + 300);
   }
 
   // Панель со скошенными углами и неоновой рамкой
@@ -520,7 +629,7 @@ class Menu {
     if (w > 640) {
       const ids = ['dani', 'gal', 'daur'];
       const id = ids[Math.floor(this.t / 4) % 3];
-      const wpn = { dani: 'm4s', gal: null, daur: 'uzi' }[id];
+      const wpn = { dani: 'm4s', gal: 'flamer', daur: 'uzi' }[id];
       this._drawHeroPreview(ctx, w * 0.13, h * 0.66, 3.2, id, wpn, Math.PI * 0.08);
       const e = this._previewEnemies[Math.floor(this.t / 4) % 4];
       this._drawEnemyPreview(ctx, w * 0.87, h * 0.66, 3.2, e, Math.PI * 0.92);
@@ -709,7 +818,7 @@ class Menu {
     const ch = this.charsInfo[this.cardIndex];
     const ps = Math.min(170, c.h - 110);
     this._portrait(ctx, this.game.images[ch.id], c.x + 24, c.y + 24, ps, '#ffd319');
-    this._drawHeroPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 46, 2.2, ch.id, { dani: 'm4s', gal: null, daur: 'uzi' }[ch.id], 0);
+    this._drawHeroPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 46, 2.2, ch.id, { dani: 'm4s', gal: 'flamer', daur: 'uzi' }[ch.id], 0);
     const tx = c.x + ps + 60, tw = c.x + c.w - tx - 24;
     this._fit(ctx, c.y + c.h - 14, (k) => {
       let y = c.y + 20 + 26 * k;
@@ -794,7 +903,7 @@ class Menu {
       y += 18 * k;
       ctx.fillStyle = '#ff7aff';
       const dw = WEAPONS[def.drop];
-      ctx.fillText(`ТРОФЕЙ: ${dw ? dw.name : '—'}${dw && dw.special === 'dani' ? ' (только Дани)' : ''}`, tx, y, tw);
+      ctx.fillText(`ТРОФЕЙ: ${dw ? dw.name : '—'}${dw && dw.special === 'dani' ? ' (только Дани)' : ' (любой герой)'}`, tx, y, tw);
       return y;
     });
   }

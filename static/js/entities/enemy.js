@@ -266,7 +266,6 @@ class Enemy {
     const px = player.x + player.w / 2;
     const py = player.y + player.h / 2;
     let range = this.fovRange;
-    if (player.charId === 'dani') range *= 0.8;
 
     const dist = Math.hypot(px - cx, py - cy);
     if (dist > range) return false;

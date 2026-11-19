@@ -27,6 +27,14 @@ const ROOM_THEMES = {
   vault:    { name: 'Хранилище', floor: 'steel',    colors: ['#2a2e34', '#22262c'],            light: '#9fd0ff' },
   stage:    { name: 'Сцена',     floor: 'steel',    colors: ['#1a1622', '#14101c'],            light: '#c060ff' },
   club:     { name: 'Танцпол',   floor: 'dance',    colors: ['#ff2a6d', '#05d9e8', '#c060ff', '#ffd319', '#3fff7f'], light: '#ff3aa0' },
+  // улица и джунгли
+  street:   { name: 'Улица',     floor: 'asphalt',  colors: ['#26262c', '#2a2a31', '#232328'], light: '#ffd8a0' },
+  parking:  { name: 'Парковка',  floor: 'asphalt',  colors: ['#2a2a30', '#2e2e35'],            light: '#ffe0a0' },
+  plaza:    { name: 'Площадь',   floor: 'paving',   colors: ['#44424c', '#3c3a44', '#4a4852'], light: '#ffe8c0' },
+  park:     { name: 'Сквер',     floor: 'grass',    colors: ['#1e3a1e', '#21401f', '#1b351c'], light: '#c8ffb0' },
+  jungle:   { name: 'Джунгли',   floor: 'jungle',   colors: ['#14301a', '#17361d', '#112a16'], light: '#9affa0' },
+  clearing: { name: 'Поляна',    floor: 'grass',    colors: ['#24461f', '#284d22', '#20401c'], light: '#e0ffb0' },
+  ruins:    { name: 'Руины',     floor: 'stone',    colors: ['#3a3a36', '#34342f', '#40403b'], light: '#ffe0a0' },
 };
 
 // [предмет, мин, макс, 'wall' | 'center']
@@ -48,6 +56,13 @@ const ROOM_FURNITURE = {
   vault:    [['safe', 6, 12, 'wall'], ['pallet', 1, 2, 'center'], ['crate', 1, 3, 'wall']],
   club:     [['speaker', 2, 4, 'wall'], ['pillar', 0, 2, 'center'], ['booth', 0, 2, 'wall']],
   stage:    [['dj', 1, 1, 'wall'], ['speaker', 2, 4, 'wall']],
+  street:   [['car', 1, 3, 'wall'], ['lampPost', 2, 4, 'wall'], ['trash', 1, 3, 'wall'], ['bench', 0, 2, 'wall'], ['car', 0, 1, 'center']],
+  parking:  [['car', 2, 5, 'center'], ['car', 1, 3, 'wall'], ['lampPost', 1, 3, 'wall'], ['trash', 0, 1, 'wall']],
+  plaza:    [['lampPost', 2, 4, 'wall'], ['bench', 1, 3, 'wall'], ['tree', 1, 2, 'center'], ['trash', 1, 2, 'wall'], ['plant', 1, 3, 'wall']],
+  park:     [['tree', 2, 5, 'center'], ['bush', 3, 6, 'wall'], ['bench', 1, 2, 'wall'], ['lampPost', 1, 2, 'wall'], ['rock', 0, 2, 'center']],
+  jungle:   [['tree', 3, 6, 'center'], ['palm', 2, 4, 'center'], ['bush', 4, 8, 'wall'], ['rock', 1, 3, 'center'], ['bush', 1, 3, 'center']],
+  clearing: [['bush', 3, 5, 'wall'], ['palm', 1, 2, 'wall'], ['rock', 1, 2, 'center']],
+  ruins:    [['pillar', 2, 4, 'center'], ['rock', 2, 4, 'center'], ['bush', 2, 4, 'wall'], ['palm', 0, 2, 'wall']],
 };
 
 // Чем догружать комнату после основного набора
@@ -77,6 +92,13 @@ const ITEM_ROOM_MAX = { fridge: 1, tub: 1, bed: 1, bar: 1, pool: 1, tvstand: 1, 
 const ROOM_TYPE_CAP = { bar: 1, lounge: 2, server: 1, bathroom: 2, kitchen: 2, bedroom: 3, office: 4, storage: 3 };
 
 const ROOM_CLUTTER = {
+  street:   ['can', 'paper', 'butt', 'stain', 'crack'],
+  parking:  ['stain', 'can', 'crack', 'paper'],
+  plaza:    ['paper', 'leaf', 'can'],
+  park:     ['leaf', 'leaf', 'paper'],
+  jungle:   ['leaf', 'leaf', 'leaf'],
+  clearing: ['leaf', 'leaf'],
+  ruins:    ['crack', 'leaf', 'crack'],
   office:   ['paper', 'paper', 'paper', 'butt', 'can', 'stain'],
   kitchen:  ['stain', 'can', 'bottle', 'shards', 'paper'],
   bathroom: ['puddle', 'paper', 'stain'],
@@ -133,6 +155,7 @@ class Level {
   constructor(w, h, opts = {}) {
     this.w = w; this.h = h;
     this.opts = opts;
+    this.theme = (opts.layout && opts.layout.theme) || null;   // 'city' | 'jungle' — уличный уровень
     this.holes = [];
     this.cols = Math.floor(w / TILE);
     this.rows = Math.floor(h / TILE);
@@ -518,6 +541,7 @@ class Level {
   _makeOpening(run, kind) {
     let width = DOOR_W;
     if (kind === 'arch') width = Math.max(DOOR_W, Math.min(run.len - (run.len >= 5 ? 2 : 0), Utils.randInt(2, 4)));
+    if (kind === 'gap') width = Math.max(DOOR_W, Math.min(run.len - 2, 9));
     if (run.len < width) return false;
     const margin = run.len >= width + 2 ? 1 : 0;
     const start = Utils.randInt(run.start + margin, run.end - width + 1 - margin);
@@ -816,6 +840,7 @@ class Level {
 
   // Окна на внешних стенах + лунный свет внутрь
   _placeWindows() {
+    if (this.theme) return;
     for (let y = 1; y < this.rows - 1; y++) {
       for (let x = 1; x < this.cols - 1; x++) {
         if (this.grid[y][x] !== T_WALL || this._isDoorway(x, y)) continue;
@@ -1193,6 +1218,7 @@ class Level {
     const th = ROOM_THEMES[room.type] || ROOM_THEMES.hall;
     const c = th.colors;
     const px = x * TILE, py = y * TILE;
+    if (window.OutdoorFloors && OutdoorFloors[th.floor]) { OutdoorFloors[th.floor](ctx, x, y, px, py, c); return; }
     switch (th.floor) {
       case 'wood': {
         const PL = 96;
@@ -1338,6 +1364,7 @@ class Level {
   _drawWall(ctx, x, y) {
     const H = DecorArt.hash;
     const px = x * TILE, py = y * TILE;
+    if (this.theme && window.OutdoorWalls && OutdoorWalls[this.theme]) { OutdoorWalls[this.theme](ctx, x, y, px, py); return; }
     const g = (tx, ty) => this._getGrid(tx, ty);
     const isFloorish = t => t !== T_WALL && t !== T_OUT;
 

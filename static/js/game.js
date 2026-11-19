@@ -61,6 +61,11 @@ class Game {
     this.storyIdx = null;       // глава сюжета (когда soloMode === 'story')
     this.dialogue = null;
     this.tutorial = null;       // урок обучения (полигон НВП)
+    this.allies = [];           // клоны Дани
+    this.pulls = [];            // стволы, летящие к Дауру (арсенал)
+    this.mission = null;        // задания главы сюжета
+    this.thoughts = new Thoughts(this);   // мысли героя над головой
+    this.radio = new Radio(this);         // сообщения союзников по рации
     this._storySeen = new Set();
     this.soloMode = 0;          // номер уровня кампании, 'endless' или 'story'
     this.campaignIdx = null;
@@ -175,11 +180,13 @@ class Game {
     this.startLevel();
     StoryAssets.music(this.storyIdx + 1);
     // вступление показываем один раз за сессию (после смерти сразу в бой)
+    this.mission = null;
+    const begin = () => { this.mission = new Mission(this, ch); };
     if (!this._storySeen.has(ch.id)) {
       this._storySeen.add(ch.id);
-      this.dialogue = new Dialogue(this, ch.intro, { title: ch.title, place: ch.place, color: ch.color, onDone: () => { this.dialogue = null; this.state = 'playing'; } });
+      this.dialogue = new Dialogue(this, ch.intro, { title: ch.title, place: ch.place, color: ch.color, onDone: () => { this.dialogue = null; this.state = 'playing'; begin(); } });
       this.state = 'dialogue';
-    }
+    } else begin();
   }
 
   // Глава пройдена: финальный диалог, затем экран победы
@@ -256,15 +263,23 @@ class Game {
   // Уровень корпоратива строится из общего seed — у всех одинаковый
   startCoopLevel(seed) {
     const intro = this.state === 'coopIntro';
-    Utils.withSeed(seed, () => this._buildLevel());
+    // каждый третий этаж — улица: ночной город или джунгли (боссов приводит директор боссов)
+    const n = this.coop.levelNo || 1;
+    const out = n % 3 === 0 ? CAMPAIGN.find(c => c.id === (n % 6 === 0 ? 'jungle' : 'city')) : null;
+    if (out) Utils.withSeed(seed, () => this._buildLevel({ ...out, bossRoom: -1 }));
+    else Utils.withSeed(seed, () => this._buildLevel());
     this._spawnPlayer(this.coop.me.slot || 0);
     this.coop.prepareLevel();
     this._afterLevelStart();
+    this.levelBanner = out
+      ? { name: out.name, sub: `ЭТАЖ ${n} • вылазка на улицу`, color: out.color, t: 3 }
+      : { name: `ЭТАЖ ${n}`, sub: 'корпоратив', color: '#ff2a6d', t: 2.2 };
     if (intro) this.state = 'coopIntro';
   }
 
   _afterLevelStart() {
     this._waves = 0; this._waveT = undefined; this._huntT = 0;
+    if (this.thoughts) { this.thoughts.cur = null; setTimeout(() => { if (this.state === 'playing') this.thoughts.event('level'); }, 3200); }
     this.projectiles = [];
     this.explosions = [];
     Flames.reset();
@@ -380,7 +395,10 @@ class Game {
 
     const prev = this.player && this.player.charId === charId ? this.player : null;
     this.player = new Player(sp.x, sp.y, charId);
-    if (prev) { this.player.charge = prev.charge || 0; this.player.kills = prev.kills || 0; }
+    if (prev) { this.player.charge = prev.charge || 0; this.player.kills = prev.kills || 0; this.player.babahReady = !!prev.babahReady; }
+    // теневые клоны остаются на прошлом этаже, идеальный идёт за Дани дальше
+    this.allies = (prev ? (this.allies || []) : []).filter(a => !a.dead && a.kind === 'perfect');
+    for (const a of this.allies) { a.owner = this.player; a.x = sp.x + 20; a.y = sp.y; if (this.level.collides(a.x, a.y, a.w, a.h)) { a.x = sp.x; a.y = sp.y; } }
 
     this.cam = new Camera(this.W, this.H, this.zoom);
     const viewW = this.W / this.zoom;
@@ -422,6 +440,10 @@ class Game {
     TextField.close();
     this._exitAsk = null;
     this.tutorial = null;
+    this.allies = [];
+    this.pulls = [];
+    this.mission = null;
+    this.radio.q = []; this.radio.cur = null; this.thoughts.cur = null;
     if (this.coop) { this.coop.dispose(); this.coop = null; this.coopUI.leave(true); }
     this.state = 'menu';
     this.player = null;
@@ -476,6 +498,7 @@ class Game {
       }
     }
 
+    if (this.thoughts && this.state === 'playing') { this.thoughts.update(dt); this.radio.update(dt); }
     if (this.state === 'levelLoad') {
       const L = this._load;
       if (!L) { this.state = 'menu'; return; }
@@ -637,6 +660,7 @@ class Game {
         }
         for (const f of this.player._fired) this._spawnFired(f, this.player.charId, coopClient);
         this.player._fired.length = 0;
+        this._heroSkills(dt);
         if (this.player._thrownPickup) {
           const tp = this.player._thrownPickup;
           if (coopClient) {
@@ -680,6 +704,7 @@ class Game {
         if (this._roomLabel) { this._roomLabel.t -= dt; if (this._roomLabel.t <= 0) this._roomLabel = null; }
         this._updatePacing(dt);
         if (this.tutorial) this.tutorial.update(dt);
+        if (this.mission) this.mission.update(dt);
       }
 
       const pcx = this.player.x + this.player.w / 2;
@@ -700,8 +725,20 @@ class Game {
             if (Utils.segDist(b.px, b.py, b.x, b.y, r.x + 9, r.y + 9) < 12) { r.takeDamage(1, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) }); b.dead = true; break; }
           }
         }
+        if (!b.dead && !b.isPlayer) {
+          for (const a of this.allies) {
+            if (!a.dead && Utils.segDist(b.px, b.py, b.x, b.y, a.cx(), a.cy()) < 10) { a.hit(1); b.dead = true; break; }
+          }
+        }
       }
-      if (coopClient) this.coop.clientBulletHits();
+      if (coopClient) {
+        this.coop.clientBulletHits();
+        // у клиента вражеские пули — картинка с хоста; по своим клонам считаем сами
+        for (const b of this.fxBullets) {
+          if (!b.enemyNet || b.dead) continue;
+          for (const a of this.allies) if (!a.dead && Utils.segDist(b.px, b.py, b.x, b.y, a.cx(), a.cy()) < 10) { a.hit(1); b.dead = true; break; }
+        }
+      }
       // гранаты и ракеты (у клиента их позиции приходят от хоста)
       if (!coopClient) {
         for (const pr of this.projectiles) pr.update(dt, this);
@@ -734,10 +771,10 @@ class Game {
           const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
           if (slot) {
             p.pickedUp = true;
-            if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); }
+            if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); this.thoughts.event('samsa'); }
             else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
-            else if (slot === 'armor') { pl.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+БРОНЯ', '#5aa8ff', 12); Effects.ring(pl.x + 9, pl.y + 9, '90,170,255', 28); }
-            else if (slot === 'w1') { pl.weapon = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); }
+            else if (slot === 'armor') { this.thoughts.event('armor'); pl.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+БРОНЯ', '#5aa8ff', 12); Effects.ring(pl.x + 9, pl.y + 9, '90,170,255', 28); }
+            else if (slot === 'w1') { pl.weapon = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); if (pl.weapon.boss) this.thoughts.event('weapon'); }
             else { pl.weapon2 = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
           }
         }
@@ -755,6 +792,7 @@ class Game {
         this._creditKill(e);
         Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, this.combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(this.combo, 5) * 2);
         if (this.combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${this.combo} КОМБО`, '#05d9e8', 11);
+        if (this.combo === 5) this.thoughts.event('streak');
         Effects.screenFlash(0.08, '255,255,255');
         this.shake = Math.max(this.shake, 0.35);
       }
@@ -788,7 +826,8 @@ class Game {
         this.state = 'dead'; this.shake = 1.0; this.deathT = 0;
         this._submitRun();
       }
-      if (!coopClient && !this.tutorial && this.state === 'playing' && this.enemies.every(e => e.dead)) {
+      const cleared = this.storyIdx !== null && !this.coop ? !!(this.mission && this.mission.complete) : this.enemies.every(e => e.dead);
+      if (!coopClient && !this.tutorial && this.state === 'playing' && cleared) {
         if (this.storyIdx !== null && !this.coop) {
           this._storyComplete();
         } else if (this.campaignIdx !== null && !this.coop) {
@@ -819,7 +858,7 @@ class Game {
     } catch (e) {}
   }
 
-  // Личный счёт убийств героя: Гала лечится за каждого 5-го,
+  // Личный счёт убийств героя: каждые 10 — заряд режима героя
   // у Даура и Дани каждые 10 убийств (заряд) включают особый режим.
   _creditKill(e) {
     if (!e.killedBy) return;
@@ -827,62 +866,205 @@ class Game {
     if (!pl) return;
     pl.kills = (pl.kills || 0) + 1;
     if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'kc', n: pl.kills });
-    if ((pl.charId === 'daur' || pl.charId === 'dani') && !pl.dead && !(pl.rageT > 0) && !(pl.lottoT > 0)) {
-      pl.charge = (pl.charge || 0) + 1;
-      if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'chg', n: pl.charge });
-      if (pl.charge >= MODE_KILLS) { pl.charge = 0; this._triggerMode(pl, pl.charId === 'daur' ? 'rage' : 'lotto'); }
+    if (pl.dead || this._modeBusy(pl)) return;
+    pl.charge = (pl.charge || 0) + 1;
+    if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'chg', n: pl.charge });
+    if (pl.charge >= MODE_KILLS) { pl.charge = 0; this._triggerMode(pl, MODE_OF[pl.charId]); }
+  }
+
+  // Пока режим активен (ярость, живой идеальный клон, заряженный «БАБАХ») — заряд не копится
+  _modeBusy(pl) {
+    if (pl === this.player) {
+      if (pl.charId === 'daur') return pl.rageT > 0;
+      if (pl.charId === 'gal') return pl.babahReady;
+      return this.allies.some(a => a.kind === 'perfect' && !a.dead);
     }
-    if (pl.charId !== 'gal' || pl.kills % GAL_HEAL_EVERY !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
-    pl.hp++;
-    Effects.popup(pl.x + 9, pl.y - 10, '+1 HP', '#3dff8a', 13);
-    Effects.ring(pl.x + 9, pl.y + 9, '60,255,140', 26);
-    if (pl === this.player) AudioSys.play('pickup_health');
-    else if (this.coop) this.coop.sendTo(pl.pid, { t: 'heal' });
+    return pl.mode === 1 || pl.mode === 4 || !!pl.pc;
   }
 
-  // Ярость Даура / лотерея Дани (на хосте — и для напарников)
   _triggerMode(pl, m) {
-    if (m === 'rage') pl.rageT = MODE_TIME; else { pl.lottoT = MODE_TIME; pl._lottoId = Math.random(); }
-    if (pl === this.player) announceMode(pl, m);
-    else if (this.coop) this.coop.sendTo(pl.pid, { t: 'mode', m });
+    if (pl === this.player) this._applyMode(pl, m);
+    else if (this.coop) { this.coop.sendTo(pl.pid, { t: 'mode', m }); if (m === 'rage') pl.mode = 1; if (m === 'babah') pl.mode = 4; if (m === 'clone') pl.pc = 1; }
   }
 
-  // Лотерея: враги вокруг Дани могут лопнуть, холодное оружие на полу — стать аптечкой
-  _updateLottery(dt) {
-    if (this.coop && !this.coop.isHost) return;
-    for (const pl of this.allPlayers()) {
-      if (!pl || pl.dead || !(pl.lottoT > 0)) continue;
-      if (pl !== this.player) pl.lottoT = Math.max(0, pl.lottoT - dt);
-      const cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
-      for (const e of this.enemies) {
-        if (e.dead || e.isBoss || e._lotto === pl._lottoId) continue;
-        if (Utils.dist(cx, cy, e.cx(), e.cy()) > LOTTO_RADIUS) continue;
-        e._lotto = pl._lottoId;
-        if (Math.random() < 0.25) { e._popAt = Utils.rand(0.1, 0.7); e._popBy = pl.charId; }
+  // Режим у своего героя (вызывается и по сети у клиента)
+  _applyMode(pl, m) {
+    if (m === 'rage') pl.rageT = MODE_TIME;
+    else if (m === 'babah') pl.babahReady = true;
+    else if (m === 'clone') this.allies.push(new Ally(pl, pl.x + Math.cos(pl.angle + 2) * 26, pl.y + Math.sin(pl.angle + 2) * 26, 'perfect'));
+    announceMode(pl, m);
+    if (this.thoughts) this.thoughts.event(m);
+  }
+
+  // Навыки своего героя: клоны, «БАБАХ», аура смерти, огненное тело
+  _heroSkills(dt) {
+    // клоны живут и у хоста, и у клиента корпоратива (каждый считает своих)
+    for (const a of this.allies) a.update(dt, this);
+    this.allies = this.allies.filter(a => !a.dead);
+    this._updatePulls(dt);
+    const p = this.player;
+    if (!p || p.dead) return;
+    if (p._wantClones) {
+      p._wantClones = false;
+      this.allies = this.allies.filter(a => !(a.kind === 'shadow'));
+      for (let i = 0; i < 3; i++) {
+        const a = i / 3 * Math.PI * 2 + p.angle;
+        let x = p.x + Math.cos(a) * 40, y = p.y + Math.sin(a) * 40;
+        if (this.level.collides(x, y, 16, 16)) { x = p.x; y = p.y; }
+        this.allies.push(new Ally(p, x, y, 'shadow', i));
       }
-      for (const p of this.pickups) {
-        if (p._lotto === pl._lottoId || p.pickedUp || p.thrown || !p.weapon || p.weapon.type !== 'melee') continue;
-        if (Utils.dist(cx, cy, p.x, p.y) > LOTTO_RADIUS) continue;
-        p._lotto = pl._lottoId;
-        if (Math.random() < 0.35) {
-          p.weapon = null; p.isHealth = true;
-          Effects.burst(p.x, p.y, '255,210,60', 16, 160);
-          Effects.popup(p.x, p.y - 12, 'АПТЕЧКА!', '#ffd319', 11);
+      AudioSys.play('stun');
+      if (this.thoughts) this.thoughts.event('clones');
+    }
+    if (p._wantBabah) { p._wantBabah = false; this._babah(p); }
+    if (p._wantPull) { p._wantPull = false; this._arsenal(p); }
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    // ярость Даура: аура смерти — всё (кроме боссов) в маленьком радиусе погибает мгновенно
+    if (p.rageT > 0) {
+      for (const e of this.enemies) {
+        if (e.dead || e.isBoss) continue;
+        if (Utils.dist(cx, cy, e.cx(), e.cy()) < RAGE_AURA) {
+          Effects.burst(e.cx(), e.cy(), '255,30,40', 14, 200);
+          e.die(this.pickups, { kind: 'burn', angle: Math.atan2(e.cy() - cy, e.cx() - cx), by: p.charId });
         }
       }
     }
-    for (const e of this.enemies) {
-      if (e._popAt === undefined || e.dead) continue;
-      e._popAt -= dt;
-      if (e._popAt > 0) continue;
-      delete e._popAt;
-      for (const c of ['255,210,60', '255,80,180', '80,220,255', '120,255,120']) Effects.burst(e.cx(), e.cy(), c, 8, 260);
-      Effects.ring(e.cx(), e.cy(), '255,210,60', 34);
-      Effects.popup(e.cx(), e.cy() - 26, 'ПОП!', '#ffd319', 14);
-      AudioSys.playAt('punch', e.cx(), e.cy());
-      e.die(this.pickups, { kind: 'explosion', angle: Math.random() * Math.PI * 2, by: e._popBy });
+    // Гала в огне, пока «БАБАХ» заряжен: кто прикоснётся — горит
+    if (p.babahReady) {
+      this._fireT = (this._fireT || 0) - dt;
+      if (this._fireT <= 0) {
+        this._fireT = 0.4;
+        for (const e of this.enemies) if (!e.dead && Utils.dist(cx, cy, e.cx(), e.cy()) < 26) e.takeDamage(1, this.pickups, { kind: 'burn', angle: 0, by: p.charId });
+      }
+      if (Math.random() < 0.35) Effects.burst(cx + Utils.rand(-8, 8), cy + Utils.rand(-8, 8), '255,140,40', 1, 50);
     }
   }
+
+  // ---------- АРСЕНАЛ Даура: притягивает два лучших огнестрела с карты, свои — на пол ----------
+  _bestGuns(owner) {
+    return this.pickups
+      .filter(q => q.weapon && q.weapon.type === 'ranged' && !q.pickedUp && !q.thrown && !q._noPull && canWield(owner.charId, q.weapon))
+      .sort((a, b) => weaponValue(b.weapon) - weaponValue(a.weapon))
+      .slice(0, 2);
+  }
+
+  // Что оставить и что притянуть: два лучших ствола среди своих и лежащих на карте
+  _arsenalPlan(p) {
+    const own = [p.weapon, p.weapon2].filter(w => w && w.type === 'ranged').map(w => ({ w, own: true, v: weaponValue(w) + 0.001 }));
+    const map = this._bestGuns(p).map(q => ({ q, w: q.weapon, own: false, v: weaponValue(q.weapon) }));
+    const top = [...own, ...map].sort((a, b) => b.v - a.v).slice(0, 2);
+    return { keep: top.filter(c => c.own).map(c => c.w), pull: top.filter(c => !c.own).map(c => c.q) };
+  }
+
+  _dropGuns(p, cx, cy, keep) {
+    for (const w of [p.weapon, p.weapon2]) {
+      if (!w || keep.includes(w)) continue;
+      if (this.coop && !this.coop.isHost) {
+        this.coop.event({ t: 'throw', w: w.id, am: w.ammo, x: Math.round(cx), y: Math.round(cy), a: +(Math.random() * 6.28).toFixed(2) });
+        continue;
+      }
+      const d = new Pickup(cx + Utils.rand(-14, 14), cy + Utils.rand(-14, 14), w);
+      d.groundTimer = 2; d._noPull = true;
+      setTimeout(() => { d._noPull = false; }, 3000);
+      this.pickups.push(d);
+    }
+    p.weapon = keep[0] || null; p.weapon2 = keep[1] || null;
+  }
+
+  _arsenal(p) {
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    const plan = this._arsenalPlan(p);
+    if (!plan.pull.length) {
+      p.skillCd = 0.5;
+      Effects.popup(cx, cy - 22, this._bestGuns(p).length ? 'ЛУЧШЕ УЖЕ В РУКАХ' : 'НЕЧЕГО ПРИТЯНУТЬ', '#9a94b8', 11);
+      return;
+    }
+    Effects.ring(cx, cy, '90,200,255', 46);
+    AudioSys.play('stun');
+    this._dropGuns(p, cx, cy, plan.keep);
+    if (this.coop && !this.coop.isHost) {
+      // клиент корпоратива: предметы у хоста — он выберет стволы и пришлёт их с анимацией
+      this.coop.event({ t: 'pull', n: plan.pull.length });
+    } else {
+      for (const pk of plan.pull) { pk.pickedUp = true; this.pulls.push({ w: pk.weapon, sx: pk.x, sy: pk.y, x: pk.x, y: pk.y, t: 0, target: p, equip: true }); }
+    }
+    if (this.thoughts) this.thoughts.say(Utils.choice(['Ко мне, железо!', 'Апгрейд арсенала.', 'Телекинез — это просто хороший Wi-Fi.']), 2.6);
+  }
+
+  // хост: напарник-Даур просит притянуть n лучших стволов
+  _arsenalFor(rp, pid, n = 2) {
+    for (const pk of this._bestGuns(rp).slice(0, Utils.clamp(n | 0, 1, 2))) {
+      pk.pickedUp = true;
+      this.coop.sendTo(pid, { t: 'give', w: pk.weapon.id, am: pk.weapon.ammo, s: 'w2', fx: Math.round(pk.x), fy: Math.round(pk.y) });
+      this.pulls.push({ w: pk.weapon, sx: pk.x, sy: pk.y, x: pk.x, y: pk.y, t: 0, target: rp, equip: false });
+    }
+  }
+
+  _updatePulls(dt) {
+    for (const f of this.pulls) {
+      f.t += dt / PULL_TIME;
+      const tx = f.target.x + 9, ty = f.target.y + 9, k = Math.min(1, f.t * f.t);
+      f.x = f.sx + (tx - f.sx) * k; f.y = f.sy + (ty - f.sy) * k;
+      if (Math.random() < 0.5) Effects.burst(f.x, f.y, '90,200,255', 1, 40);
+      if (f.t >= 1 && !f.done) {
+        f.done = true;
+        Effects.ring(tx, ty, '90,200,255', 22);
+        if (f.equip && f.target === this.player && !f.target.dead) {
+          const p = f.target, w = prepWeapon(p.charId, f.w);
+          if (!p.weapon) p.weapon = w; else if (!p.weapon2) p.weapon2 = w;
+          else if (!this.coop || this.coop.isHost) this.pickups.push(new Pickup(tx, ty, f.w));   // руки заняты — кладём рядом
+          AudioSys.play('pickup_weapon');
+        }
+      }
+    }
+    this.pulls = this.pulls.filter(f => !f.done);
+  }
+
+  _drawPulls(ctx) {
+    const t = performance.now() / 1000;
+    for (const f of this.pulls) {
+      const tx = f.target.x + 9, ty = f.target.y + 9;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(90,200,255,${0.35 + 0.25 * Math.sin(t * 30)})`; ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]); ctx.lineDashOffset = -t * 60;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(f.x, f.y); ctx.stroke();
+      ctx.setLineDash([]);
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 18);
+      g.addColorStop(0, 'rgba(120,220,255,0.6)'); g.addColorStop(1, 'rgba(120,220,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(t * 14); ctx.scale(1.2, 1.2);
+      Sprites.drawWeapon(ctx, f.w.id, true);
+      ctx.restore();
+    }
+  }
+
+  // «БАБАХ» Галы: мощный взрыв вокруг, обычных врагов убивает, боссам — много урона, самого Галу не ранит
+  _babah(p) {
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    Explosives.explode(this, cx, cy, BABAH_R, { cosmetic: true });
+    Effects.ring(cx, cy, '255,240,180', BABAH_R * 1.2);
+    Effects.burst(cx, cy, '255,120,30', 50, 420);
+    Effects.screenFlash(0.5, '255,180,80');
+    this.shake = Math.max(this.shake, 1.2);
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const d = Utils.dist(cx, cy, e.cx(), e.cy());
+      if (d > BABAH_R) continue;
+      const cause = { kind: 'explosion', angle: Math.atan2(e.cy() - cy, e.cx() - cx), by: p.charId };
+      if (e.isBoss) e.takeDamage(d < BABAH_R * 0.5 ? 8 : 6, this.pickups, cause);
+      else e.die(this.pickups, cause);
+    }
+    const lv = this.level;
+    if (lv.furniture) lv.furniture.forEach((f, i) => { if (!f.destroyed && f.hp > 0 && Utils.dist(cx, cy, f.x, f.y) < BABAH_R) lv.damageFurniture(i, 8, f.x, f.y); });
+    if (lv.windows) lv.windows.forEach((w, i) => { if (!w.broken && Utils.dist(cx, cy, (w.x + 0.5) * TILE, (w.y + 0.5) * TILE) < BABAH_R) lv.damageWindow(i); });
+    lv.addNoise(cx, cy, 800);
+    if (this.thoughts) this.thoughts.say(Utils.choice(['БАБАХ!', 'Вот это я понимаю — горячий привет.', 'Жарковато вышло.']));
+  }
+
+  // (лотерея Дани удалена — вместо неё клоны)
+  _updateLottery(dt) {}
 
   // Темп: последние враги сами идут на игроков, в бесконечном режиме и корпоративе — волны подкрепления
   _updatePacing(dt) {
@@ -976,8 +1158,16 @@ class Game {
       else if (r < 0.2) { ctx.fillStyle = `rgba(255,30,40,${0.18 * k})`; ctx.fillRect(0, 0, W, H); }
       ctx.restore();
     }
-    if (pl.lottoT > 0) {
-      const k = Math.min(1, pl.lottoT / 0.6);
+    if (pl.babahReady) {
+      const k = 0.6 + 0.4 * Math.sin(t * 4);
+      ctx.save();
+      const rg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+      rg.addColorStop(0, 'rgba(255,120,30,0)'); rg.addColorStop(1, `rgba(255,100,20,${0.22 * k})`);
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    if (false) {
+      const k = 1;
       ctx.save();
       const rg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
       rg.addColorStop(0, 'rgba(255,210,60,0)'); rg.addColorStop(1, `rgba(255,190,40,${0.3 * k})`);
@@ -1016,7 +1206,7 @@ class Game {
     const pl = this.player;
     const t = performance.now() / 1000;
     const COL = { dani: '#05d9e8', gal: '#ff2a6d', daur: '#ffd319' };
-    const INFO = { dani: ['ДАНИ', 'ТРОФЕЙЩИК'], gal: ['ГАЛА', 'ТАРАН'], daur: ['ДАУР', 'СТРЕЛОК'] };
+    const INFO = { dani: ['ДАНИ', 'ТЕНЕВОЙ'], gal: ['ГАЛА', 'ПОДЖИГАТЕЛЬ'], daur: ['ДАУР', 'СТРЕЛОК'] };
     const col = COL[pl.charId] || '#05d9e8';
     const font = (px, bold = true) => `${bold ? 'bold ' : ''}${Math.max(9, Math.round(px * s))}px "Courier New", monospace`;
 
@@ -1032,7 +1222,7 @@ class Game {
     const ws = pl.weapon2 ? [pl.weapon, pl.weapon2] : [pl.weapon];
     const x0 = 10 * s, y0 = 10 * s, pw = 210 * s;
     const headH = 50 * s, rowH = 24 * s;
-    const ph = headH + ws.length * rowH + (pl.weapon2 ? 12 * s : 0) + 4 * s;
+    const ph = headH + ws.length * rowH + 4 * s;
     this._hudPanel(ctx, x0, y0, pw, ph, col, s);
 
     // ===== герой =====
@@ -1095,22 +1285,31 @@ class Game {
       Sprites.drawGrenade(ctx, 0, false);
       ctx.restore();
     }
-    // способность: пинок Галы / прогресс до режима Даура и Дани
+    // навык F и заряд режима героя
     {
       const ay = y0 + 40 * s, ax = tx, aw = x0 + pw - 10 * s - ax;
       let label, frac, c2;
-      if (pl.charId === 'gal') {
-        const ready = pl.kickCd <= 0;
-        const kf = Input.isMobile ? '' : ' [F]';
-        label = ready ? `ПИНОК${kf} — ГОТОВ` : `ПИНОК${kf}`; frac = 1 - pl.kickCd / KICK_CD; c2 = ready ? '#3dff8a' : '#9a94b8';
+      const n = Math.min(MODE_KILLS, pl.charge || 0);
+      let right = '', rc = '#9a94b8';
+      const kf = Input.isMobile ? '' : ' [F]';
+      const nm = { dani: 'КЛОНЫ', gal: 'РЫВОК', daur: 'АРСЕНАЛ' }[pl.charId] || 'НАВЫК';
+      const ready = pl.skillCd <= 0;
+      label = ready ? `${nm}${kf} ГОТОВ` : `${nm} ${pl.skillCd.toFixed(pl.skillCd < 2 ? 1 : 0)}с`;
+      frac = 1 - pl.skillCd / (SKILL_CD[pl.charId] || 1); c2 = ready ? '#3dff8a' : '#9a94b8';
+      const hot = n >= MODE_KILLS - 2 ? '#ffd319' : '#9a94b8';
+      if (pl.charId === 'dani') {
+        const pc = this.allies.find(a => a.kind === 'perfect' && !a.dead);
+        right = pc ? `КЛОН ${pc.hp}♥` : `ИДЕАЛ ${n}/${MODE_KILLS}`; rc = pc ? '#ffd319' : hot;
+      } else if (pl.charId === 'gal') {
+        const ke = Input.isMobile ? '' : ' [E]';
+        right = pl.babahReady ? `БАБАХ${ke}!` : `БАБАХ ${n}/${MODE_KILLS}`;
+        rc = pl.babahReady ? (Math.sin(performance.now() / 120) > 0 ? '#ff8a30' : '#ffd319') : hot;
       } else {
-        const on = pl.charId === 'daur' ? pl.rageT : pl.lottoT;
-        const name = pl.charId === 'daur' ? 'ЯРОСТЬ' : 'ЛОТЕРЕЯ';
-        if (on > 0) { label = `${name}! ${on.toFixed(1)} С`; frac = on / MODE_TIME; c2 = pl.charId === 'daur' ? '#ff2a40' : '#ffd319'; }
-        else { const n = Math.min(MODE_KILLS, pl.charge || 0); label = `${name} ${n}/${MODE_KILLS}`; frac = n / MODE_KILLS; c2 = n >= MODE_KILLS - 2 ? '#ffd319' : '#9a94b8'; }
+        right = pl.rageT > 0 ? `ЯРОСТЬ ${pl.rageT.toFixed(1)}с` : `ЯРОСТЬ ${n}/${MODE_KILLS}`; rc = pl.rageT > 0 ? '#ff2a40' : hot;
       }
       ctx.font = font(8); ctx.textAlign = 'left'; ctx.fillStyle = c2;
       ctx.fillText(label, ax, ay - 1 * s);
+      if (right) { ctx.textAlign = 'right'; ctx.fillStyle = rc; ctx.fillText(right, ax + aw, ay - 1 * s); ctx.textAlign = 'left'; }
       ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(ax, ay + 2 * s, aw, 3 * s);
       ctx.fillStyle = c2; ctx.fillRect(ax, ay + 2 * s, aw * Utils.clamp(frac, 0, 1), 3 * s);
     }
@@ -1164,7 +1363,7 @@ class Game {
         }
       } else {
         ctx.font = font(8, false); ctx.fillStyle = '#9a94b8';
-        ctx.fillText(w ? 'ближний бой' : (pl.charId === 'gal' ? 'убивает с удара' : 'оглушает'), nx, y + 19 * s);
+        ctx.fillText(w ? 'ближний бой' : 'оглушает, добивает', nx, y + 19 * s);
       }
       if (ws.length > 1) {
         ctx.font = font(7, false); ctx.fillStyle = '#6a6488'; ctx.textAlign = 'left';
@@ -1172,11 +1371,6 @@ class Game {
       }
       y += rowH;
     });
-    if (pl.weapon2) {
-      ctx.font = font(8); ctx.textAlign = 'left';
-      ctx.fillStyle = pl.dualSpread ? '#ffd319' : '#6a6488';
-      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : (Input.isMobile ? 'кнопка ВРАЗБРОС' : 'ПКМ/CTRL — вразброс'), x0 + 10 * s, y + 7 * s);
-    }
     ctx.restore();
     this._hudBottom = y0 + ph;
 
@@ -1504,6 +1698,8 @@ class Game {
 
     for (const p of this.pickups) p.draw(b);
     if (this.coop) for (const r of this.coop.remotes.values()) r.draw(b);
+    for (const a of this.allies) a.draw(b);
+    this._drawPulls(b);
     this.player.draw(b);
     for (const bullet of this.bullets) bullet.draw(b);
     for (const bullet of this.fxBullets) if (!bullet.dead) bullet.draw(b);
@@ -1529,9 +1725,10 @@ class Game {
       this.coop.drawWorldOverlay(b);
       b.restore();
     }
-    if (this.tutorial) {
+    if (this.tutorial || this.mission) {
       b.save(); this.cam.apply(b); b.translate(shX, shY);
-      this.tutorial.drawWorld(b);
+      if (this.tutorial) this.tutorial.drawWorld(b);
+      if (this.mission) this.mission.drawWorld(b);
       b.restore();
     }
 
@@ -1582,6 +1779,9 @@ class Game {
     const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
     this._drawHud(ctx, scale, rightMargin);
     if (this.tutorial) this.tutorial.drawHud(ctx, this.W, this.H, scale);
+    if (this.mission) this.mission.drawHud(ctx, this.W, this.H, scale);
+    this.radio.draw(ctx);
+    this.thoughts.draw(ctx);
 
     if (this.coop) {
       this.coop.drawPartyHud(ctx, this.W, scale);
@@ -1718,7 +1918,7 @@ class Game {
 
   // Название уровня при старте
   _drawLevelBanner(ctx, scale) {
-    if (this.campaignIdx !== null && !this.coop && this.state === 'playing') {
+    if (this.campaignIdx !== null && this.storyIdx === null && !this.coop && this.state === 'playing') {
       ctx.save(); ctx.textAlign = 'center';
       ctx.font = `bold ${12 * scale}px "Courier New", monospace`;
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
@@ -1845,9 +2045,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Каб. 316. Бесшумная M4, одалживает оружие у боссов. Каждые 10 убийств — ЛОТЕРЕЯ', hp: 6, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Каб. 321. Кулаки на 50% быстрее, пинок-вертушка [F], +1 HP за 5-го убитого', hp: 7, speed: 1.2, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, +30% патронов. Каждые 10 убийств — ЯРОСТЬ', hp: 6, speed: 1, weapon: 'uzi' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 10 убийств', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;
@@ -1967,21 +2167,16 @@ class Game {
 }
 
 const MODE_KILLS = 10;   // убийств до ярости Даура / лотереи Дани (заряд копится между уровнями)
-const GAL_HEAL_EVERY = 5; // Гала лечится за каждого 5-го убитого (при 3 он был почти бессмертным)
+const MODE_OF = { daur: 'rage', dani: 'clone', gal: 'babah' };   // что даёт заряд каждому герою
 const COMBO_CAP = 10;     // множитель очков за комбо не больше x10
 
 // Надпись и эффекты при включении режима
 function announceMode(pl, m) {
   const cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
-  if (m === 'rage') {
-    Effects.popup(cx, cy - 30, 'ЯРОСТЬ!', '#ff2a40', 18);
-    Effects.ring(cx, cy, '255,30,40', 60);
-    Effects.screenFlash(0.35, '255,20,30');
-    AudioSys.play('sniper_charge');
-  } else {
-    Effects.popup(cx, cy - 30, 'ЛОТЕРЕЯ!', '#ffd319', 18);
-    Effects.ring(cx, cy, '255,210,60', LOTTO_RADIUS);
-    Effects.screenFlash(0.3, '255,220,80');
-    AudioSys.play('pickup_weapon');
-  }
+  const T = { rage: ['ЯРОСТЬ!', '#ff2a40', '255,30,40'], clone: ['ИДЕАЛЬНЫЙ КЛОН!', '#ffd319', '255,215,80'], babah: ['БАБАХ ЗАРЯЖЕН!', '#ff8a30', '255,120,30'] }[m];
+  if (!T) return;
+  Effects.popup(cx, cy - 30, T[0], T[1], 16);
+  Effects.ring(cx, cy, T[2], 60);
+  Effects.screenFlash(0.3, T[2]);
+  AudioSys.play(m === 'rage' ? 'sniper_charge' : 'pickup_weapon');
 }

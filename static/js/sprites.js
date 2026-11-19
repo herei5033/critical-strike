@@ -828,7 +828,7 @@ const Sprites = (() => {
     const rec = (st.recoil || 0) * 3.2;
 
     if (st.dual) {
-      // по оружию в каждой руке; с CTRL руки разведены в стороны
+      // по оружию в каждой руке
       const d = st.dual;
       const guns = [[sR, 1, d.a, d.f1, d.r1 || 0], [sL, -1, d.b, d.f2, d.r2 || 0]];
       for (const [sh, side, id, fl, rc] of guns) {

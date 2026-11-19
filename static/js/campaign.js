@@ -92,6 +92,44 @@ const CAMPAIGN = [
             [5, 6, 'door'], [6, 7, 'arch'], [6, 8, 'door'], [6, 9, 'door'], [6, 10, 'door'], [7, 10, 'door'],
             [4, 7, 'door'], [8, 9, 'door']],
   },
+  {
+    id: 'city', name: 'НОЧНОЙ ГОРОД', sub: 'Погоня по улицам Актау', color: '#ff9a3a', seed: 550705, theme: 'city',
+    boss: 'racer', density: 1.15, mix: { tank: 0.08, hound: 0.14, sniper: 0.1 },
+    weapons: ['ak47', 'm4', 'uzi', 'shotgun', 'bat', 'pipe', 'glock'],
+    start: 6, bossRoom: 8,
+    rooms: [
+      { x: 3, y: 3, w: 54, h: 7, type: 'street', name: 'Ночной проспект' },
+      { x: 3, y: 11, w: 14, h: 12, type: 'park', name: 'Сквер' },
+      { x: 18, y: 11, w: 12, h: 12, type: 'parking', name: 'Парковка у ТЦ' },
+      { x: 31, y: 11, w: 12, h: 12, type: 'plaza', name: 'Площадь с фонтаном' },
+      { x: 44, y: 11, w: 13, h: 12, type: 'street', name: 'Переулок' },
+      { x: 3, y: 24, w: 54, h: 7, type: 'street', name: 'Набережная' },
+      { x: 3, y: 32, w: 20, h: 10, type: 'plaza', name: 'Двор 28 микрорайона' },
+      { x: 24, y: 32, w: 15, h: 10, type: 'parking', name: 'Стоянка такси' },
+      { x: 40, y: 32, w: 17, h: 10, type: 'park', name: 'Пустырь у моря' },
+    ],
+    links: [[0, 1, 'gap'], [0, 2, 'gap'], [0, 3, 'gap'], [0, 4, 'gap'], [1, 2, 'arch'], [3, 4, 'arch'],
+            [1, 5, 'gap'], [2, 5, 'gap'], [3, 5, 'gap'], [4, 5, 'gap'], [5, 6, 'gap'], [5, 7, 'gap'], [5, 8, 'gap'], [6, 7, 'arch'], [7, 8, 'arch']],
+  },
+  {
+    id: 'jungle', name: 'ДЖУНГЛИ', sub: 'Тропический сад поместья Депозита', color: '#3fff8f', seed: 660806, theme: 'jungle',
+    boss: 'gardener', density: 1.2, mix: { tank: 0.1, hound: 0.2, sniper: 0.1 },
+    weapons: ['ak47', 'shotgun', 'sword', 'knife', 'm4', 'uzi'],
+    start: 0, bossRoom: 8,
+    rooms: [
+      { x: 3, y: 3, w: 12, h: 12, type: 'clearing', name: 'Вход в оранжерею' },
+      { x: 16, y: 3, w: 20, h: 12, type: 'jungle', name: 'Густые заросли' },
+      { x: 37, y: 3, w: 20, h: 12, type: 'jungle', name: 'Лианы' },
+      { x: 3, y: 16, w: 20, h: 12, type: 'jungle', name: 'Тропа' },
+      { x: 24, y: 16, w: 12, h: 12, type: 'ruins', name: 'Старый фонтан' },
+      { x: 37, y: 16, w: 20, h: 12, type: 'jungle', name: 'Бамбуковая роща' },
+      { x: 3, y: 29, w: 14, h: 13, type: 'clearing', name: 'Поляна' },
+      { x: 18, y: 29, w: 20, h: 13, type: 'jungle', name: 'Болото' },
+      { x: 39, y: 29, w: 18, h: 13, type: 'ruins', name: 'Храм Депозита' },
+    ],
+    links: [[0, 1, 'gap'], [1, 2, 'arch'], [0, 3, 'arch'], [1, 4, 'gap'], [2, 5, 'gap'], [3, 4, 'gap'], [4, 5, 'arch'],
+            [3, 6, 'gap'], [4, 7, 'arch'], [5, 8, 'arch'], [6, 7, 'gap'], [7, 8, 'gap']],
+  },
 ];
 
 // Прогресс хранится в браузере: сколько уровней открыто
@@ -124,7 +162,7 @@ class CampaignUI {
   }
 
   _rects(w, h) {
-    const n = 5, gap = 12;
+    const n = this.cards().length, gap = 10;
     const cw = Math.min(170, (w - 60 - gap * (n - 1)) / n), ch = Math.min(300, h * 0.56);
     const x0 = w / 2 - (n * cw + (n - 1) * gap) / 2, y = h * 0.24;
     return Array.from({ length: n }, (_, i) => ({ x: x0 + i * (cw + gap), y, w: cw, h: ch }));
@@ -243,6 +281,19 @@ class CampaignUI {
       ctx.beginPath(); ctx.moveTo(-s * 0.7, 0); ctx.lineTo(s * 0.7, 0); ctx.moveTo(0, -s * 0.7); ctx.lineTo(0, s * 0.7); ctx.stroke();
       ctx.beginPath(); ctx.ellipse(0, 0, s * 0.35, s * 0.7, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, -s * 0.7); ctx.lineTo(0, -s); ctx.stroke();
+    } else if (id === 4) { // ночной город: силуэт домов и луна
+      ctx.moveTo(-s, s * 0.8); ctx.lineTo(-s, -s * 0.1); ctx.lineTo(-s * 0.55, -s * 0.1); ctx.lineTo(-s * 0.55, -s * 0.6);
+      ctx.lineTo(-s * 0.1, -s * 0.6); ctx.lineTo(-s * 0.1, s * 0.1); ctx.lineTo(s * 0.3, s * 0.1); ctx.lineTo(s * 0.3, -s * 0.35);
+      ctx.lineTo(s, -s * 0.35); ctx.lineTo(s, s * 0.8); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s * 0.65, -s * 0.85, s * 0.18, 0, Math.PI * 2); ctx.fill();
+      for (const [wx, wy] of [[-0.78, 0.2], [-0.35, -0.35], [-0.35, 0.1], [0.55, -0.1], [0.55, 0.35]]) ctx.fillRect(wx * s, wy * s, s * 0.14, s * 0.14);
+    } else if (id === 5) { // джунгли: пальма
+      ctx.moveTo(-s * 0.1, s); ctx.quadraticCurveTo(s * 0.15, 0, -s * 0.05, -s * 0.45); ctx.stroke();
+      for (const a of [-2.6, -1.9, -1.2, -0.5, 0.2]) {
+        ctx.beginPath(); ctx.moveTo(-s * 0.05, -s * 0.45);
+        ctx.quadraticCurveTo(Math.cos(a) * s * 0.6, -s * 0.45 + Math.sin(a) * s * 0.6 - s * 0.2, Math.cos(a) * s, -s * 0.45 + Math.sin(a) * s * 0.7 + s * 0.15);
+        ctx.stroke();
+      }
     } else { // бесконечность
       ctx.moveTo(0, 0);
       ctx.bezierCurveTo(s * 0.5, -s * 0.6, s, -s * 0.2, s, 0); ctx.bezierCurveTo(s, s * 0.2, s * 0.5, s * 0.6, 0, 0);

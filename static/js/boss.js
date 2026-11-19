@@ -59,6 +59,18 @@ const BOSS_TYPES = {
     look: { skin: '#6a7262', skinDk: '#454c40', hair: '#3a4a2a', hairStyle: 'bald', horns: '#8a8a7a', hornLen: 5, eyes: '#7aff60',
             jacket: '#5a6052', jacketDk: '#3a3e34', shirt: '#4a5042', pants: '#3e4436', shoes: '#2a2e24', collar: 'armor', bulk: 2.3 },
   },
+  // --- уличные боссы ---
+  racer: {
+    name: 'ВОДИЛА', title: 'Возит зарплаты по ночам', hp: 40, speed: 130, weapon: 'uzi', drop: 'goldenUzi', bonus: 3500, behavior: 'charger',
+    charge: { speed: 720, windup: 0.4, time: 0.5, chain: 2, dmg: 2, daze: 1.0, cooldown: 1.6 },
+    look: { skin: '#c89a78', skinDk: '#94684a', hair: '#121016', hairStyle: 'cap', cap: '#e86a10', glasses: 'shades',
+            jacket: '#1a1a1e', jacketDk: '#0a0a0c', shirt: '#e86a10', pants: '#1a1e28', shoes: '#f0f0f0', collar: 'jacket', bulk: 1.5 },
+  },
+  gardener: {
+    name: 'САДОВНИК', title: 'Хозяин тропического сада', hp: 56, speed: 82, weapon: null, drop: 'cleaver', bonus: 4500, behavior: 'brute',
+    look: { skin: '#8a5a3a', skinDk: '#5a3a22', hair: '#2a3a1a', hairStyle: 'beanie', beanie: '#2a5a22', beard: '#3a2a18',
+            jacket: '#3a5a22', jacketDk: '#22381a', shirt: '#5a4a2a', pants: '#3a3020', shoes: '#1a1208', collar: 'armor', bulk: 2.0 },
+  },
   // --- сюжетные боссы ---
   revisor: {
     name: 'РЕВИЗОР', title: 'Ряженая «проверка» от Депозита', hp: 34, speed: 88, weapon: 'm4', drop: 'm4', bonus: 3000, behavior: 'gunner',
@@ -131,7 +143,6 @@ class Boss extends Enemy {
 
   takeDamage(amount, pickups, cause) {
     if (this.dead) return;
-    if (cause && cause.by === 'dani') amount *= 1.1;
     this.hp -= amount;
     this.hitFlash = 0.1;
     AudioSys.play('tank_hit');
