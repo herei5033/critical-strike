@@ -57,7 +57,11 @@ class Game {
     // Корпоратив и боссы
     this.coopUI = new CoopUI(this);
     this.campaignUI = new CampaignUI(this);
-    this.soloMode = 0;          // номер уровня кампании или 'endless'
+    this.storyUI = new StoryUI(this);
+    this.storyIdx = null;       // глава сюжета (когда soloMode === 'story')
+    this.dialogue = null;
+    this._storySeen = new Set();
+    this.soloMode = 0;          // номер уровня кампании, 'endless' или 'story'
     this.campaignIdx = null;
     this.levelBanner = null;
     this.coop = null;
@@ -106,9 +110,12 @@ class Game {
 
   startRun() {
     this.coop = null;
-    this.campaignIdx = typeof this.soloMode === 'number' ? this.soloMode : null;
-    // боссы по очкам — в бесконечном режиме; в кампании у каждого уровня свой босс
-    this.bossDirector = this.campaignIdx === null ? new BossDirector() : null;
+    const story = this.soloMode === 'story' && this.storyIdx !== null;
+    if (!story) this.storyIdx = null;
+    const ch = story ? STORY[this.storyIdx] : null;
+    this.campaignIdx = ch ? (ch.level.campaign !== undefined ? ch.level.campaign : null) : (typeof this.soloMode === 'number' ? this.soloMode : null);
+    // боссы по очкам — в бесконечном режиме; в кампании и сюжете у каждого уровня свой босс
+    this.bossDirector = this.campaignIdx === null && !story ? new BossDirector() : null;
     this.score = 0;
     this.kills = 0;
     this.playerName = "";
@@ -120,16 +127,63 @@ class Game {
     AudioSys.play('game_start');
 
     this.player = null;   // новый забег — заряд способностей и счёт убийств с нуля
+    if (story) { this._startStoryChapter(); return; }
     this.startLevel();
+  }
+
+  // ---------- сюжет ----------
+  _startStoryChapter() {
+    const ch = STORY[this.storyIdx];
+    this.campaignIdx = ch.level.campaign !== undefined ? ch.level.campaign : null;
+    this.bossDirector = null;
+    this.startLevel();
+    StoryAssets.music(this.storyIdx + 1);
+    // вступление показываем один раз за сессию (после смерти сразу в бой)
+    if (!this._storySeen.has(ch.id)) {
+      this._storySeen.add(ch.id);
+      this.dialogue = new Dialogue(this, ch.intro, { title: ch.title, place: ch.place, color: ch.color, onDone: () => { this.dialogue = null; this.state = 'playing'; } });
+      this.state = 'dialogue';
+    }
+  }
+
+  // Глава пройдена: финальный диалог, затем экран победы
+  _storyComplete() {
+    const ch = STORY[this.storyIdx];
+    StoryProgress.unlock(this.storyIdx + 2);
+    AudioSys.play('game_start');
+    Effects.screenFlash(0.35, '255,240,200');
+    this.dialogue = new Dialogue(this, ch.outro, { title: ch.title, place: 'ГЛАВА ПРОЙДЕНА', color: ch.color, onDone: () => {
+      this.dialogue = null;
+      this.state = 'victory'; this.victoryT = 0;
+      if (this.storyIdx >= STORY.length - 1) this._submitRun();
+    } });
+    this.state = 'dialogue';
+  }
+
+  // Случайный этаж главы: фиксированный seed и свой босс в самой дальней комнате
+  _buildStoryFloor(spec) {
+    Utils.withSeed(spec.seed, () => this._buildLevel(null, spec.mul || 1));
+    const L = this.level;
+    if (!spec.boss || !L.rooms || !L.playerRoom) return;
+    const pr = L.playerRoom;
+    const far = L.rooms.filter(r => !r.hall && r !== pr).sort((a, b) =>
+      Utils.dist(b.cx, b.cy, pr.cx, pr.cy) - Utils.dist(a.cx, a.cy, pr.cx, pr.cy))[0];
+    const pt = far && L.randomFreePoint(far);
+    if (!pt) return;
+    this.enemies.push(new Boss(pt.x - 11, pt.y - 11, spec.boss, 1));
+    this.totalEnemies = this.enemies.length;
   }
 
   startLevel() {
     AudioSys.init();
     const L = this.campaignIdx !== null ? CAMPAIGN[this.campaignIdx] : null;
+    const ch = this.storyIdx !== null && !this.coop ? STORY[this.storyIdx] : null;
     if (L) Utils.withSeed(L.seed, () => this._buildLevel(L));
+    else if (ch) this._buildStoryFloor(ch.level);
     else this._buildLevel();
     this._spawnPlayer(0);
     this._afterLevelStart();
+    if (ch) { this.levelBanner = { name: ch.level.campaign !== undefined ? L.name : ch.level.name, sub: ch.title, color: ch.color, t: 3 }; return; }
     this.levelBanner = L
       ? { name: L.name, sub: `УРОВЕНЬ ${this.campaignIdx + 1} ИЗ ${CAMPAIGN.length}`, color: L.color, t: 3 }
       : { name: 'БЕСКОНЕЧНЫЙ ЗАБЕГ', sub: 'боссы приходят за очками', color: '#c060ff', t: 2.5 };
@@ -188,14 +242,14 @@ class Game {
   }
 
   // Уровень, враги и предметы. Использует только Math.random — поэтому детерминирован при withSeed
-  _buildLevel(layout) {
+  _buildLevel(layout, extraMul = 1) {
     // уровни крупнее: случайные — больше площадь, статичные — растянутая планировка
     const k = layout ? CAMPAIGN_SCALE : RANDOM_SCALE;
     const worldW = TILE * Math.ceil(60 * k + (k > 1 ? 2 : 0));
     const worldH = TILE * Math.ceil(45 * k + (k > 1 ? 2 : 0));
     const L = layout ? scaledLayout(layout, CAMPAIGN_SCALE) : null;
     // в корпоративе врагов больше: +30% за каждого напарника
-    const enemyMul = this.coop ? 1 + 0.3 * (this.coop.players.length - 1) : 1;
+    const enemyMul = (this.coop ? 1 + 0.3 * (this.coop.players.length - 1) : 1) * extraMul;
     try { this.level = new Level(worldW, worldH, L ? { layout: L, enemyMul } : { enemyMul }); }
     catch (e) { console.error('Level gen failed:', e); this.level = null; }
 
@@ -369,6 +423,12 @@ class Game {
 
     if (this.state === 'coop') { this.coopUI.update(dt); return; }
     if (this.state === 'levelSelect') { this.campaignUI.update(dt); return; }
+    if (this.state === 'storySelect') { this.storyUI.update(dt); return; }
+    if (this.state === 'dialogue') {
+      if (this.dialogue) this.dialogue.update(dt); else this.state = 'playing';
+      Effects.update(dt * 0.3, this.level);
+      return;
+    }
 
     if (this.coop) {
       this.coop.update(dt);
@@ -402,7 +462,7 @@ class Game {
       }
 
       if (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space')) this.startRun();
-      if (Input.wasPressed('Escape')) { this.campaignUI.open(); return; }
+      if (Input.wasPressed('Escape')) { if (this.soloMode === 'story') this.storyUI.open(); else this.campaignUI.open(); return; }
 
       if (Input.consumeClick()) {
         const mx = Input.mouse.x;
@@ -459,8 +519,11 @@ class Game {
       Effects.update(dt, this.level);
       this.player.updateParticles(dt);
       if (this.victoryT < 0.8) return;
-      const last = this.campaignIdx >= CAMPAIGN.length - 1;
-      const next = () => { this.campaignIdx++; this.soloMode = this.campaignIdx; this.startLevel(); };
+      const story = this.storyIdx !== null;
+      const last = story ? this.storyIdx >= STORY.length - 1 : this.campaignIdx >= CAMPAIGN.length - 1;
+      const next = story
+        ? () => { this.storyIdx++; this._startStoryChapter(); }
+        : () => { this.campaignIdx++; this.soloMode = this.campaignIdx; this.startLevel(); };
       if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) { if (last) { this._submitRun(); this.toMenu(); } else next(); return; }
       if (Input.wasPressed('Escape')) { this._submitRun(); this.toMenu(); return; }
       if (Input.consumeClick()) {
@@ -568,6 +631,10 @@ class Game {
         if (this.bossDirector) this.bossDirector.update(dt, this);
         this._updateLottery(dt);
         this._unstickEnemies(dt);
+        // подпись комнаты при входе (у статичных уровней — «Кабинет 319» и т.п.)
+        const rm = this.level.getRoomAt && this.level.getRoomAt(this.player.x + 9, this.player.y + 9);
+        if (rm && rm !== this._lastRoom) { this._lastRoom = rm; if (rm.label) this._roomLabel = { text: rm.label, t: 2.2 }; }
+        if (this._roomLabel) { this._roomLabel.t -= dt; if (this._roomLabel.t <= 0) this._roomLabel = null; }
         this._updatePacing(dt);
       }
 
@@ -678,7 +745,9 @@ class Game {
         this._submitRun();
       }
       if (!coopClient && this.state === 'playing' && this.enemies.every(e => e.dead)) {
-        if (this.campaignIdx !== null && !this.coop) {
+        if (this.storyIdx !== null && !this.coop) {
+          this._storyComplete();
+        } else if (this.campaignIdx !== null && !this.coop) {
           this.state = 'victory'; this.victoryT = 0;
           Progress.unlock(this.campaignIdx + 2);
           if (this.campaignIdx >= CAMPAIGN.length - 1) this._submitRun();
@@ -1217,6 +1286,7 @@ class Game {
 
   render() {
     this._renderInner();
+    if (this.state === 'dialogue' && this.dialogue) this.dialogue.draw(this.ctx, this.W, this.H);
     if (this.coop && ['playing', 'levelClear', 'dead', 'coopIntro'].includes(this.state)) {
       const ctx = this.ctx;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1265,6 +1335,12 @@ class Game {
 
     if (this.state === 'coop') {
       this.coopUI.draw(ctx, this.W, this.H);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
+    if (this.state === 'storySelect') {
+      this.storyUI.draw(ctx, this.W, this.H);
       ctx.drawImage(this.scanlines, 0, 0);
       return;
     }
@@ -1534,6 +1610,15 @@ class Game {
       ctx.fillText(`${this.campaignIdx + 1}. ${CAMPAIGN[this.campaignIdx].name}`, this.W / 2, 24 * scale);
       ctx.restore();
     }
+    if (this._roomLabel && this.state === 'playing' && !this.levelBanner) {
+      const r = this._roomLabel;
+      ctx.save(); ctx.textAlign = 'center';
+      ctx.globalAlpha = Math.min(1, r.t * 2, (2.2 - r.t) * 4);
+      ctx.font = `bold ${14 * scale}px "Courier New", monospace`;
+      ctx.shadowColor = '#05d9e8'; ctx.shadowBlur = 8; ctx.fillStyle = '#e8f8ff';
+      ctx.fillText(r.text.toUpperCase(), this.W / 2, 44 * scale, this.W * 0.5);
+      ctx.restore();
+    }
     const b = this.levelBanner;
     if (!b || this.state !== 'playing') return;
     const k = Math.min(1, b.t * 1.5, (3 - b.t) * 3);
@@ -1556,19 +1641,22 @@ class Game {
     const k = Utils.clamp(this.victoryT / 0.6, 0, 1);
     ctx.fillStyle = `rgba(4,2,10,${0.85 * k})`; ctx.fillRect(0, 0, W, H);
     if (k < 1) return;
-    const L = CAMPAIGN[this.campaignIdx];
-    const last = this.campaignIdx >= CAMPAIGN.length - 1;
-    M.glowText(ctx, last ? 'КАМПАНИЯ ПРОЙДЕНА!' : 'УРОВЕНЬ ПРОЙДЕН', W / 2, H * 0.22, L.color, Math.min(46, W * 0.06), 'center', 22);
+    const story = this.storyIdx !== null;
+    const ch = story ? STORY[this.storyIdx] : null;
+    const L = story ? { name: ch.title, color: ch.color } : CAMPAIGN[this.campaignIdx];
+    const last = story ? this.storyIdx >= STORY.length - 1 : this.campaignIdx >= CAMPAIGN.length - 1;
+    const nextName = last ? '' : story ? STORY[this.storyIdx + 1].title : CAMPAIGN[this.campaignIdx + 1].name;
+    M.glowText(ctx, last ? (story ? 'СЮЖЕТ ПРОЙДЕН!' : 'КАМПАНИЯ ПРОЙДЕНА!') : (story ? 'ГЛАВА ПРОЙДЕНА' : 'УРОВЕНЬ ПРОЙДЕН'), W / 2, H * 0.22, L.color, Math.min(46, W * 0.06), 'center', 22);
     ctx.textAlign = 'center';
     ctx.font = `bold ${Math.min(22, W * 0.035)}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
-    ctx.fillText(L.name, W / 2, H * 0.3);
+    ctx.fillText(L.name, W / 2, H * 0.3, W - 32);
     ctx.font = `bold ${Math.min(28, W * 0.045)}px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
     ctx.fillText(`ОЧКИ: ${this.score}`, W / 2, H * 0.42);
     ctx.font = `${Math.min(16, W * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
     ctx.fillText(`Убито врагов: ${this.kills} / ${this.totalEnemies}`, W / 2, H * 0.48);
     if (!last) {
       ctx.fillStyle = '#05d9e8';
-      ctx.fillText(`Открыт уровень: ${CAMPAIGN[this.campaignIdx + 1].name}`, W / 2, H * 0.54);
+      ctx.fillText(`Открыто: ${nextName}`, W / 2, H * 0.54, W - 32);
     }
     const bx = W / 2 - 150, by = H * 0.62;
     const btn = (y, text, c) => {
@@ -1576,7 +1664,7 @@ class Game {
       ctx.fillStyle = '#05030a'; ctx.font = `bold ${Math.min(18, W * 0.03)}px "Courier New", monospace`;
       ctx.fillText(text, W / 2, y + 30);
     };
-    btn(by, last ? 'В МЕНЮ (ENTER)' : `ДАЛЕЕ: ${CAMPAIGN[this.campaignIdx + 1].name} (ENTER)`, L.color);
+    btn(by, last ? 'В МЕНЮ (ENTER)' : (story ? 'СЛЕДУЮЩАЯ ГЛАВА (ENTER)' : `ДАЛЕЕ: ${nextName} (ENTER)`), L.color);
     if (!last) btn(by + 58, 'В МЕНЮ (ESC)', '#9a94b8');
   }
 
@@ -1642,9 +1730,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Бесшумная M4, оружие боссов. Каждые 10 убийств — ЛОТЕРЕЯ: враги вокруг лопаются', hp: 6, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Кулаки на 50% быстрее, пинок-вертушка [F]. +1 HP за каждого 5-го убитого', hp: 7, speed: 1.2, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Два Uzi, +30% патронов. Каждые 10 убийств — ЯРОСТЬ: патроны бесконечны', hp: 6, speed: 1, weapon: 'uzi' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Каб. 316. Бесшумная M4, берёт всё «в долг». Каждые 10 убийств — ЛОТЕРЕЯ', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Каб. 321. Кулаки на 50% быстрее, пинок-вертушка [F], +1 HP за 5-го убитого', hp: 7, speed: 1.2, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, +30% патронов. Каждые 10 убийств — ЯРОСТЬ', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;

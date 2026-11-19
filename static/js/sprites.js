@@ -705,7 +705,22 @@ const Sprites = (() => {
 
 
   // ---------- аптечка ----------
+  // Самса из столовой — восстанавливает сердце
   function drawMedkit(ctx) {
+    ctx.fillStyle = '#050407';
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(11, 8); ctx.lineTo(-11, 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#d8902a';
+    ctx.beginPath(); ctx.moveTo(0, -8.2); ctx.lineTo(9.4, 7); ctx.lineTo(-9.4, 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f0b84a';
+    ctx.beginPath(); ctx.moveTo(0, -6.4); ctx.lineTo(6.6, 4.6); ctx.lineTo(-6.6, 4.6); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,60,10,0.6)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-4.6, 1.6); ctx.lineTo(4.6, 1.6); ctx.moveTo(-2.4, -2.2); ctx.lineTo(2.4, -2.2); ctx.stroke();
+    for (const [x, y] of [[-3, 4], [0, 3.2], [3, 4], [-1.4, 0], [1.4, -0.6]]) R(ctx, x - 0.4, y - 0.4, 0.8, 0.8, '#fff6d8');   // кунжут
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.moveTo(-0.6, -5.6); ctx.lineTo(-4.4, 1); ctx.lineTo(-3.4, 1); ctx.closePath(); ctx.fill();
+  }
+
+  function drawMedkitOld(ctx) {
     ctx.fillStyle = '#050407'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-9.6, -7.6, 19.2, 15.2, 2.5) : ctx.rect(-9.6, -7.6, 19.2, 15.2); ctx.fill();
     R(ctx, -9, -7, 18, 14, '#e8e8ec');
     R(ctx, -9, -7, 18, 2.2, '#ffffff');

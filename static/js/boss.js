@@ -3,22 +3,22 @@
 const BOSS_TYPES = {
   // --- боссы уровней одиночной кампании ---
   watchman: {
-    name: 'ВАХТЁР', title: 'Ночной сторож колледжа', hp: 12, speed: 100, weapon: 'nightstick', drop: 'nightstick', bonus: 1500, behavior: 'charger',
+    name: 'ФАЛЬШИВЫЙ ВАХТЁР', title: 'Человек Депозита в холле «Болашака»', hp: 12, speed: 100, weapon: 'nightstick', drop: 'nightstick', bonus: 1500, behavior: 'charger',
     look: { skin: '#c8a080', skinDk: '#906848', hair: '#3a3a40', hairStyle: 'cap', cap: '#1a2030', beard: '#4a4a50',
             jacket: '#262c3a', jacketDk: '#12161e', shirt: '#3a3a42', pants: '#1a1e28', shoes: '#060606', collar: 'jacket', bulk: 1.45, blood: true },
   },
   director: {
-    name: 'ДИРЕКТОР', title: 'Здесь решает он', hp: 20, speed: 85, weapon: 'goldenUzi', drop: 'goldenUzi', bonus: 2000, behavior: 'gunner',
+    name: 'КОЛЛЕКТОР', title: 'Мы найдём вас сами', hp: 20, speed: 85, weapon: 'goldenUzi', drop: 'goldenUzi', bonus: 2000, behavior: 'gunner',
     look: { skin: '#d8b090', skinDk: '#a07a5a', hair: '#0c0a0e', hairHi: 'rgba(255,255,255,0.15)', hairStyle: 'slick', glasses: 'shades',
             jacket: '#101012', jacketDk: '#050506', shirt: '#d8d8dc', tie: '#6a0a12', pants: '#0e0e10', shoes: '#050505', collar: 'suit', bulk: 1.4 },
   },
   collector: {
-    name: 'ИНКАССАТОР', title: 'Охраняет хранилище', hp: 26, speed: 78, weapon: 'minigun', drop: 'minigun', bonus: 2500, behavior: 'gunner',
+    name: 'ИНКАССАТОР', title: 'Везёт зарплаты не туда', hp: 26, speed: 78, weapon: 'minigun', drop: 'minigun', bonus: 2500, behavior: 'gunner',
     look: { skin: '#c89a78', skinDk: '#94684a', hair: '#121016', hairStyle: 'helmet', helmet: '#1c2018', visor: '#2a0608',
             jacket: '#22261e', jacketDk: '#0e100c', shirt: '#1a1c18', pants: '#1a1c18', shoes: '#060606', collar: 'armor', skull: true, bulk: 1.55 },
   },
   bouncer: {
-    name: 'ВЫШИБАЛА', title: 'Никто не войдёт в VIP', hp: 32, speed: 125, weapon: 'spikedBat', drop: 'spikedBat', bonus: 3000, behavior: 'charger',
+    name: 'ВЫШИБАЛА', title: 'Учителей в VIP не пускают', hp: 32, speed: 125, weapon: 'spikedBat', drop: 'spikedBat', bonus: 3000, behavior: 'charger',
     look: { skin: '#9a6a48', skinDk: '#6a4428', hair: '#0c0a0e', hairStyle: 'bald', glasses: 'shades', beard: '#0c0a0e',
             jacket: '#121214', jacketDk: '#050506', shirt: '#121214', pants: '#0e0e10', shoes: '#050505', collar: 'hood', bulk: 1.75, scar: true },
   },
@@ -58,6 +58,23 @@ const BOSS_TYPES = {
     name: 'ДРЕВНИЙ', title: 'Каменный страж подземелья', hp: 64, speed: 72, weapon: null, drop: 'rpg', bonus: 5000, behavior: 'brute', revive: true,
     look: { skin: '#6a7262', skinDk: '#454c40', hair: '#3a4a2a', hairStyle: 'bald', horns: '#8a8a7a', hornLen: 5, eyes: '#7aff60',
             jacket: '#5a6052', jacketDk: '#3a3e34', shirt: '#4a5042', pants: '#3e4436', shoes: '#2a2e24', collar: 'armor', bulk: 2.3 },
+  },
+  // --- сюжетные боссы ---
+  revisor: {
+    name: 'РЕВИЗОР', title: 'Ряженая «проверка» от Депозита', hp: 34, speed: 88, weapon: 'm4', drop: 'm4', bonus: 3000, behavior: 'gunner',
+    look: { skin: '#d8b090', skinDk: '#a07a5a', hair: '#3a3a40', hairHi: 'rgba(255,255,255,0.2)', hairStyle: 'slick', glasses: 'rect',
+            jacket: '#2a2e3a', jacketDk: '#14161e', shirt: '#e8e8ec', tie: '#1a3a8a', pants: '#1a1e28', shoes: '#050505', collar: 'suit', bulk: 1.4 },
+  },
+  brigadir: {
+    name: 'БРИГАДИР', title: 'Хозяин складов в порту', hp: 52, speed: 80, weapon: null, drop: 'shotgun', bonus: 4000, behavior: 'brute',
+    look: { skin: '#a8724a', skinDk: '#7a4c2c', hair: '#121016', hairStyle: 'beanie', beanie: '#c85a10', beard: '#1a1210',
+            jacket: '#e86a10', jacketDk: '#a84a08', shirt: '#2a2a30', pants: '#2a3040', shoes: '#0a0a0a', collar: 'armor', bulk: 2.1 },
+  },
+  deposit: {
+    name: 'МИСТЕР ДЕПОЗИТ', title: 'Тот, у кого все зарплаты Актау', hp: 80, speed: 100, weapon: 'goldenUzi', drop: 'minigun', bonus: 10000, behavior: 'caster',
+    ring: '#5aff7a', shot: '#ffd319',
+    look: { skin: '#d8b090', skinDk: '#a07a5a', hair: '#e8e0c8', hairHi: 'rgba(255,255,255,0.4)', hairStyle: 'slick', glasses: 'shades',
+            jacket: '#c8a030', jacketDk: '#8a6a1a', shirt: '#101010', tie: '#3a8a3a', pants: '#1a1608', shoes: '#050505', collar: 'suit', bulk: 1.6 },
   },
 };
 const BOSS_ORDER = ['butcher', 'general', 'minotaur', 'bride', 'devil', 'ancient'];
@@ -346,7 +363,7 @@ class Boss extends Enemy {
         if (this._fireT <= 0 && this._ring < 3) {
           this._fireT = 0.25;
           const off = this._ring * 0.17;
-          for (let i = 0; i < 18; i++) fire(off + i / 18 * Math.PI * 2, 230, '#ff5020');
+          for (let i = 0; i < 18; i++) fire(off + i / 18 * Math.PI * 2, 230, this.def.ring || '#ff5020');
           this._ring++;
           this.flashTimer = 0.1;
           AudioSys.play('shoot_shotgun');
@@ -359,7 +376,7 @@ class Boss extends Enemy {
         this.angle += Utils.clamp(da, -dt * 2.4, dt * 2.4);
         if (this._fireT <= 0) {
           this._fireT = 0.16;
-          for (const s of [-0.12, 0, 0.12]) fire(this.angle + s, 400, '#ffb040');
+          for (const s of [-0.12, 0, 0.12]) fire(this.angle + s, 400, this.def.shot || '#ffb040');
           this.flashTimer = 0.05;
           AudioSys.play('shoot_uzi');
         }
