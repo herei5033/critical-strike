@@ -18,6 +18,10 @@ const WEAPONS = {
   flamer: { id: 'flamer', name: 'Огнемёт', type: 'ranged', cooldown: 0.045, ammo: 200, maxAmmo: 200, bulletSpeed: 380, color: '#ff8a30',
             length: 28, sound: 'throw', projectile: 'flame', rare: true },
 
+  // Эксклюзив Дани: тихая винтовка — выстрелы почти не слышны врагам
+  m4s: { id: 'm4s', name: 'M4 с глушителем', type: 'ranged', cooldown: 0.12, ammo: 30, maxAmmo: 30, bulletSpeed: 880, spread: 0.02,
+         color: '#9fe0ff', length: 28, sound: 'shoot_m4', silent: true, special: 'dani' },
+
   // Оружие снайперов и боссов — его может подобрать только Дани
   sniper: { id: 'sniper', name: 'Снайперка', type: 'ranged', cooldown: 0.9, ammo: 7, maxAmmo: 7, bulletSpeed: 1600, damage: 3,
             color: '#ff6060', length: 36, sound: 'sniper_shot', special: 'dani' },
@@ -47,9 +51,23 @@ function pickupSlot(d, p) {
   if (p.isHealth) return d.hp < d.maxHp ? 'health' : null;
   if (p.isGrenade) return (d.grenades || 0) < 5 ? 'grenade' : null;
   const w = p.weapon;
+  if (d.charId === 'gal') return null;   // Гала дерётся только кулаками
   if (!w || !canWield(d.charId, w)) return null;
   if (!d.w1) return 'w1';
   // Даур держит по огнестрелу в каждой руке (но не два ножа/биты)
   if (d.charId === 'daur' && !d.w2 && WEAPONS[d.w1] && WEAPONS[d.w1].type === 'ranged' && w.type === 'ranged') return 'w2';
   return null;
 }
+
+// Оружие в руках героя: у Даура во всём огнестреле на 30% больше патронов
+function prepWeapon(charId, w) {
+  if (w && charId === 'daur' && w.type === 'ranged' && !w._boost) {
+    w._boost = true;
+    w.maxAmmo = Math.round(WEAPONS[w.id].maxAmmo * 1.3);
+    w.ammo = Math.min(w.maxAmmo, Math.round(w.ammo * 1.3));
+  }
+  return w;
+}
+
+// Стартовое оружие героев
+const START_WEAPONS = { dani: ['m4s'], gal: [], daur: ['uzi', 'uzi'] };

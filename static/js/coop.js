@@ -457,7 +457,7 @@ class CoopUI {
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 6, 26, 14, 0, 0, Math.PI * 2); ctx.fill();
       ctx.rotate(-Math.PI / 2 + Math.sin(this.t) * 0.3);
       ctx.scale(2.4, 2.4);
-      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: null, gal: null, daur: 'shotgun' }[mine] });
+      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: 'm4s', gal: null, daur: 'uzi' }[mine] });
       ctx.restore();
     }
 
@@ -907,8 +907,8 @@ class CoopSession {
     if (e.t === 'dmg') { p.takeDamage(e.a || 1, e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
     else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
     else if (e.t === 'give') {
-      if (e.s === 'w2') { if (!p.weapon2) p.weapon2 = makeWeapon(e.w, e.am); }
-      else if (!p.weapon) p.weapon = makeWeapon(e.w, e.am);
+      if (e.s === 'w2') { if (!p.weapon2) p.weapon2 = prepWeapon(p.charId, makeWeapon(e.w, e.am)); }
+      else if (!p.weapon) p.weapon = prepWeapon(p.charId, makeWeapon(e.w, e.am));
       AudioSys.play('pickup_weapon');
     }
     else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_weapon'); }

@@ -486,6 +486,13 @@ const Sprites = (() => {
     for (let i = 0; i < 4; i++) R(ctx, -5 + i * 1.3, 3, 0.8, 1.6, '#d0a040');  // лента
   };
 
+  // M4 с глушителем: обычная M4 + толстая труба глушителя на стволе
+  WEAPON_ART.m4s = function (ctx) {
+    WEAPON_ART.m4(ctx);
+    metal(ctx, 25, -1.5, 10, 3, '#0e0e12', '#2c2c34');
+    R(ctx, 26, -1.5, 8, 0.6, 'rgba(255,255,255,0.12)');
+    R(ctx, 34.4, -1, 0.8, 2, '#050407');
+  };
   WEAPON_ART.goldenUzi = function (ctx) {
     line(ctx, -9, -1.3, -2, -1.1, 0.7, '#a0801a'); line(ctx, -9, 1.3, -2, 1.1, 0.7, '#a0801a');
     metal(ctx, -2, -1.6, 15, 3.2, '#c8a030', '#ffe070');
@@ -523,7 +530,7 @@ const Sprites = (() => {
   };
 
   const WEAPON_META = {
-    glock: { kind: 'pistol', muzzle: 12, eject: 6 }, uzi: { kind: 'smg', muzzle: 17, eject: 5 }, m4: { kind: 'rifle', muzzle: 28, eject: 5 },
+    glock: { kind: 'pistol', muzzle: 12, eject: 6 }, uzi: { kind: 'smg', muzzle: 17, eject: 5 }, m4: { kind: 'rifle', muzzle: 28, eject: 5 }, m4s: { kind: 'rifle', muzzle: 36, eject: 5 },
     ak47: { kind: 'rifle', muzzle: 27, eject: 4 }, shotgun: { kind: 'rifle', muzzle: 30, eject: 3 }, sniper: { kind: 'rifle', muzzle: 36, eject: 6 },
     bat: { kind: 'melee', reach: 24, trail: '255,200,140' }, pipe: { kind: 'melee', reach: 22, trail: '200,210,230' },
     knife: { kind: 'melee', reach: 13, trail: '255,255,255' }, sword: { kind: 'melee', reach: 30, trail: '170,230,255' },
@@ -636,6 +643,12 @@ const Sprites = (() => {
     },
   };
   WEAPON_SIDE.goldenUzi = ctx => WEAPON_SIDE.uzi(ctx, true);
+  WEAPON_SIDE.m4s = ctx => {
+    WEAPON_SIDE.m4(ctx);
+    part(ctx, 25, -1.9, 11, 3.8, '#101014');
+    R(ctx, 26, -1.9, 9, 0.8, '#34343c');
+    for (let i = 0; i < 3; i++) R(ctx, 28 + i * 2.6, -1.9, 0.5, 3.8, '#060608');
+  };
 
   function drawWeapon(ctx, id, side = false) {
     const f = (side && WEAPON_SIDE[id]) || WEAPON_ART[id];

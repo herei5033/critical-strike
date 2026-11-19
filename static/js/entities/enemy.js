@@ -629,6 +629,7 @@ class Enemy {
   die(pickups, cause) {
     if (this.dead) return;
     this.dead = true;
+    this.killedBy = cause && cause.by;
     this.stunned = false;
     this._deathFx(cause);
     if (Array.isArray(pickups)) {

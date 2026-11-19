@@ -10,9 +10,9 @@ class Player {
     this.hp = 3;
     this.charId = charId;
 
-    if (charId === 'dani') this.speed *= 1.15;
-    else if (charId === 'gal') { this.maxHp = 4; this.hp = 4; }
-    else if (charId === 'daur') { this.maxHp = 3; this.hp = 3; }
+    // Гала: 5 HP и +20% к скорости (оружие не берёт)
+    if (charId === 'gal') { this.maxHp = 5; this.hp = 5; this.speed *= 1.2; }
+    this.kills = 0;             // лично убитые враги (Гала лечится за каждого 5-го)
 
     this.look = Sprites.HEROES[charId] || Sprites.HEROES.dani;
     this.seed = (Math.random() * 1e9) | 0;
@@ -24,8 +24,9 @@ class Player {
     this.animT = 0;
     this.stepTimer = 0;
 
-    this.weapon = makeWeapon('glock');
-    this.weapon2 = null;        // второе оружие (только у Даура)
+    const start = START_WEAPONS[charId] || [];
+    this.weapon = start[0] ? prepWeapon(charId, makeWeapon(start[0])) : null;
+    this.weapon2 = start[1] ? prepWeapon(charId, makeWeapon(start[1])) : null;   // второе оружие (только у Даура)
     this.attackTimer2 = 0;
     this.flash2 = 0;
     this.recoil2 = 0;
@@ -113,11 +114,11 @@ class Player {
         if (this.charId === 'gal' && !e.stunned) {
           // Гала вырубает насмерть одним ударом (танку и боссу — урон)
           if (e.isBoss || e.type === 'tank') e.takeDamage(e.isBoss ? 1 : 2, pickups, { kind: 'fist', angle: this.angle, by: this.charId });
-          else e.die(pickups, { kind: 'fist', angle: this.angle });
+          else e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
           Effects.ring(e.cx(), e.cy(), '255,200,120', 26);
         } else if (e.stunned) {
-          e.die(pickups, { kind: 'fist', angle: this.angle });
+          e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
         } else {
           e.stun();
@@ -334,8 +335,9 @@ class Player {
       level.addNoise(cx, cy, 250);
       return true;
     }
-    AudioSys.play(w.sound);
-    level.addNoise(cx, cy, 400);
+    // глушитель: тихий хлопок, враги слышат только совсем рядом
+    AudioSys.play(w.sound, w.silent ? 0.3 : 1);
+    level.addNoise(cx, cy, w.silent ? 70 : 400);
     if (w.projectile === 'rocket') {
       this._fired.push({ type: 'rocket', x: bx, y: by, a });
       Effects.smoke(cx - Math.cos(a) * 18, cy - Math.sin(a) * 18, a + Math.PI, 8);
@@ -346,7 +348,7 @@ class Player {
     else mk(a + (w.spread ? Utils.rand(-w.spread, w.spread) : 0));
     Effects.casing(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, a, w.id === 'shotgun');
     const muz = (Sprites.WEAPON_META[w.id] || {}).muzzle || 16;
-    Effects.muzzle(cx + Math.cos(a) * (muz + 6), cy + Math.sin(a) * (muz + 6), a, w.id === 'shotgun');
+    if (!w.silent) Effects.muzzle(cx + Math.cos(a) * (muz + 6), cy + Math.sin(a) * (muz + 6), a, w.id === 'shotgun');
     return true;
   }
 

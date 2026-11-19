@@ -87,6 +87,7 @@ class Boss extends Enemy {
   die(pickups, cause) {
     if (this.dead) return;
     this.dead = true;
+    this.killedBy = cause && cause.by;
     this._deathFx(cause);
     Effects.screenFlash(0.45, '255,230,180');
     Effects.hitstop = Math.max(Effects.hitstop, 0.18);

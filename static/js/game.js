@@ -274,7 +274,6 @@ class Game {
     const charId = chars[this.selectedChar];
 
     this.player = new Player(sp.x, sp.y, charId);
-    if (charId === 'daur') this.player.weapon = makeWeapon('shotgun');
 
     this.cam = new Camera(this.W, this.H, this.zoom);
     const viewW = this.W / this.zoom;
@@ -587,8 +586,8 @@ class Game {
             p.pickedUp = true;
             if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); }
             else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
-            else if (slot === 'w1') { pl.weapon = p.weapon; AudioSys.play('pickup_weapon'); }
-            else { pl.weapon2 = p.weapon; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
+            else if (slot === 'w1') { pl.weapon = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); }
+            else { pl.weapon2 = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
           }
         }
       }
@@ -602,6 +601,7 @@ class Game {
         const pts = 100 * this.combo;
         this.score += pts;
         this.kills++;
+        this._creditKill(e);
         Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, this.combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(this.combo, 5) * 2);
         if (this.combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${this.combo} КОМБО`, '#05d9e8', 11);
         Effects.screenFlash(0.08, '255,255,255');
@@ -664,6 +664,20 @@ class Game {
         body: JSON.stringify(body),
       }).catch(() => {});
     } catch (e) {}
+  }
+
+  // Личный счёт убийств героя. Гала за каждого 5-го лично убитого врага получает +1 HP.
+  _creditKill(e) {
+    if (!e.killedBy) return;
+    const pl = this.allPlayers().find(p => p && p.charId === e.killedBy);
+    if (!pl) return;
+    pl.kills = (pl.kills || 0) + 1;
+    if (pl.charId !== 'gal' || pl.kills % 5 !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
+    pl.hp++;
+    Effects.popup(pl.x + 9, pl.y - 10, '+1 HP', '#3dff8a', 13);
+    Effects.ring(pl.x + 9, pl.y + 9, '60,255,140', 26);
+    if (pl === this.player) AudioSys.play('pickup_health');
+    else if (this.coop) this.coop.sendTo(pl.pid, { t: 'heal' });
   }
 
   // ---------- HUD ----------
@@ -1319,9 +1333,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Самый быстрый, враги замечают его позже. Берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1.15, weapon: null },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Самый живучий. Убивает кулаком с одного удара и сбивает бандитов, врезаясь в них на бегу', hp: 4, speed: 1, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Начинает с дробовиком. Держит по огнестрелу в каждой руке, ПКМ/CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'shotgun' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Начинает с бесшумной M4. Враги замечают его позже. Берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Только кулаки, зато убивает с одного удара и сбивает бандитов на бегу. +1 HP за каждого 5-го убитого', hp: 5, speed: 1.2, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Начинает с двумя Uzi. +30% патронов в любом огнестреле. ПКМ/CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;
@@ -1387,7 +1401,7 @@ class Game {
       ty += isMobile ? 18 : 22;
       const bw = cardW - 50;
       ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x - bw / 2, ty, bw, 5);
-      ctx.fillStyle = '#05d9e8'; ctx.fillRect(x - bw / 2, ty, bw * (c.speed / 1.15), 5);
+      ctx.fillStyle = '#05d9e8'; ctx.fillRect(x - bw / 2, ty, bw * (c.speed / 1.2), 5);
       ctx.font = `10px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
       ctx.fillText('СКОРОСТЬ', x, ty + 16);
       if (!isMobile) {
