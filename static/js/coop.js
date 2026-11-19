@@ -1,8 +1,9 @@
 // =====================================================================
 // КОРПОРАТИВ — совместная игра до 3 человек.
-// Хост (создатель комнаты) считает весь мир: врагов, двери, предметы, боссов.
+// Хост (создатель комнаты) держит у себя всю сессию: лобби, чат и мир
+// (врагов, двери, предметы, боссов). Игроки подключаются к нему напрямую
+// по WebRTC (см. p2p.js), сервер нужен только для знакомства.
 // Каждый игрок сам управляет своим героем и сообщает хосту о попаданиях.
-// Сервер только пересылает данные (HTTP-опрос ~10 раз в секунду).
 // =====================================================================
 
 const CHAR_NAMES = { dani: 'ДАНИ', gal: 'ГАЛА', daur: 'ДАУР' };
@@ -10,6 +11,7 @@ const DEATH_KINDS = ['bullet', 'shotgun', 'blunt', 'blade', 'fist', 'throw', 'cr
 const DEATH_POSES = ['back', 'side', 'face', 'crawl'];
 const CHAR_IDS = ['dani', 'gal', 'daur'];
 const SLOT_COLORS = ['#ffd319', '#05d9e8', '#ff2a6d'];
+const LOBBY_RETURN = 8;   // сек экрана итогов, потом все в лобби хоста
 
 // ---------- Никнейм (хранится только в браузере) ----------
 const Nick = {
@@ -69,16 +71,6 @@ const TextField = {
   },
 };
 
-const CoopNet = {
-  async post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    let j = {};
-    try { j = await r.json(); } catch (e) {}
-    if (!r.ok) throw new Error(j.error || ('Ошибка сети ' + r.status));
-    return j;
-  },
-};
-
 // =====================================================================
 // Меню корпоратива и лобби
 // =====================================================================
@@ -93,23 +85,16 @@ class CoopUI {
   }
 
   reset() {
+    if (this.net) { this.net.muted = true; this.net.close(); }
+    this.net = null;
     this.code = null; this.pid = null; this.isHost = false;
-    this.players = []; this.chat = []; this.chatSince = 0;
-    this.pendingChat = null; this.pendingChar = null;
-    this.pollT = 0; this.busy = false; this.starting = false;
+    this.players = []; this.chat = [];
+    this.pendingChar = null;
+    this.busy = false; this.inMatch = false; this.connecting = false;
     this.lobbySel = 0;
   }
 
-  _ensureHeartbeat() {
-    if (this._hb) return;
-    this._hb = setInterval(() => {
-      if (this.screen === 'lobby' && this.code && this.game.state !== 'coop' && !this.starting) return;
-      if (this.screen === 'lobby' && this.code && performance.now() - (this._lastPoll || 0) > 1500) this._poll();
-    }, 1000);
-  }
-
   open() {
-    this._ensureHeartbeat();
     this.screen = this.code ? 'lobby' : 'home';
     this.sel = 0;
     this.game.state = 'coop';
@@ -138,32 +123,116 @@ class CoopUI {
     });
   }
 
+  _p2pSupported() {
+    if (typeof RTCPeerConnection === 'undefined') { this.flash('Браузер не поддерживает P2P (WebRTC)'); return false; }
+    return true;
+  }
+
+  // ---------- хост: создаёт комнату и держит лобби у себя ----------
   async _create() {
     if (!Nick.get()) { this._askNick(() => this._create()); return; }
-    if (this.busy) return;
+    if (this.busy || !this._p2pSupported()) return;
     this.busy = true;
     try {
-      const r = await CoopNet.post('/api/coop/create', { name: Nick.get() });
+      const r = await signalPost('/api/p2p/host', {});
       this.reset();
-      this.code = r.code; this.pid = r.pid; this.isHost = true;
+      this.code = r.code; this.pid = 'host'; this.isHost = true;
+      this.players = [{ pid: 'host', name: Nick.get(), char: 'dani', slot: 0, host: true }];
+      this.net = new P2PNet({ isHost: true, code: r.code, id: 'host', token: r.token, handlers: this._hostHandlers() });
+      this.addChat('', `${Nick.get()} создал комнату ${r.code}`, true);
       this.screen = 'lobby'; this.lobbySel = 0;
       AudioSys.play('menu_select');
     } catch (e) { this.flash(e.message); }
     this.busy = false;
   }
 
+  _hostHandlers() {
+    return {
+      canAccept: () => this.inMatch ? 'Игра уже идёт — дождитесь возврата в лобби' : this.players.length >= 3 ? 'Комната заполнена (максимум 3 игрока)' : null,
+      onOpen: () => {},
+      onMessage: (pid, m) => this._hostMsg(pid, m),
+      onClose: (pid) => this._hostPeerGone(pid),
+    };
+  }
+
+  _hostMsg(pid, m) {
+    const p = this.players.find(q => q.pid === pid);
+    if (m.t === 'hello') {
+      if (p) return;
+      const reason = this._hostHandlers().canAccept();
+      if (reason) { this.net.send(pid, { t: 'reject', reason }); setTimeout(() => this.net && this.net.drop(pid, 'rejected'), 300); return; }
+      const used = new Set(this.players.map(q => q.slot)), taken = new Set(this.players.map(q => q.char));
+      const slot = [0, 1, 2].find(i => !used.has(i));
+      const char = CHAR_IDS.find(c => !taken.has(c)) || null;
+      const name = String(m.name || 'ИГРОК').replace(/[^\p{L}\p{N} _\-.]/gu, '').trim().slice(0, 14) || 'ИГРОК';
+      this.players.push({ pid, name, char, slot, host: false });
+      this.net.send(pid, { t: 'welcome', pid, chat: this.chat });
+      this.addChat('', `${name} присоединился`, true);
+      this.broadcastLobby();
+      AudioSys.play('menu_select');
+      return;
+    }
+    if (!p) return;
+    if (m.t === 'char') {
+      if (!this.inMatch && CHAR_IDS.includes(m.c) && !this.players.some(q => q.char === m.c && q.pid !== pid)) p.char = m.c;
+      this.broadcastLobby();
+    } else if (m.t === 'chat') this.addChat(p.name, m.text);
+    else if (m.t === 'bye') this.net.drop(pid, 'bye');
+    else if (this.game.coop) this.game.coop.onNet(pid, m);
+  }
+
+  // Игрок отключился (сам вышел, закрыл вкладку или пропала связь)
+  _hostPeerGone(pid) {
+    const i = this.players.findIndex(q => q.pid === pid);
+    if (i < 0) return;
+    const p = this.players[i];
+    this.players.splice(i, 1);
+    if (this.game.coop) this.game.coop.onLeft(pid);
+    this.net.broadcast({ t: 'left', pid });
+    this.addChat('', this.inMatch ? `${p.name} покинул игру` : `${p.name} вышел из комнаты`, true);
+    this.broadcastLobby();
+  }
+
+  broadcastLobby() { if (this.net) this.net.broadcast({ t: 'lobby', players: this.players }); }
+
+  // Чат хранится только у хоста и рассылается всем
+  addChat(name, text, sys = false) {
+    text = String(text || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120);
+    if (!text) return;
+    const m = { name, text, sys };
+    this._recvChat(m);
+    if (this.net) this.net.broadcast({ t: 'chat', m });
+  }
+
+  _recvChat(m) {
+    this.chat.push(m);
+    this.chat = this.chat.slice(-40);
+    if (this.game.coop) this.game.coop.pushChatLine(m);
+    else if (!m.sys && m.name !== Nick.get()) AudioSys.play('menu_move');
+  }
+
+  sendChat(text) {
+    text = String(text || '').trim();
+    if (!text) return;
+    if (this.isHost) this.addChat(Nick.get() || 'ХОСТ', text);
+    else if (this.net) this.net.send('host', { t: 'chat', text });
+  }
+
+  // ---------- игрок: подключается к хосту по коду ----------
   _join() {
     if (!Nick.get()) { this._askNick(() => this._join()); return; }
+    if (!this._p2pSupported()) return;
     TextField.open({
       placeholder: 'Код комнаты (4 символа)', maxLength: 6, upper: true,
       onSubmit: async (v) => {
         v = v.trim().toUpperCase();
-        if (!v) return;
+        if (!v || this.busy) return;
         this.busy = true;
         try {
-          const r = await CoopNet.post('/api/coop/join', { code: v, name: Nick.get() });
+          const r = await signalPost('/api/p2p/join', { code: v });
           this.reset();
-          this.code = r.code; this.pid = r.pid; this.isHost = false;
+          this.code = v; this.pid = r.id; this.isHost = false; this.connecting = true;
+          this.net = new P2PNet({ isHost: false, code: v, id: r.id, handlers: this._clientHandlers() });
           this.screen = 'lobby'; this.lobbySel = 0;
           AudioSys.play('menu_select');
         } catch (e) { this.flash(e.message); }
@@ -172,51 +241,79 @@ class CoopUI {
     });
   }
 
-  async leave(silent) {
-    const code = this.code, pid = this.pid;
+  _clientHandlers() {
+    return {
+      onOpen: () => { this.net.send('host', { t: 'hello', name: Nick.get() }); },
+      onMessage: (pid, m) => this._clientMsg(m),
+      onClose: () => this._hostGone('Хост покинул игру'),
+      onFail: (reason) => this._hostGone(reason),
+    };
+  }
+
+  _clientMsg(m) {
+    const g = this.game;
+    if (m.t === 'welcome') { this.connecting = false; this.pid = m.pid; this.chat = (m.chat || []).slice(-40); }
+    else if (m.t === 'lobby') {
+      this.players = m.players || [];
+      const me = this.players.find(p => p.pid === this.pid);
+      if (me && (!this.pendingChar || me.char === this.pendingChar || this.players.some(p => p.char === this.pendingChar && p.pid !== this.pid))) this.pendingChar = null;
+    }
+    else if (m.t === 'chat') this._recvChat(m.m);
+    else if (m.t === 'reject') this._hostGone(m.reason || 'Хост отклонил подключение');
+    else if (m.t === 'closed') this._hostGone(m.reason || 'Хост закрыл комнату');
+    else if (m.t === 'start') {
+      this.inMatch = true;
+      this.players = m.players || this.players;
+      g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed }, this.net);
+    }
+    else if (m.t === 'toLobby') { if (g.coop) g.leaveMatch(); }
+    else if (m.t === 'left') { if (g.coop) g.coop.onLeft(m.pid); }
+    else if (g.coop) g.coop.onNet('host', m);
+  }
+
+  _hostGone(reason) {
+    const g = this.game;
+    this.reset();
+    if (g.coop) { g.coop.closed = true; g.coop.closeReason = reason; }
+    else { this.screen = 'home'; this.flash(reason); if (g.state !== 'coop' && g.state !== 'menu') this.open(); }
+  }
+
+  // Выйти из комнаты (или закрыть её, если вы хост)
+  leave(silent) {
+    const net = this.net;
+    if (net) {
+      if (this.isHost) net.broadcast({ t: 'closed', reason: 'Хост закрыл комнату' });
+      else net.send('host', { t: 'bye' });
+      net.muted = true;
+      this.net = null;
+      setTimeout(() => net.close(), 250);   // даём сообщению уйти
+    }
     this.reset();
     this.screen = 'home';
-    if (code) { try { await CoopNet.post('/api/coop/leave', { code, pid }); } catch (e) {} }
     if (!silent) this.flash('Вы покинули комнату');
   }
 
   _openChat() {
-    TextField.open({ placeholder: 'Сообщение в чат комнаты', maxLength: 120, onSubmit: (v) => { v = v.trim(); if (v) this.pendingChat = v; } });
+    TextField.open({ placeholder: 'Сообщение в чат комнаты', maxLength: 120, onSubmit: (v) => this.sendChat(v) });
   }
 
-  async _poll() {
-    if (this.busy || !this.code) return;
-    this.busy = true;
-    this._lastPoll = performance.now();
-    const body = { code: this.code, pid: this.pid, chatSince: this.chatSince };
-    if (this.pendingChar) { body.char = this.pendingChar; }
-    if (this.pendingChat) { body.chat = this.pendingChat; this.pendingChat = null; }
-    try {
-      const r = await CoopNet.post('/api/coop/lobby', body);
-      if (r.state === 'closed') {
-        this.reset(); this.screen = 'home'; this.flash(r.reason || 'Комната закрыта');
-      } else {
-        this.players = r.players || [];
-        const me = this.players.find(p => p.pid === this.pid);
-        if (me && this.pendingChar && me.char === this.pendingChar) this.pendingChar = null;
-        for (const m of r.chat || []) { this.chat.push(m); this.chatSince = Math.max(this.chatSince, m.n); if (m.n > 0 && !m.sys && m.name !== Nick.get()) AudioSys.play('menu_move'); }
-        this.chat = this.chat.slice(-40);
-        if (r.state === 'playing' && r.seed && !this.starting) {
-          this.starting = true;
-          this.game.startCoopMatch({ code: this.code, pid: this.pid, isHost: this.isHost, players: this.players, seed: r.seed, chat: this.chat, chatSince: this.chatSince });
-        }
-      }
-    } catch (e) { this.flash('Нет связи с сервером…'); }
-    this.busy = false;
-  }
-
-  async _start() {
-    if (!this.isHost || this.busy) return;
+  // ---------- хост: старт матча и возврат в лобби ----------
+  _start() {
+    if (!this.isHost || this.inMatch) return;
     if (this.players.some(p => !p.char)) { this.flash('Не все выбрали персонажа'); return; }
-    this.busy = true;
-    try { await CoopNet.post('/api/coop/start', { code: this.code, pid: this.pid }); this.pollT = 0; }
-    catch (e) { this.flash(e.message); }
-    this.busy = false;
+    const seed = (Math.random() * 2e9) | 0;
+    this.inMatch = true;
+    const players = this.players.map(p => ({ ...p }));
+    this.net.broadcast({ t: 'start', seed, players });
+    this.addChat('', 'Корпоратив начинается!', true);
+    this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed }, this.net);
+  }
+
+  backToLobby() {
+    if (!this.isHost) return;
+    if (this.net) this.net.broadcast({ t: 'toLobby' });
+    this.game.leaveMatch();
+    this.addChat('', 'Все вернулись в лобби', true);
   }
 
   _myChar() {
@@ -226,10 +323,12 @@ class CoopUI {
   }
 
   _pickChar(id) {
+    if (this.connecting) return;
     const taken = this.players.find(p => p.char === id && p.pid !== this.pid);
     if (taken) { this.flash(`${CHAR_NAMES[id]} уже выбран игроком ${taken.name}`); return; }
-    this.pendingChar = id;
     AudioSys.play('char_select');
+    if (this.isHost) { const me = this.players.find(p => p.pid === 'host'); if (me) me.char = id; this.broadcastLobby(); }
+    else { this.pendingChar = id; if (this.net) this.net.send('host', { t: 'char', c: id }); }
   }
 
   // ---------- ввод ----------
@@ -262,8 +361,6 @@ class CoopUI {
     }
 
     // --- лобби ---
-    this.pollT -= dt;
-    if (this.pollT <= 0) { this.pollT = 0.5; this._poll(); }
     if (Input.wasPressed('KeyT')) { this._openChat(); return; }
     if (Input.wasPressed('Escape')) { this.leave(); return; }
 
@@ -343,7 +440,7 @@ class CoopUI {
     if (this.screen === 'home') ctx.fillText('совместная игра до 3 человек', w / 2, 74);
 
     if (this.screen === 'home') this._drawHome(ctx, w, h);
-    else this._drawLobby(ctx, w, h);
+    else { this._drawLobby(ctx, w, h); if (this.net) drawPing(ctx, w - 12, 18, this.net.ping, this.isHost); }
 
     if (this.msgT > 0) {
       ctx.globalAlpha = Math.min(1, this.msgT);
@@ -411,7 +508,7 @@ class CoopUI {
       if (!p) {
         ctx.globalAlpha = 0.4 + 0.3 * Math.sin(this.t * 3 + s);
         ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
-        ctx.fillText('ожидание игрока…', P.x + 24, y + 33);
+        ctx.fillText(this.connecting && s === 0 ? 'соединение с хостом…' : 'ожидание игрока…', P.x + 24, y + 33, P.w - 40);
         ctx.globalAlpha = 1;
         continue;
       }
@@ -629,8 +726,9 @@ class RemotePlayer {
 // Сетевая сессия матча
 // =====================================================================
 class CoopSession {
-  constructor(game, info) {
+  constructor(game, info, net) {
     this.game = game;
+    this.net = net;
     this.code = info.code;
     this.pid = info.pid;
     this.isHost = info.isHost;
@@ -641,14 +739,13 @@ class CoopSession {
 
     this.seed = info.seed;
     this.levelNo = 1;
-    this.chatSince = info.chatSince || 0;
     this.chatLines = [];
-    this.pendingChat = null;
     this.events = [];      // клиент → хост
     this.out = {};         // хост → клиенты
-    this.tickT = 0;
-    this.inFlight = false;
-    this.snapSeq = 0;
+    this.states = {};      // хост: последние состояния всех героев
+    this.stT = 0; this.snapT = 0;
+    this.seq = 0; this.snapSeq = 0;
+    this._inSeq = {}; this._inSnap = 0;
     this.netId = 1;
     this.recentBullets = [];
     this.shots = 0;
@@ -657,15 +754,14 @@ class CoopSession {
     this.ended = false;
     this.closed = false;
     this.closeReason = '';
-    this.overT = 0;
-    this.netFails = 0;
-    this.lastOk = performance.now();
+    this.overT = 0; this.lobbyT = 0;
     this.introT = 0;
     this._doorEvT = {};
-    this._lastSend = 0;
+    this._lastFrame = performance.now();
+    // вкладка в фоне почти не рисует кадры — всё равно шлём данные, чтобы связь не рвалась
     this._hb = setInterval(() => {
-      if (!this.closed && !this.inFlight && performance.now() - this._lastSend > 1500) this._tick();
-    }, 1000);
+      if (!this.closed && performance.now() - this._lastFrame > 400) this._flush(true);
+    }, 250);
   }
 
   get playerCount() { return 1 + this.remotes.size; }
@@ -673,15 +769,24 @@ class CoopSession {
   event(e) { if (!this.isHost) this.events.push(e); }
   sendTo(pid, e) { if (!this.out[pid]) this.out[pid] = []; this.out[pid].push(e); }
 
-  sendChat(text) {
-    text = String(text || '').trim();
-    if (text) this.pendingChat = (this.pendingChat ? this.pendingChat + ' ' : '') + text;
-  }
+  sendChat(text) { this.game.coopUI.sendChat(text); }
 
   pushChatLine(m) {
     this.chatLines.push({ name: m.name, text: m.text, sys: !!m.sys, t: 12 });
     if (this.chatLines.length > 30) this.chatLines.shift();
     if (!m.sys && m.name !== this.me.name) AudioSys.play('menu_move');
+  }
+
+  // Игрок вышел из матча: убираем его героя (сообщение в чат присылает хост)
+  onLeft(pid) {
+    this.remotes.delete(pid);
+    delete this.states[pid];
+    delete this.revive[pid];
+  }
+
+  dispose() {
+    clearInterval(this._hb);
+    this.closed = true;
   }
 
   // Подготовка уровня у клиента: враги становятся "репликами" хоста
@@ -723,8 +828,8 @@ class CoopSession {
 
   // ---------- каждый кадр ----------
   update(dt) {
-    this.tickT -= dt;
-    if (this.tickT <= 0 && !this.inFlight) { this.tickT = 0.09; this._tick(); }
+    this._lastFrame = performance.now();
+    this._flush(false, dt);
     for (const rp of this.remotes.values()) rp.update(dt);
     for (const l of this.chatLines) l.t -= dt;
     const now = performance.now() / 1000;
@@ -794,61 +899,68 @@ class CoopSession {
     };
   }
 
-  async _tick() {
-    this.inFlight = true;
-    this._lastSend = performance.now();
-    const body = { code: this.code, pid: this.pid, me: this._buildMe(), chatSince: this.chatSince };
-    let chat = null, out = null, events = null;
-    if (this.pendingChat) { chat = this.pendingChat; body.chat = chat; this.pendingChat = null; }
+  // ---------- обмен данными по P2P ----------
+  // Состояние героев ~20 раз/с, снимок мира от хоста ~15 раз/с, события — сразу.
+  _flush(force, dt = 0) {
+    if (this.closed || !this.net) return;
+    this.stT -= dt; this.snapT -= dt;
+    if (this.stT <= 0 || force) { this.stT = 0.05; this._sendStates(); }
+    if (this.isHost && (this.snapT <= 0 || force)) { this.snapT = 0.066; this._sendSnap(); }
     if (this.isHost) {
-      if (this.game.state === 'playing' || this.game.state === 'levelClear' || this.teamOver) body.snap = this._buildSnap();
-      out = this.out; body.out = out; this.out = {};
-      if (this.ended) body.ended = true;
-    } else {
-      events = this.events; body.events = events; this.events = [];
-      body.snapSeq = this.snapSeq;
+      for (const [pid, l] of Object.entries(this.out)) if (l.length) this.net.send(pid, { t: 'evs', l });
+      this.out = {};
+    } else if (this.events.length) {
+      this.net.send('host', { t: 'ev', l: this.events });
+      this.events = [];
     }
-    try {
-      const r = await CoopNet.post('/api/coop/tick', body);
-      this.netFails = 0;
-      this.lastOk = performance.now();
-      this._onResponse(r);
-    } catch (e) {
-      this.netFails++;
-      // не теряем важные события при сбое сети
-      if (chat) this.pendingChat = chat;
-      if (out) for (const [k, v] of Object.entries(out)) this.out[k] = v.concat(this.out[k] || []);
-      if (events) this.events = events.concat(this.events);
-      if (performance.now() - this.lastOk > 12000) { this.closed = true; this.closeReason = 'Потеряна связь с сервером'; }
-    }
-    this.inFlight = false;
   }
 
-  _onResponse(r) {
+  _sendStates() {
+    const me = this._buildMe();
+    if (!me) return;
+    this.seq++;
+    if (!this.isHost) { this.net.send('host', { t: 'st', q: this.seq, s: me }, true); return; }
+    this.states[this.pid] = me;
+    for (const pid of this.remotes.keys()) {
+      const s = {};
+      for (const [q, st] of Object.entries(this.states)) if (q !== pid) s[q] = st;
+      this.net.send(pid, { t: 'sts', q: this.seq, s }, true);
+    }
+  }
+
+  _sendSnap() {
     const g = this.game;
-    if (r.state === 'closed') { this.closed = true; this.closeReason = r.reason || 'Комната закрыта'; return; }
+    if (!(g.state === 'playing' || g.state === 'levelClear' || this.teamOver)) return;
+    const snap = this._buildSnap();
+    if (!snap) return;
+    this.snapSeq++;
+    this.net.broadcast({ t: 'snap', q: this.snapSeq, s: snap }, true);
+  }
 
-    // состав комнаты
-    const present = new Set((r.players || []).map(p => p.pid));
-    for (const pid of [...this.remotes.keys()]) {
-      if (!present.has(pid)) {
-        const rp = this.remotes.get(pid);
-        this.pushChatLine({ name: '', text: `${rp.name} покинул игру`, sys: true });
-        this.remotes.delete(pid);
+  // Сообщения матча (лобби-сообщения разбирает CoopUI)
+  onNet(pid, m) {
+    const g = this.game;
+    try {
+      if (this.isHost) {
+        if (m.t === 'st') {
+          if (m.q <= (this._inSeq[pid] || 0)) return;     // устаревший пакет пришёл позже нового
+          this._inSeq[pid] = m.q;
+          this.states[pid] = m.s;
+          const rp = this.remotes.get(pid);
+          if (rp) rp.applyState(m.s, g);
+        } else if (m.t === 'ev') for (const e of m.l || []) this._hostEvent(pid, e);
+      } else {
+        if (m.t === 'sts') {
+          if (m.q <= (this._inSeq.host || 0)) return;
+          this._inSeq.host = m.q;
+          for (const [q, st] of Object.entries(m.s || {})) { const rp = this.remotes.get(q); if (rp) rp.applyState(st, g); }
+        } else if (m.t === 'snap') {
+          if (m.q <= this._inSnap) return;
+          this._inSnap = m.q;
+          this._applySnap(m.s);
+        } else if (m.t === 'evs') for (const e of m.l || []) this._clientEvent(e);
       }
-    }
-    for (const [pid, s] of Object.entries(r.states || {})) {
-      const rp = this.remotes.get(pid);
-      if (rp) rp.applyState(s, g);
-    }
-    for (const m of r.chat || []) { this.chatSince = Math.max(this.chatSince, m.n); this.pushChatLine(m); }
-
-    if (this.isHost) {
-      for (const [pid, e] of r.events || []) { try { this._hostEvent(pid, e); } catch (err) { console.error('coop event', err); } }
-    } else {
-      if (r.snap) { this.snapSeq = r.snapSeq; try { this._applySnap(r.snap); } catch (err) { console.error('coop snap', err); } }
-      for (const e of r.events || []) this._clientEvent(e);
-    }
+    } catch (err) { console.error('coop net', m && m.t, err); }
   }
 
   // ---------- хост: события от клиентов ----------
@@ -1141,10 +1253,12 @@ class CoopSession {
     } else this.overT = 0;
   }
 
-  async leave() {
-    clearInterval(this._hb);
-    this.closed = true;
-    try { await CoopNet.post('/api/coop/leave', { code: this.code, pid: this.pid }); } catch (e) {}
+  // Хост: после экрана итогов все возвращаются в лобби
+  get lobbyIn() { return Math.max(0, Math.ceil(LOBBY_RETURN - this.lobbyT)); }
+  overUpdate(dt) {
+    if (!this.isHost || !this.teamOver) return;
+    this.lobbyT += dt;
+    if (this.lobbyT >= LOBBY_RETURN) this.game.coopUI.backToLobby();
   }
 
   // ---------- отрисовка ----------
@@ -1321,4 +1435,23 @@ class CoopSession {
       ctx.restore();
     }
   }
+}
+
+// Маленький индикатор пинга (правый верхний угол)
+function drawPing(ctx, x, y, ms, isHost) {
+  ctx.save();
+  ctx.font = 'bold 11px "Courier New", monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+  const col = ms === null ? '#6a6488' : ms < 80 ? '#3dff8a' : ms < 160 ? '#ffd319' : '#ff2a6d';
+  const text = ms === null ? (isHost ? 'ХОСТ' : '— мс') : `${ms} мс`;
+  const tw = ctx.measureText(text).width;
+  // столбики сигнала
+  const bars = ms === null ? 0 : ms < 80 ? 3 : ms < 160 ? 2 : 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < bars ? col : 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x - tw - 18 + i * 4, y - 3 - i * 3, 3, 3 + i * 3);
+  }
+  ctx.fillStyle = col;
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }

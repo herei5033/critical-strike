@@ -95,17 +95,19 @@ def post_leaderboard():
 
 
 # =====================================================================
-# КОРПОРАТИВ: комнаты для совместной игры до 3 человек.
-# Хранятся во временной SQLite-базе (общая для всех процессов веб-сервера)
-# и удаляются после матча или через пару минут простоя. Чат живёт только
-# внутри комнаты и пропадает вместе с ней.
+# КОРПОРАТИВ (P2P): сервер только помогает игрокам найти друг друга.
+# Хост регистрирует код комнаты, игроки по коду обмениваются с ним
+# WebRTC-сигналами (SDP). Дальше вся игра, лобби и чат идут напрямую
+# между браузерами — сервер их не видит и не хранит.
+# Почтовые ящики сигналов лежат во временной SQLite-базе и удаляются,
+# когда хост перестаёт отмечаться.
 # =====================================================================
 
-COOP_DB = os.path.join(tempfile.gettempdir(), 'critical_strike_coop.db')
-MAX_PLAYERS = 3
-PLAYER_TIMEOUT = 10      # сек без запросов — игрок считается отключившимся
-ROOM_IDLE_TIMEOUT = 120  # сек без запросов — комната удаляется
-MAX_CHAT = 60
+COOP_DB = os.path.join(tempfile.gettempdir(), 'critical_strike_signal.db')
+HOST_TIMEOUT = 25        # сек без опроса от хоста — комната пропадает
+ROOM_IDLE_TIMEOUT = 600  # страховка: удалить любую запись старше 10 минут простоя
+MAX_BOX = 40             # сообщений в одном ящике
+MAX_SIGNAL = 24000       # размер одного сигнала (SDP) в символах
 
 
 def _db():
@@ -116,7 +118,7 @@ def _db():
 
 @contextmanager
 def _room_tx(code):
-    """Атомарно читает и сохраняет комнату. yield-ит dict или None."""
+    """Атомарно читает и сохраняет комнату. yield-ит {'room': dict|None, 'delete': bool}."""
     conn = _db()
     try:
         conn.execute('BEGIN IMMEDIATE')
@@ -124,6 +126,9 @@ def _room_tx(code):
         conn.execute('DELETE FROM rooms WHERE updated < ?', (now - ROOM_IDLE_TIMEOUT,))
         row = conn.execute('SELECT data FROM rooms WHERE code = ?', (code,)).fetchone()
         room = json.loads(row[0]) if row else None
+        if room is not None and now - room.get("hostSeen", 0) > HOST_TIMEOUT:
+            conn.execute('DELETE FROM rooms WHERE code = ?', (code,))
+            room = None
         box = {'room': room, 'delete': False}
         yield box
         if box['delete'] and box['room'] is not None:
@@ -145,216 +150,114 @@ def _room_tx(code):
 def _new_code(conn):
     for _ in range(50):
         code = ''.join(random.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(4))
-        if not conn.execute('SELECT 1 FROM rooms WHERE code = ?', (code,)).fetchone():
+        row = conn.execute('SELECT data FROM rooms WHERE code = ?', (code,)).fetchone()
+        if not row or time.time() - json.loads(row[0]).get("hostSeen", 0) > HOST_TIMEOUT:
             return code
     return uuid.uuid4().hex[:6].upper()
-
-
-def _public_players(room):
-    return [{"pid": pid, "name": p["name"], "char": p.get("char"), "slot": p["slot"],
-             "host": pid == room["host"]}
-            for pid, p in sorted(room["players"].items(), key=lambda kv: kv[1]["slot"])]
-
-
-def _add_chat(room, name, text, system=False):
-    text = ''.join(ch for ch in str(text) if ch.isprintable()).strip()[:120]
-    if not text:
-        return
-    room["chatSeq"] += 1
-    room["chat"].append({"n": room["chatSeq"], "name": name, "text": text, "sys": system})
-    room["chat"] = room["chat"][-MAX_CHAT:]
-
-
-def _drop_stale(room, now):
-    gone = [pid for pid, p in room["players"].items() if now - p["seen"] > PLAYER_TIMEOUT]
-    for pid in gone:
-        name = room["players"][pid]["name"]
-        del room["players"][pid]
-        room["states"].pop(pid, None)
-        room["toPlayer"].pop(pid, None)
-        _add_chat(room, '', f'{name} отключился', system=True)
-    return gone
 
 
 def _bad(msg, code=400):
     return jsonify({"error": msg}), code
 
 
-@app.route("/api/coop/create", methods=["POST"])
-def coop_create():
+def _push(room, to, msg):
+    box = room["boxes"].setdefault(to, [])
+    box.append(msg)
+    del box[:-MAX_BOX]
+
+
+def _req():
     data = request.get_json(silent=True) or {}
-    name = _clean_name(data.get("name"), 'ИГРОК', 14)
+    code = str(data.get("code", "")).strip().upper()[:6]
+    return data, code
+
+
+@app.route("/api/p2p/host", methods=["POST"])
+def p2p_host():
+    """Хост открывает комнату: получает код и секретный токен."""
     conn = _db()
     try:
         conn.execute('BEGIN IMMEDIATE')
         code = _new_code(conn)
-        pid = uuid.uuid4().hex[:10]
-        room = {
-            "code": code, "host": pid, "state": "lobby", "created": time.time(),
-            "seed": None, "players": {pid: {"name": name, "char": "dani", "slot": 0, "seen": time.time()}},
-            "chat": [], "chatSeq": 0, "snap": None, "snapSeq": 0,
-            "states": {}, "toHost": [], "toPlayer": {},
-        }
-        _add_chat(room, '', f'{name} создал комнату {code}', system=True)
-        conn.execute('INSERT INTO rooms (code, data, updated) VALUES (?, ?, ?)',
-                     (code, json.dumps(room, ensure_ascii=False), time.time()))
+        token = uuid.uuid4().hex
+        room = {"token": token, "hostSeen": time.time(), "peers": [], "boxes": {"host": []}}
+        conn.execute('INSERT OR REPLACE INTO rooms (code, data, updated) VALUES (?, ?, ?)',
+                     (code, json.dumps(room), time.time()))
         conn.execute('COMMIT')
     finally:
         conn.close()
-    return jsonify({"code": code, "pid": pid})
+    return jsonify({"code": code, "token": token})
 
 
-@app.route("/api/coop/join", methods=["POST"])
-def coop_join():
-    data = request.get_json(silent=True) or {}
-    code = str(data.get("code", "")).strip().upper()[:6]
-    name = _clean_name(data.get("name"), 'ИГРОК', 14)
+@app.route("/api/p2p/join", methods=["POST"])
+def p2p_join():
+    """Игрок стучится в комнату по коду — хост получит уведомление и пришлёт предложение (offer)."""
+    _, code = _req()
     with _room_tx(code) as box:
         room = box['room']
         if room is None:
             return _bad("Комната не найдена", 404)
-        _drop_stale(room, time.time())
-        if room["state"] != "lobby":
-            return _bad("Игра уже началась", 409)
-        if len(room["players"]) >= MAX_PLAYERS:
-            return _bad("Комната заполнена (максимум 3 игрока)", 409)
-        used_slots = {p["slot"] for p in room["players"].values()}
-        used_chars = {p.get("char") for p in room["players"].values()}
-        slot = next(s for s in range(MAX_PLAYERS) if s not in used_slots)
-        char = next((c for c in CHARS if c not in used_chars), None)
+        if len(room["peers"]) >= 12:
+            return _bad("Слишком много попыток входа, попробуйте позже", 429)
         pid = uuid.uuid4().hex[:10]
-        room["players"][pid] = {"name": name, "char": char, "slot": slot, "seen": time.time()}
-        _add_chat(room, '', f'{name} присоединился', system=True)
-    return jsonify({"code": code, "pid": pid})
+        room["peers"].append(pid)
+        room["boxes"][pid] = []
+        _push(room, "host", {"from": pid, "type": "join"})
+    return jsonify({"id": pid})
 
 
-@app.route("/api/coop/lobby", methods=["POST"])
-def coop_lobby():
-    """Опрос комнаты до старта: игроки, выбор персонажа, чат."""
-    data = request.get_json(silent=True) or {}
-    code = str(data.get("code", "")).upper()
-    pid = str(data.get("pid", ""))
+@app.route("/api/p2p/signal", methods=["POST"])
+def p2p_signal():
+    """Передать сигнал (offer/answer/reject) другой стороне."""
+    data, code = _req()
+    sender, to = str(data.get("from", "")), str(data.get("to", ""))
+    payload = data.get("data")
+    if not isinstance(payload, dict) or len(json.dumps(payload)) > MAX_SIGNAL:
+        return _bad("Плохой сигнал")
     with _room_tx(code) as box:
         room = box['room']
-        if room is None or pid not in room["players"]:
-            return jsonify({"state": "closed"})
-        now = time.time()
-        room["players"][pid]["seen"] = now
-        _drop_stale(room, now)
-        if room["host"] not in room["players"]:
-            box['delete'] = True
-            return jsonify({"state": "closed", "reason": "Хост покинул комнату"})
-
-        char = data.get("char")
-        if char in CHARS and room["state"] == "lobby":
-            taken = {p.get("char") for q, p in room["players"].items() if q != pid}
-            if char not in taken:
-                room["players"][pid]["char"] = char
-        if data.get("chat"):
-            _add_chat(room, room["players"][pid]["name"], data["chat"])
-        since = int(data.get("chatSince") or 0)
-        return jsonify({
-            "state": room["state"], "seed": room["seed"], "code": room["code"],
-            "host": room["host"], "players": _public_players(room),
-            "chat": [m for m in room["chat"] if m["n"] > since],
-        })
-
-
-@app.route("/api/coop/start", methods=["POST"])
-def coop_start():
-    data = request.get_json(silent=True) or {}
-    code = str(data.get("code", "")).upper()
-    pid = str(data.get("pid", ""))
-    with _room_tx(code) as box:
-        room = box['room']
-        if room is None or room["host"] != pid:
-            return _bad("Только хост может начать игру", 403)
-        if any(not p.get("char") for p in room["players"].values()):
-            return _bad("Не все выбрали персонажа", 409)
-        room["state"] = "playing"
-        room["seed"] = random.randint(1, 2_000_000_000)
-        _add_chat(room, '', 'Корпоратив начинается!', system=True)
+        if room is None:
+            return _bad("Комната не найдена", 404)
+        if sender == "host":
+            if data.get("token") != room["token"] or to not in room["peers"]:
+                return _bad("Нет доступа", 403)
+        elif sender not in room["peers"] or to != "host":
+            return _bad("Нет доступа", 403)
+        _push(room, to, {"from": sender, **payload})
     return jsonify({"ok": True})
 
 
-@app.route("/api/coop/tick", methods=["POST"])
-def coop_tick():
-    """Обмен данными во время матча.
-    Клиент: присылает своё состояние и события для хоста, получает снимок мира.
-    Хост: присылает снимок мира и события для клиентов, получает их состояния и события."""
-    data = request.get_json(silent=True) or {}
-    code = str(data.get("code", "")).upper()
-    pid = str(data.get("pid", ""))
+@app.route("/api/p2p/poll", methods=["POST"])
+def p2p_poll():
+    """Забрать свои сигналы. Опрос хоста заодно держит комнату открытой."""
+    data, code = _req()
+    me = str(data.get("id", ""))
     with _room_tx(code) as box:
         room = box['room']
-        if room is None or pid not in room["players"]:
-            return jsonify({"state": "closed"})
-        now = time.time()
-        room["players"][pid]["seen"] = now
-        gone = _drop_stale(room, now)
-        if room["host"] not in room["players"]:
-            box['delete'] = True
-            return jsonify({"state": "closed", "reason": "Хост отключился"})
-        is_host = pid == room["host"]
-
-        if isinstance(data.get("me"), dict):
-            room["states"][pid] = data["me"]
-        if data.get("chat"):
-            _add_chat(room, room["players"][pid]["name"], data["chat"])
-
-        if is_host:
-            if data.get("snap") is not None:
-                room["snap"] = data["snap"]
-                room["snapSeq"] += 1
-            out = data.get("out")
-            if isinstance(out, dict):
-                for target, events in out.items():
-                    if target in room["players"] and isinstance(events, list):
-                        room["toPlayer"].setdefault(target, []).extend(events[:60])
-            if data.get("ended"):
-                room["state"] = "ended"
-        else:
-            events = data.get("events")
-            if isinstance(events, list) and events:
-                room["toHost"].extend([[pid, e] for e in events[:60]])
-                room["toHost"] = room["toHost"][-400:]
-
-        since = int(data.get("chatSince") or 0)
-        resp = {
-            "state": room["state"],
-            "players": _public_players(room),
-            "states": {q: s for q, s in room["states"].items() if q != pid},
-            "chat": [m for m in room["chat"] if m["n"] > since],
-            "gone": gone,
-        }
-        if is_host:
-            resp["events"] = room["toHost"]
-            room["toHost"] = []
-        else:
-            if room["snap"] is not None and room["snapSeq"] > int(data.get("snapSeq") or 0):
-                resp["snap"] = room["snap"]
-                resp["snapSeq"] = room["snapSeq"]
-            resp["events"] = room["toPlayer"].pop(pid, [])
-        return jsonify(resp)
+        if room is None:
+            return jsonify({"closed": True})
+        if me == "host":
+            if data.get("token") != room["token"]:
+                return _bad("Нет доступа", 403)
+            room["hostSeen"] = time.time()
+        elif me not in room["peers"]:
+            return jsonify({"closed": True})
+        msgs = room["boxes"].get(me, [])
+        room["boxes"][me] = []
+        # подключившиеся игроки больше не нужны в списке — освобождаем место
+        for pid in data.get("done") or []:
+            if me == "host" and pid in room["peers"]:
+                room["peers"].remove(pid)
+                room["boxes"].pop(pid, None)
+    return jsonify({"msgs": msgs})
 
 
-@app.route("/api/coop/leave", methods=["POST"])
-def coop_leave():
-    data = request.get_json(silent=True) or {}
-    code = str(data.get("code", "")).upper()
-    pid = str(data.get("pid", ""))
+@app.route("/api/p2p/close", methods=["POST"])
+def p2p_close():
+    data, code = _req()
     with _room_tx(code) as box:
-        room = box['room']
-        if room is None or pid not in room["players"]:
-            return jsonify({"ok": True})
-        name = room["players"][pid]["name"]
-        # Хост ушёл или матч закончен — комната и чат удаляются целиком
-        if pid == room["host"] or room["state"] == "ended":
+        if box['room'] is not None and data.get("token") == box['room']["token"]:
             box['delete'] = True
-        else:
-            del room["players"][pid]
-            room["states"].pop(pid, None)
-            _add_chat(room, '', f'{name} вышел', system=True)
     return jsonify({"ok": True})
 
 

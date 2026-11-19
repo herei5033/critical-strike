@@ -23,6 +23,12 @@ document.addEventListener('fullscreenchange', () => {
   else kb.unlock();
 });
 
+// Закрытие вкладки: хост убирает комнату с сервера, соединения закрываются
+window.addEventListener('pagehide', () => {
+  const net = game.coopUI && game.coopUI.net;
+  if (net) { net.beacon(); net.muted = true; net.close(); }
+});
+
 const fsBtn = document.getElementById('fs-btn');
 if (fsBtn) {
   fsBtn.addEventListener('click', () => {

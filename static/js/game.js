@@ -143,9 +143,10 @@ class Game {
   }
 
   // Начало матча корпоратива (после того как хост нажал старт)
-  startCoopMatch(info) {
+  startCoopMatch(info, net) {
     TextField.close();
-    this.coop = new CoopSession(this, info);
+    this._exitAsk = null;
+    this.coop = new CoopSession(this, info, net);
     this.selectedChar = Math.max(0, CHAR_IDS.indexOf(this.coop.me.char));
     this.bossDirector = new BossDirector();
     this.score = 0; this.kills = 0;
@@ -298,9 +299,23 @@ class Game {
     }
   }
 
+  // Конец матча корпоратива: все возвращаются в лобби хоста (соединения остаются)
+  leaveMatch() {
+    TextField.close();
+    this._exitAsk = null;
+    if (this.coop) { this.coop.dispose(); this.coop = null; }
+    this.coopUI.inMatch = false;
+    this.player = null; this.level = null; this.enemies = []; this.bullets = []; this.pickups = []; this.cam = null;
+    this.coopUI.open();
+    this.coopUI.screen = 'lobby';
+    AudioSys.stopMusic();
+    AudioSys.playMusic('/static/audio/menu_music.mp3');
+  }
+
   toMenu() {
     TextField.close();
-    if (this.coop) { this.coop.leave(); this.coop = null; this.coopUI.reset(); }
+    this._exitAsk = null;
+    if (this.coop) { this.coop.dispose(); this.coop = null; this.coopUI.leave(true); }
     this.state = 'menu';
     this.player = null;
     this.level = null;
@@ -352,6 +367,8 @@ class Game {
       }
     }
 
+    if (this.coop && this._updateExitAsk(dt)) return;
+
     if (this.state === 'coopIntro') {
       this.introT += dt;
       if (this.introT > 4.2 || (this.introT > 1.5 && Input.wasPressed('Enter'))) this.state = 'playing';
@@ -392,7 +409,7 @@ class Game {
     }
 
     if (this.state === 'playing' || this.state === 'dead' || this.state === 'levelClear') {
-      if (Input.wasPressed('Escape') && this.state !== 'levelClear' && !(this.state === 'dead' && !this.nameSubmitted)) { this.toMenu(); return; }
+      if (!this.coop && Input.wasPressed('Escape') && this.state !== 'levelClear' && !(this.state === 'dead' && !this.nameSubmitted)) { this.toMenu(); return; }
     }
     // Чат корпоратива
     if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
@@ -447,9 +464,10 @@ class Game {
       this.shake = Math.max(0, this.shake - dt * 2);
 
       if (this.coop) {
-        if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter') || Input.consumeClick()) {
-          this.toMenu();
-          this.coopUI.open();
+        // итоги, затем хост возвращает всех в своё лобби (хост может сделать это сразу)
+        this.coop.overUpdate(dt);
+        if (this.coop && this.coop.isHost && (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter') || Input.consumeClick())) {
+          this.coopUI.backToLobby();
         }
         return;
       }
@@ -485,9 +503,12 @@ class Game {
       const coopClient = this.coop && !this.coop.isHost;
       if (!this.player.dead) {
         const shotsBefore = this.bullets.length;
+        const frozen = this._exitAsk ? [Input.keys, Input._pressedThisFrame, Input.mouse.down, Input.mouse.right] : null;
+        if (frozen) { Input.keys = {}; Input._pressedThisFrame = {}; Input.mouse.down = false; Input.mouse.right = false; }
         try {
           this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
         } catch (e) { console.error('PLAYER UPDATE ERROR:', e); }
+        if (frozen) [Input.keys, Input._pressedThisFrame, Input.mouse.down, Input.mouse.right] = frozen;
         if (this.bullets.length > shotsBefore) {
           this.player._netShots = (this.player._netShots || 0) + 1;
           const wid = this.player.weapon ? this.player.weapon.id : '';
@@ -850,25 +871,26 @@ class Game {
 
     // ===== справа: очки, убийства, комбо =====
     const R = this.W - rightMargin;
+    const y0r = y0 + (this.coop ? 14 * s : 0);
     const rw = 150 * s, rx = R - rw, rh = 44 * s;
-    this._hudPanel(ctx, rx, y0, rw, rh, '#ffd319', s);
+    this._hudPanel(ctx, rx, y0r, rw, rh, '#ffd319', s);
     this._hudScore = this._hudScore === undefined || this._hudScore > this.score ? this.score : this._hudScore + Math.ceil((this.score - this._hudScore) * 0.2);
     const bump = this._hudScore < this.score ? 1.08 : 1;
     ctx.textAlign = 'left'; ctx.font = font(8, false); ctx.fillStyle = '#9a94b8';
-    ctx.fillText('ОЧКИ', rx + 10 * s, y0 + 13 * s);
+    ctx.fillText('ОЧКИ', rx + 10 * s, y0r + 13 * s);
     ctx.save();
     ctx.textAlign = 'right';
     ctx.font = font(18 * bump); ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 8 * s; ctx.fillStyle = '#ffd319';
-    ctx.fillText(String(this._hudScore), R - 8 * s, y0 + 22 * s);
+    ctx.fillText(String(this._hudScore), R - 8 * s, y0r + 22 * s);
     ctx.restore();
     const kFrac = this.totalEnemies ? Math.min(1, this.kills / this.totalEnemies) : 0;
     ctx.font = font(9); ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
-    ctx.fillText(`☠ ${this.kills}/${this.totalEnemies}`, rx + 10 * s, y0 + 37 * s);
+    ctx.fillText(`☠ ${this.kills}/${this.totalEnemies}`, rx + 10 * s, y0r + 37 * s);
     const kbx = rx + 62 * s, kbw = rw - 70 * s;
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(kbx, y0 + 32 * s, kbw, 4 * s);
-    ctx.fillStyle = kFrac >= 1 ? '#3dff8a' : '#ff2a6d'; ctx.fillRect(kbx, y0 + 32 * s, kbw * kFrac, 4 * s);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(kbx, y0r + 32 * s, kbw, 4 * s);
+    ctx.fillStyle = kFrac >= 1 ? '#3dff8a' : '#ff2a6d'; ctx.fillRect(kbx, y0r + 32 * s, kbw * kFrac, 4 * s);
 
-    let ry = y0 + rh + 4 * s;
+    let ry = y0r + rh + 4 * s;
     const bd = this.bossDirector;
     if (bd && !bd.active && !this.enemies.some(e => e.isBoss && !e.dead)) {
       const left = Math.max(0, bd.nextScore - this.score);
@@ -921,7 +943,96 @@ class Game {
     }
   }
 
+  // ---------- выход из корпоратива с подтверждением ----------
+  _exitRects() {
+    const W = this.W, H = this.H;
+    const bw = Math.min(170, W * 0.3), bh = 40, gap = 16;
+    return {
+      yes: { x: W / 2 - bw - gap / 2, y: H / 2 + 22, w: bw, h: bh },
+      no: { x: W / 2 + gap / 2, y: H / 2 + 22, w: bw, h: bh },
+    };
+  }
+
+  // true — кадр занят диалогом (ввод не передаём дальше)
+  _updateExitAsk(dt) {
+    const live = ['playing', 'levelClear', 'dead', 'coopIntro'].includes(this.state);
+    if (!live) { this._exitAsk = null; return false; }
+    if (!this._exitAsk) {
+      if ((Input.wasPressed('Escape') || Input.wasPressed('MobileEscape')) && !TextField.active) {
+        this._exitAsk = { t: 0, sel: 1 };
+        AudioSys.play('menu_move');
+        return true;
+      }
+      return false;
+    }
+    const a = this._exitAsk;
+    a.t += dt;
+    const ready = a.t >= 3;
+    const R = this._exitRects();
+    const mx = Input.mouse.x, my = Input.mouse.y;
+    const inR = r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h;
+    if (Input.wasPressed('Escape') || Input.wasPressed('MobileEscape')) { this._exitAsk = null; return true; }
+    if (Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA')) a.sel = 0;
+    if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD')) a.sel = 1;
+    if (inR(R.yes)) a.sel = 0; else if (inR(R.no)) a.sel = 1;
+    let act = (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) ? a.sel : -1;
+    if (Input.consumeClick()) act = inR(R.yes) ? 0 : inR(R.no) ? 1 : -1;
+    if (act === 1) { this._exitAsk = null; AudioSys.play('menu_move'); }
+    else if (act === 0 && ready) {
+      AudioSys.play('menu_select');
+      this.toMenu();
+      this.coopUI.open();
+      this.coopUI.flash('Вы покинули корпоратив');
+      return true;
+    }
+    // мир продолжает жить (сетевую игру нельзя поставить на паузу)
+    return this.state === 'coopIntro';
+  }
+
+  _drawExitAsk(ctx) {
+    const W = this.W, H = this.H, a = this._exitAsk, M = this.menu;
+    const ready = a.t >= 3;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(4,2,10,0.6)'; ctx.fillRect(0, 0, W, H);
+    const pw = Math.min(420, W - 32), ph = 150;
+    M.panel(ctx, W / 2 - pw / 2, H / 2 - 80, pw, ph, '#ff2a6d', 0.95);
+    ctx.textAlign = 'center';
+    M.glowText(ctx, 'ПОКИНУТЬ КОРПОРАТИВ?', W / 2, H / 2 - 44, '#ff2a6d', Math.min(22, W * 0.05), 'center', 12);
+    ctx.font = '12px "Courier New", monospace'; ctx.fillStyle = '#c8c2e0';
+    ctx.fillText(this.coop && this.coop.isHost ? 'Вы хост — игра закончится для всех.' : 'Напарники продолжат без вас.', W / 2, H / 2 - 16, pw - 24);
+    const R = this._exitRects();
+    const btn = (r, text, on, enabled, col) => {
+      ctx.fillStyle = enabled ? (on ? col : 'rgba(10,5,22,0.9)') : 'rgba(40,36,56,0.7)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.strokeStyle = enabled ? col : '#4a4460'; ctx.lineWidth = 1.5; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.font = `bold ${Math.min(16, r.w / 8)}px "Courier New", monospace`; ctx.textBaseline = 'middle';
+      ctx.fillStyle = enabled ? '#fff' : '#7a7490';
+      ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2 + 1);
+      ctx.textBaseline = 'alphabetic';
+    };
+    // «Да» становится доступной через 3 секунды
+    const left = Math.max(0, 3 - a.t);
+    btn(R.yes, ready ? 'ДА, ВЫЙТИ' : `ДА (${Math.ceil(left)})`, a.sel === 0, ready, '#ff2a6d');
+    if (!ready) { ctx.fillStyle = 'rgba(255,42,109,0.5)'; ctx.fillRect(R.yes.x, R.yes.y + R.yes.h - 3, R.yes.w * (1 - left / 3), 3); }
+    btn(R.no, 'НЕТ', a.sel === 1, true, '#05d9e8');
+    ctx.restore();
+  }
+
   render() {
+    this._renderInner();
+    if (this.coop && ['playing', 'levelClear', 'dead', 'coopIntro'].includes(this.state)) {
+      const ctx = this.ctx;
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const scale = Math.min(1, this.W / 960);
+      const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
+      drawPing(ctx, this.W - rightMargin - 2, 10 * scale + 8, this.coop.net ? this.coop.net.ping : null, this.coop.isHost);
+      ctx.restore();
+      if (this._exitAsk) this._drawExitAsk(ctx);
+    }
+  }
+
+  _renderInner() {
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -1300,7 +1411,8 @@ class Game {
     ctx.font = '14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
     ctx.fillText(this.coop.isHost ? 'Результат команды записан в таблицу лидеров' : 'Хост записал результат команды в таблицу лидеров', W / 2, H - 60);
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText('ENTER / клик — в меню корпоратива', W / 2, H - 34);
+    const n = this.coop.lobbyIn;
+    ctx.fillText(this.coop.isHost ? `ENTER / клик — в лобби сейчас (авто через ${n} с)` : 'Хост скоро вернёт всех в лобби…', W / 2, H - 34);
   }
 
   // Вспышки выстрелов освещают всё вокруг
