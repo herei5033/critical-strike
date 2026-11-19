@@ -49,7 +49,7 @@ const CAMPAIGN = [
   },
   {
     id: 'bank', name: 'БАНК', sub: 'Сейфы открываются только силой', color: '#3fff8f', seed: 330503,
-    boss: 'collector', density: 1.0, mix: { tank: 0.08, hound: 0.05, sniper: 0.08 },
+    boss: 'collector', density: 1.2, mix: { tank: 0.08, hound: 0.05, sniper: 0.08 },
     weapons: ['m4', 'ak47', 'shotgun', 'glock', 'uzi', 'bat'],
     start: 0, bossRoom: 8,
     rooms: [
@@ -255,9 +255,12 @@ class CampaignUI {
 
 // Все уровни крупнее: координаты стен умножаются на коэффициент, поэтому
 // соседние комнаты по-прежнему разделены ровно одной клеткой стены.
-const LEVEL_SCALE = 1.35;
+const CAMPAIGN_SCALE = 1.0;   // статичные уровни — прежней планировки (1.35 оказалось слишком просторно)
+const RANDOM_SCALE = 1.15;    // случайные этажи немного больше старых
+const LEVEL_SCALE = RANDOM_SCALE;
 const _scaledLayouts = new Map();
 function scaledLayout(L, k = LEVEL_SCALE) {
+  if (k === 1) return L;
   if (_scaledLayouts.has(L)) return _scaledLayouts.get(L);
   const g = v => Math.round(v * k);
   const out = {

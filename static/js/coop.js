@@ -986,7 +986,7 @@ class CoopSession {
         en.takeDamage(e.a || 1, g.pickups, cause);
         en.particles.push(...Utils.spawnBloodParticles(en.cx(), en.cy(), 10));
       } else if (e.k === 'stun') en.stun();
-      else if (e.k === 'bstun') { if (en.bossStun) en.bossStun(1.6); }
+      else if (e.k === 'bstun') { if (en.bossStun) en.bossStun(1.0); }
       else if (e.k === 'kill') en.die(g.pickups, cause);
     } else if (e.t === 'door') {
       const d = g.level.doors[e.d];
@@ -1032,6 +1032,7 @@ class CoopSession {
     else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_weapon'); }
     else if (e.t === 'armor+') { p.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(p.x + 9, p.y - 8, '+БРОНЯ', '#5aa8ff', 12); }
     else if (e.t === 'kc') { p.kills = e.n; }
+    else if (e.t === 'chg') { p.charge = e.n; }
     else if (e.t === 'mode') {
       if (e.m === 'rage') p.rageT = MODE_TIME; else p.lottoT = MODE_TIME;
       announceMode(p, e.m);

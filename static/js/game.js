@@ -119,6 +119,7 @@ class Game {
     AudioSys.playMusic('/static/audio/game_music.mp3');
     AudioSys.play('game_start');
 
+    this.player = null;   // новый забег — заряд способностей и счёт убийств с нуля
     this.startLevel();
   }
 
@@ -147,6 +148,7 @@ class Game {
     TextField.close();
     this._exitAsk = null;
     this.coop = new CoopSession(this, info, net);
+    this.player = null;
     this.selectedChar = Math.max(0, CHAR_IDS.indexOf(this.coop.me.char));
     this.bossDirector = new BossDirector();
     this.score = 0; this.kills = 0;
@@ -170,6 +172,7 @@ class Game {
   }
 
   _afterLevelStart() {
+    this._waves = 0; this._waveT = undefined; this._huntT = 0;
     this.projectiles = [];
     this.explosions = [];
     Flames.reset();
@@ -187,10 +190,13 @@ class Game {
   // Уровень, враги и предметы. Использует только Math.random — поэтому детерминирован при withSeed
   _buildLevel(layout) {
     // уровни крупнее: случайные — больше площадь, статичные — растянутая планировка
-    const worldW = TILE * Math.ceil(60 * LEVEL_SCALE + 2);
-    const worldH = TILE * Math.ceil(45 * LEVEL_SCALE + 2);
-    const L = layout ? scaledLayout(layout) : null;
-    try { this.level = new Level(worldW, worldH, L ? { layout: L } : {}); }
+    const k = layout ? CAMPAIGN_SCALE : RANDOM_SCALE;
+    const worldW = TILE * Math.ceil(60 * k + (k > 1 ? 2 : 0));
+    const worldH = TILE * Math.ceil(45 * k + (k > 1 ? 2 : 0));
+    const L = layout ? scaledLayout(layout, CAMPAIGN_SCALE) : null;
+    // в корпоративе врагов больше: +30% за каждого напарника
+    const enemyMul = this.coop ? 1 + 0.3 * (this.coop.players.length - 1) : 1;
+    try { this.level = new Level(worldW, worldH, L ? { layout: L, enemyMul } : { enemyMul }); }
     catch (e) { console.error('Level gen failed:', e); this.level = null; }
 
     if (!this.level) {
@@ -226,20 +232,20 @@ class Game {
     this.kills = 0;
 
     const weaponPool = ['m4', 'ak47', 'uzi', 'bat', 'pipe', 'knife', 'sword'];
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < (layout ? 6 : 8); i++) {
       const r = Utils.choice(this.level.rooms);
       if (r === this.level.playerRoom) continue;
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
     }
-    for (let i = 0; i < 4 + (this.coop ? this.coop.players.length - 1 : 0); i++) {
+    for (let i = 0; i < (layout ? 3 : 4) + (this.coop ? this.coop.players.length - 1 : 0); i++) {
       const r = Utils.choice(this.level.rooms);
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
     }
     // гранаты и редкие РПГ/огнемёт (врагам они не достаются)
     // гранаты, редкие РПГ/огнемёт (врагам они не достаются) и ровно 3 бронежилета на уровень
-    const extra = [['grenade', 3 + (this.coop ? this.coop.players.length - 1 : 0)], ['rpg', Math.random() < 0.35 ? 1 : 0], ['flamer', Math.random() < 0.35 ? 1 : 0], ['armor', 3]];
+    const extra = [['grenade', 3 + (this.coop ? this.coop.players.length - 1 : 0)], ['rpg', Math.random() < 0.35 ? 1 : 0], ['flamer', Math.random() < 0.35 ? 1 : 0], ['armor', layout ? 2 : 3]];
     for (const [kind, n] of extra) {
       for (let i = 0, tries = 0; i < n && tries < 40; tries++) {
         const r = Utils.choice(this.level.rooms);
@@ -280,7 +286,9 @@ class Game {
     const chars = ['dani', 'gal', 'daur'];
     const charId = chars[this.selectedChar];
 
+    const prev = this.player && this.player.charId === charId ? this.player : null;
     this.player = new Player(sp.x, sp.y, charId);
+    if (prev) { this.player.charge = prev.charge || 0; this.player.kills = prev.kills || 0; }
 
     this.cam = new Camera(this.W, this.H, this.zoom);
     const viewW = this.W / this.zoom;
@@ -560,6 +568,7 @@ class Game {
         if (this.bossDirector) this.bossDirector.update(dt, this);
         this._updateLottery(dt);
         this._unstickEnemies(dt);
+        this._updatePacing(dt);
       }
 
       const pcx = this.player.x + this.player.w / 2;
@@ -629,7 +638,7 @@ class Game {
         e._scored = true;
         this.combo = this.comboTimer > 0 ? this.combo + 1 : 1;
         this.comboTimer = 3;
-        const pts = 100 * this.combo;
+        const pts = 100 * Math.min(this.combo, COMBO_CAP);
         this.score += pts;
         this.kills++;
         this._creditKill(e);
@@ -697,16 +706,20 @@ class Game {
     } catch (e) {}
   }
 
-  // Личный счёт убийств героя: Гала лечится за каждого 3-го,
-  // у Даура и Дани каждый 13-й включает особый режим.
+  // Личный счёт убийств героя: Гала лечится за каждого 5-го,
+  // у Даура и Дани каждые 10 убийств (заряд) включают особый режим.
   _creditKill(e) {
     if (!e.killedBy) return;
     const pl = this.allPlayers().find(p => p && p.charId === e.killedBy);
     if (!pl) return;
     pl.kills = (pl.kills || 0) + 1;
     if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'kc', n: pl.kills });
-    if ((pl.charId === 'daur' || pl.charId === 'dani') && pl.kills % MODE_KILLS === 0 && !pl.dead) this._triggerMode(pl, pl.charId === 'daur' ? 'rage' : 'lotto');
-    if (pl.charId !== 'gal' || pl.kills % 3 !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
+    if ((pl.charId === 'daur' || pl.charId === 'dani') && !pl.dead && !(pl.rageT > 0) && !(pl.lottoT > 0)) {
+      pl.charge = (pl.charge || 0) + 1;
+      if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'chg', n: pl.charge });
+      if (pl.charge >= MODE_KILLS) { pl.charge = 0; this._triggerMode(pl, pl.charId === 'daur' ? 'rage' : 'lotto'); }
+    }
+    if (pl.charId !== 'gal' || pl.kills % GAL_HEAL_EVERY !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
     pl.hp++;
     Effects.popup(pl.x + 9, pl.y - 10, '+1 HP', '#3dff8a', 13);
     Effects.ring(pl.x + 9, pl.y + 9, '60,255,140', 26);
@@ -756,6 +769,56 @@ class Game {
       AudioSys.playAt('punch', e.cx(), e.cy());
       e.die(this.pickups, { kind: 'explosion', angle: Math.random() * Math.PI * 2, by: e._popBy });
     }
+  }
+
+  // Темп: последние враги сами идут на игроков, в бесконечном режиме и корпоративе — волны подкрепления
+  _updatePacing(dt) {
+    if (this.coop && !this.coop.isHost) return;
+    if (!this.level || !this.level.rooms) return;
+    const alive = this.enemies.filter(e => !e.dead && !e.isBoss);
+    const total = Math.max(1, this.enemies.filter(e => !e.isBoss).length);
+    const players = this.allPlayers().filter(p => p && !p.dead);
+    if (!players.length) return;
+    // добивание: когда осталось мало врагов, каждые 3 с они «слышат» ближайшего героя
+    this._huntT = (this._huntT || 0) - dt;
+    if (alive.length && (alive.length <= 6 || alive.length / total <= 0.2) && this._huntT <= 0) {
+      this._huntT = 3;
+      for (const e of alive) {
+        let best = players[0], bd = Infinity;
+        for (const p of players) { const d = Utils.dist(p.x, p.y, e.x, e.y); if (d < bd) { bd = d; best = p; } }
+        if (e.state === 'idle' || e.state === 'patrol' || e.state === 'investigate') {
+          e.state = 'investigate'; e.noiseTarget = { x: best.x + 9, y: best.y + 9 }; e.investigateTimer = 8;
+        }
+      }
+    }
+    // волны: не в кампании; после 45% зачистки, до 2 (соло) / 3 (корп) волн на этаж
+    if (this.campaignIdx !== null && !this.coop) return;
+    const n = players.length;
+    const maxWaves = this.coop ? 3 : 2;
+    this._waveT = (this._waveT === undefined ? 20 : this._waveT) - dt;
+    if ((this._waves || 0) >= maxWaves || this._waveT > 0 || alive.length / total > 0.55) return;
+    this._waveT = this.coop ? 22 : 30;
+    this._waves = (this._waves || 0) + 1;
+    const lit = new Set();
+    for (const p of players) for (const r of this.level.getLitRooms(p).lit) lit.add(r);
+    const far = this.level.rooms.filter(r => !lit.has(r) && !r.hall).map(r => ({ r, d: Math.min(...players.map(p => Utils.dist((r.x + r.w / 2) * TILE, (r.y + r.h / 2) * TILE, p.x, p.y))) })).sort((a, b) => b.d - a.d);
+    const room = far.length ? far[Math.min(far.length - 1, Utils.randInt(0, 2))].r : null;
+    if (!room) return;
+    const size = 3 + n + this._waves;
+    for (let i = 0; i < size; i++) {
+      const pt = this.level.randomFreePoint(room);
+      if (!pt) continue;
+      const roll = Math.random();
+      const type = roll < 0.12 ? 'tank' : roll < 0.3 ? 'hound' : 'normal';
+      const e = new Enemy(pt.x - 9, pt.y - 9, 'static', null, type);
+      if (type === 'normal') e.weapon = makeWeapon(Utils.choice(['ak47', 'uzi', 'm4', 'shotgun', 'bat', 'pipe', 'knife']));
+      e.state = 'investigate'; e.noiseTarget = { x: players[0].x + 9, y: players[0].y + 9 }; e.investigateTimer = 10;
+      this.enemies.push(e);
+    }
+    this.totalEnemies = this.enemies.length;
+    Effects.screenFlash(0.18, '255,40,60');
+    AudioSys.play('hound_bark');
+    this.levelBanner = { name: 'ПОДКРЕПЛЕНИЕ', sub: `ВОЛНА ${this._waves} — ${size} ВРАГОВ ИДУТ К ВАМ`, color: '#ff2a40', t: 2.4 };
   }
 
   // Враг дольше полсекунды внутри стены/двери — переносим на ближайшее свободное место
@@ -929,7 +992,7 @@ class Game {
         const on = pl.charId === 'daur' ? pl.rageT : pl.lottoT;
         const name = pl.charId === 'daur' ? 'ЯРОСТЬ' : 'ЛОТЕРЕЯ';
         if (on > 0) { label = `${name}! ${on.toFixed(1)} С`; frac = on / MODE_TIME; c2 = pl.charId === 'daur' ? '#ff2a40' : '#ffd319'; }
-        else { const n = (pl.kills || 0) % MODE_KILLS; label = `${name} ${n}/${MODE_KILLS}`; frac = n / MODE_KILLS; c2 = '#9a94b8'; }
+        else { const n = Math.min(MODE_KILLS, pl.charge || 0); label = `${name} ${n}/${MODE_KILLS}`; frac = n / MODE_KILLS; c2 = n >= MODE_KILLS - 2 ? '#ffd319' : '#9a94b8'; }
       }
       ctx.font = font(8); ctx.textAlign = 'left'; ctx.fillStyle = c2;
       ctx.fillText(label, ax, ay - 1 * s);
@@ -1579,9 +1642,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Бесшумная M4, оружие боссов. Каждые 13 убийств — ЛОТЕРЕЯ: враги вокруг лопаются', hp: 6, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Кулаки на 50% быстрее, пинок-вертушка [F]. +1 HP за каждого 3-го убитого', hp: 7, speed: 1.2, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Два Uzi, +30% патронов. Каждые 13 убийств — ЯРОСТЬ: патроны бесконечны', hp: 6, speed: 1, weapon: 'uzi' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Бесшумная M4, оружие боссов. Каждые 10 убийств — ЛОТЕРЕЯ: враги вокруг лопаются', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Кулаки на 50% быстрее, пинок-вертушка [F]. +1 HP за каждого 5-го убитого', hp: 7, speed: 1.2, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Два Uzi, +30% патронов. Каждые 10 убийств — ЯРОСТЬ: патроны бесконечны', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;
@@ -1700,7 +1763,9 @@ class Game {
   }
 }
 
-const MODE_KILLS = 13;   // убийств до ярости Даура / лотереи Дани
+const MODE_KILLS = 10;   // убийств до ярости Даура / лотереи Дани (заряд копится между уровнями)
+const GAL_HEAL_EVERY = 5; // Гала лечится за каждого 5-го убитого (при 3 он был почти бессмертным)
+const COMBO_CAP = 10;     // множитель очков за комбо не больше x10
 
 // Надпись и эффекты при включении режима
 function announceMode(pl, m) {

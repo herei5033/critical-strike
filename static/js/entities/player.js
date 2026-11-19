@@ -1,7 +1,7 @@
 // Длительность анимации удара для каждого вида холодного оружия (сек)
 const MELEE_SWING = { bat: 0.34, pipe: 0.3, sword: 0.3, knife: 0.2 };
 const KICK_DUR = 0.42;      // пинок-вертушка Галы: длительность прыжка
-const KICK_CD = 1.0;        // перезарядка пинка
+const KICK_CD = 2.0;        // перезарядка пинка (при 1 с Гала был неуязвим почти половину времени)
 const MODE_TIME = 6;        // ярость Даура / лотерея Дани
 // Ценность огнестрела: Даур первым выбрасывает самое бесполезное
 const WEAPON_VALUE = { glock: 1, uzi: 1.3, m4: 2, ak47: 2, shotgun: 1.8, m4s: 2.6, goldenUzi: 2.3, minigun: 3, sniper: 2.6, rpg: 3, flamer: 2.6 };
@@ -141,7 +141,11 @@ class Player {
           if (e.isBoss || e.type === 'tank') e.takeDamage(e.isBoss ? 1 : 2, pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           if (e.isBoss && !e.dead) {
             this._bossHits++;
-            if (this._bossHits % 5 === 0 && e.bossStun) { e.bossStun(1.6); Effects.popup(e.cx(), e.cy() - 30, 'ОГЛУШЁН!', '#ffd319', 13); }
+            if (this._bossHits % 5 === 0 && e.bossStun) {
+              // после оглушения босс несколько секунд устойчив — вечного стана больше нет
+              const ok = e.bossStun(1.0);
+              if (!e._replica) Effects.popup(e.cx(), e.cy() - 30, ok === false ? 'УСТОЙЧИВ' : 'ОГЛУШЁН!', ok === false ? '#9a94b8' : '#ffd319', 12);
+            }
           }
           else e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));

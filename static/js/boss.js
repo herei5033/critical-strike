@@ -101,12 +101,15 @@ class Boss extends Enemy {
   stun() { this.hitFlash = 0.12; }
 
   // Настоящее оглушение (каждый 5-й удар Галы): босс стоит со звёздочками
-  bossStun(t = 1.5) {
-    if (this.dead) return;
+  bossStun(t = 1.0) {
+    if (this.dead) return false;
+    if (this._stunImmune > 0) return false;
+    this._stunImmune = t + 5;        // 5 секунд иммунитета после оглушения
     this.phase = 'dazed'; this.phaseT = Math.max(this.phaseT || 0, t);
     this.swingTimer = 0;
     AudioSys.play('stun');
     Effects.ring(this.cx(), this.cy(), '255,230,120', 44);
+    return true;
   }
 
   takeDamage(amount, pickups, cause) {
@@ -176,6 +179,7 @@ class Boss extends Enemy {
 
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.meleeCd = Math.max(0, this.meleeCd - dt);
+    this._stunImmune = Math.max(0, (this._stunImmune || 0) - dt);
     this.swingTimer = Math.max(0, this.swingTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
 
@@ -481,7 +485,7 @@ class Boss extends Enemy {
 // Следит за счётом и выпускает боссов на порогах очков
 class BossDirector {
   constructor() {
-    this.nextScore = 2000;
+    this.nextScore = 2500;
     this.count = 0;
     this.active = null;
     this.delay = 0;
@@ -536,6 +540,7 @@ class BossDirector {
     game.score += b.bossBonus;
     Effects.popup(b.cx(), b.cy() - 44, `БОСС ПОВЕРЖЕН +${b.bossBonus}`, '#ffd319', 16);
     // каждый следующий порог дальше: 2000 → +3500 → +4500 ...
-    this.nextScore = game.score + 3000 + this.count * 500;
+    const n = game.allPlayers ? game.allPlayers().length : 1;
+    this.nextScore = game.score + (3500 + this.count * 700) * (1 + 0.4 * (n - 1));
   }
 }

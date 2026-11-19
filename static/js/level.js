@@ -321,14 +321,20 @@ class Level {
     this._buildRoomGraph();
     const nearPlayer = new Set((this._roomGraph.get(this.playerRoom.id) || []).map(e => e.room));
     const mix = o.mix || { tank: 0.06, hound: 0.07, sniper: 0.08 };
-    const density = o.density || 1;
+    const density = (o.density || 1) * (this.opts.enemyMul || 1);
+    const classic = !!o.noPartitions;   // статичный уровень кампании
     for (const r of this.rooms) {
       if (r === this.playerRoom) continue;
       const free = this._freeTiles(r, true);
       if (!free.length) continue;
       let n;
-      if (r.hall) n = Math.random() < 0.7 * density ? 1 + Math.round(free.length / 45 * density) : 0;
-      else n = Utils.clamp(Math.round((free.length / 13 + Utils.randInt(0, 1)) * density), 1, 14);
+      if (classic) {
+        if (r.hall) n = Math.random() < 0.6 * density ? 1 + (free.length > 60 && Math.random() < 0.5 ? 1 : 0) : 0;
+        else n = Utils.clamp(Math.round((free.length / 24 + Utils.randInt(0, 1)) * density), 1, 8);
+      } else {
+        if (r.hall) n = Math.random() < 0.65 * density ? 1 + Math.round(free.length / 70 * density) : 0;
+        else n = Utils.clamp(Math.round((free.length / 19 + Utils.randInt(0, 1)) * density), 1, 8);
+      }
       if (nearPlayer.has(r)) n = Math.min(n, 2);
       if (r === o.bossRoom) {
         // босс в последней комнате уровня, рядом с ним пара охранников
@@ -402,8 +408,10 @@ class Level {
     const canVC = n.w >= 17, canHC = n.h >= 17;
     const area = (n.w - 2) * (n.h - 2);
 
-    if (depth > 0 && (!canV && !canH || area < 70 || depth > 5 ||
-        (area < 130 && Math.random() < 0.55) || (area < 220 && Math.random() < 0.3))) {
+    // большие куски делим всегда (до глубины 8), средние — с шансом: комнаты 7×7…14×12, редко крупнее
+    const huge = area > 190 && depth <= 8;
+    if (depth > 0 && !huge && (!canV && !canH || area < 70 || depth > 5 ||
+        (area < 130 && Math.random() < 0.55) || (area < 190 && Math.random() < 0.3))) {
       out.push({ x: n.x, y: n.y, w: n.w, h: n.h, hall: false });
       return;
     }
