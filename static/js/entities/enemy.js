@@ -77,8 +77,9 @@ class Enemy {
   }
 
   // Анимация ходьбы, отдача, вспышки и частицы крови. Вызывается и у "реплик" врагов в корпоративе.
-  _animTick(dt) {
+  _animTick(dt, level) {
     this.animT += dt;
+    if (this.dead && this.deathAnim) this._deathTick(dt, level);
     const v = Math.hypot(this.x - this._px, this.y - this._py) / dt;
     this._px = this.x; this._py = this.y;
     const target = Utils.clamp(v / Math.max(60, this.speed), 0, 1);
@@ -107,20 +108,104 @@ class Enemy {
     Effects.ring(this.cx(), this.cy(), '255,230,120', 20);
   }
 
-  // Звук, лужа крови и поза смерти (без выпадения предметов)
-  _deathFx() {
-    this.deathAngle = this.angle + Math.PI + Utils.rand(-0.5, 0.5);
+  // Анимация смерти зависит от того, чем убили.
+  // cause = { kind: 'bullet'|'shotgun'|'blunt'|'blade'|'fist'|'throw'|'crush', angle: направление удара }
+  // forced — поза и ползание, пришедшие от хоста в корпоративе
+  _deathFx(cause = {}, forced = null) {
+    const kind = cause.kind || 'bullet';
+    const ang = cause.angle !== undefined ? cause.angle : this.angle + Math.PI;
+    const human = this.type !== 'hound' && !this.isBoss;
+    let pose = 'back';
+    if (kind === 'blunt' || kind === 'fist' || kind === 'throw') pose = 'side';
+    else if (kind === 'blade') pose = Math.random() < 0.5 ? 'face' : 'side';
+    else if (kind === 'bullet') pose = Math.random() < 0.35 ? 'face' : 'back';
+    let crawl = human && kind !== 'shotgun' && kind !== 'crush' && Math.random() < 0.14;
+    if (forced) { pose = forced.pose || pose; crawl = !!forced.crawl; }
+    const slide = { bullet: 70, shotgun: 220, blunt: 70, blade: 30, fist: 55, throw: 45, crush: 140 }[kind] || 60;
+    this.deathAngle = forced && forced.angle !== undefined ? forced.angle : ang + Utils.rand(-0.3, 0.3);
+    this.deathAnim = {
+      kind, pose: crawl ? 'crawl' : pose, endPose: pose === 'back' ? 'face' : pose, t: 0, crawl,
+      crawlT: crawl ? Utils.rand(2.4, 4) : 0, crawlPhase: 0,
+      vx: Math.cos(ang) * slide, vy: Math.sin(ang) * slide,
+      spurt: kind === 'blade' ? 1.6 : kind === 'shotgun' ? 0.5 : 0.25, spurtT: 0, trailT: 0,
+      fromAngle: this.angle,
+    };
+    this.pool = { r: 0, max: (kind === 'blade' ? 20 : kind === 'shotgun' ? 19 : 15) * (this.isBoss ? 1.5 : 1), x: this.cx(), y: this.cy() };
     AudioSys.play('enemy_death');
-    Effects.bloodSplat(this.cx(), this.cy(), this.angle + Math.PI, 26);
-    const cx = this.cx(), cy = this.cy();
-    const dir = this.angle + Math.PI;
-    this.bloodStains.push({ x: cx, y: cy, rx: Utils.rand(13, 18), ry: Utils.rand(9, 13), rot: dir, a: 0.9 });
-    for (let i = 0; i < 12; i++) {
-      const a = dir + Utils.rand(-0.8, 0.8);
-      const d = Utils.rand(8, 34);
-      const r = Utils.rand(1.5, 5) * (1 - d / 50);
-      this.bloodStains.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, rx: r * Utils.rand(1.2, 2.4), ry: r, rot: a, a: Utils.rand(0.6, 0.95) });
+    const gore = { shotgun: 30, blade: 22, bullet: 14, blunt: 9, fist: 6, throw: 8, crush: 20 }[kind] || 12;
+    Effects.bloodSplat(this.cx(), this.cy(), ang, gore);
+    if (kind === 'shotgun') Effects.burst(this.cx(), this.cy(), '200,0,20', 18, 260);
+    this.bloodStains = [];
+  }
+
+  _deathTick(dt, level) {
+    const d = this.deathAnim;
+    d.t += dt;
+    const local = !this._replica;
+    const moveBy = (dx, dy) => {
+      let moved = false;
+      if (!level || !level.collides(this.x + dx, this.y, this.w, this.h)) { this.x += dx; moved = true; } else d.vx *= -0.2;
+      if (!level || !level.collides(this.x, this.y + dy, this.w, this.h)) { this.y += dy; moved = true; } else d.vy *= -0.2;
+      return moved;
+    };
+    let moving = false;
+    // отлёт от удара
+    if (Math.abs(d.vx) + Math.abs(d.vy) > 3) {
+      if (local) moveBy(d.vx * dt, d.vy * dt);
+      const k = Math.exp(-dt * 7);
+      d.vx *= k; d.vy *= k;
+      moving = true;
     }
+    // редкое предсмертное ползание
+    if (d.crawl && d.t > 0.5 && d.crawlT > 0) {
+      d.crawlT -= dt;
+      d.crawlPhase += dt * 5;
+      const step = (Math.sin(d.crawlPhase) > 0 ? 34 : 8) * dt;
+      if (local && !moveBy(Math.cos(this.deathAngle) * step, Math.sin(this.deathAngle) * step)) this.deathAngle += 0.6;
+      moving = true;
+      if (d.crawlT <= 0) { d.pose = 'face'; d.crawl = false; AudioSys.play('player_hurt'); }
+    }
+    // кровавый след
+    if (moving) {
+      d.trailT -= dt;
+      if (d.trailT <= 0) { d.trailT = 0.2; Effects.bloodSplat(this.cx(), this.cy(), null, 2); }
+      this.pool.x = this.cx(); this.pool.y = this.cy();
+    } else {
+      this.pool.r = Math.min(this.pool.max, this.pool.r + dt * 9);
+    }
+    // фонтанчики крови от холодного оружия
+    if (d.spurt > 0) {
+      d.spurt -= dt; d.spurtT -= dt;
+      if (d.spurtT <= 0) { d.spurtT = 0.35; Effects.bloodSplat(this.cx(), this.cy(), this.deathAngle + Utils.rand(-2, 2), 4); }
+    }
+  }
+
+  // Лужа крови и тело в позе смерти
+  _drawCorpse(ctx, scale) {
+    const cx = this.cx(), cy = this.cy();
+    const d = this.deathAnim || { t: 9, pose: 'back' };
+    if (this.pool && this.pool.r > 0.5) {
+      ctx.fillStyle = '#4a0008';
+      ctx.beginPath(); ctx.ellipse(this.pool.x, this.pool.y, this.pool.r * 1.35 + 1, this.pool.r + 1, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = P.blood;
+      ctx.beginPath(); ctx.ellipse(this.pool.x, this.pool.y, this.pool.r * 1.35, this.pool.r, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,120,140,0.18)';
+      ctx.beginPath(); ctx.ellipse(this.pool.x - 3, this.pool.y - 3, this.pool.r * 0.5, this.pool.r * 0.3, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+    }
+    // падение: тело доворачивается и "ложится" за первые доли секунды
+    const fall = Math.min(1, d.t / 0.28);
+    let da = this.deathAngle - (d.fromAngle !== undefined ? d.fromAngle : this.deathAngle);
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    const rot = this.deathAngle - da * (1 - fall);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    ctx.scale(scale * (0.82 + 0.18 * fall), scale * (0.82 + 0.18 * fall));
+    const st = { seed: this.seed, pose: d.pose, crawl: d.crawlPhase || 0 };
+    if (this.type === 'hound') Sprites.drawDogDown(ctx, this.look, st);
+    else Sprites.drawHumanDown(ctx, this.look, st);
+    ctx.restore();
   }
 
   bodyColor() {
@@ -180,7 +265,7 @@ class Enemy {
     return level.lineOfSight(cx, cy, px, py);
   }
 
-  takeDamage(amount, pickups) {
+  takeDamage(amount, pickups, cause) {
     if (this.dead) return;
     this.hp -= amount;
 
@@ -191,7 +276,7 @@ class Enemy {
     }
 
     if (this.hp <= 0) {
-      this.die(pickups);
+      this.die(pickups, cause);
     }
   }
 
@@ -274,7 +359,7 @@ class Enemy {
 
   update(dt, level, player, bullets, enemies, pickups) {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
-    this._animTick(dt);
+    this._animTick(dt, level);
     if (this.dead) return;
 
     // Выпавшее при оглушении оружие превращаем в пикап на полу
@@ -291,7 +376,7 @@ class Enemy {
       if (b.dead || !b.isPlayer) continue;
       if (Utils.segDist(b.px, b.py, b.x, b.y, this.cx(), this.cy()) < 12) {
         b.dead = true;
-        this.takeDamage(1, pickups);
+        this.takeDamage(1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) });
         if (this.dead) {
           this.particles.push(...Utils.spawnBloodParticles(this.cx(), this.cy(), 12, Math.atan2(b.vy, b.vx)));
           return;
@@ -333,7 +418,7 @@ class Enemy {
             const px = this.cx() + dx * t;
             const py = this.cy() + dy * t;
             if (Utils.dist(px, py, pcx, pcy) < 12) {
-              player.takeDamage(2);
+              player.takeDamage(2, { kind: 'bullet', angle: Math.atan2(dy, dx) });
               break;
             }
             if (level.bulletHitsWall(px, py)) break;
@@ -499,17 +584,17 @@ class Enemy {
             AudioSys.play(this.weapon.sound);
             level.addNoise(this.x, this.y, 400);
             Effects.casing(this.cx() + Math.cos(this.angle) * 8, this.cy() + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
-            Effects.smoke(this.cx() + Math.cos(this.angle) * 30, this.cy() + Math.sin(this.angle) * 30, this.angle, 2);
+            Effects.muzzle(this.cx() + Math.cos(this.angle) * 30, this.cy() + Math.sin(this.angle) * 30, this.angle, this.weapon.id === 'shotgun');
             const bx = this.cx() + Math.cos(this.angle) * 12;
             const by = this.cy() + Math.sin(this.angle) * 12;
             if (this.weapon.id === 'shotgun') {
               // Дробовик у врага тоже стреляет веером
               for (let i = 0; i < this.weapon.pellets; i++) {
                 const a = this.angle + Utils.rand(-this.weapon.spread, this.weapon.spread);
-                bullets.push(new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color));
+                { const nb = new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; bullets.push(nb); }
               }
             } else {
-              bullets.push(new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, false, this.weapon.color));
+              { const nb = new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; bullets.push(nb); }
             }
           } else {
             this.weapon = null;
@@ -522,18 +607,18 @@ class Enemy {
           AudioSys.play(this.type === 'hound' ? 'hound_bark' : this.weapon.sound);
           // Удар не проходит сквозь стены
           if (dist < (this.weapon.range || 50) + 10 && level.lineOfSight(this.cx(), this.cy(), pcx, pcy)) {
-            player.takeDamage(1);
+            player.takeDamage(1, { kind: ['knife', 'sword'].includes(this.weapon.id) || this.type === 'hound' ? 'blade' : 'blunt', angle: this.angle });
           }
         }
       }
     }
   }
 
-  die(pickups) {
+  die(pickups, cause) {
     if (this.dead) return;
     this.dead = true;
     this.stunned = false;
-    this._deathFx();
+    this._deathFx(cause);
     if (Array.isArray(pickups)) {
       const drop = this.weapon || this._droppedWeapon;
       if (drop) {
@@ -569,17 +654,8 @@ class Enemy {
       ctx.stroke();
     }
 
-    if (this.dead || this.stunned) {
-      if (this.dead) {
-        for (const b of this.bloodStains) {
-          ctx.globalAlpha = b.a;
-          ctx.fillStyle = '#5a0010';
-          ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx + 1, b.ry + 1, b.rot, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = P.blood;
-          ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx, b.ry, b.rot, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-      }
+    if (this.dead) { this._drawCorpse(ctx, 1.15); return; }
+    if (this.stunned) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(this.deathAngle + Math.PI);

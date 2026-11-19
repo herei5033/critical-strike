@@ -24,6 +24,8 @@ class Door {
       this.base = hingeAtStart ? Math.PI / 2 : -Math.PI / 2;
     }
 
+    this.hp = 8;             // столько попаданий/ударов выдерживает створка
+    this.broken = false;
     this.angle = 0;          // отклонение створки от закрытого положения, рад
     this.omega = 0;          // угловая скорость, рад/с
     this.maxAngle = Math.PI / 2;
@@ -33,7 +35,27 @@ class Door {
   }
 
   // Считаем дверь "открытой" (для тумана войны и навигации), когда створка отошла заметно
-  get open() { return Math.abs(this.angle) > 0.4; }
+  get open() { return this.broken || Math.abs(this.angle) > 0.4; }
+
+  // Пули и удары разбивают дверь
+  damage(amount) {
+    if (this.broken) return;
+    this.hp -= amount;
+    const s = this._seg();
+    const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+    Effects.burst(mx, my, '220,160,90', 6, 140);
+    this.omega += (Math.random() < 0.5 ? -1 : 1) * 2.5;
+    if (this.hp <= 0) {
+      this.broken = true;
+      this.omega = 0;
+      Effects.burst(mx, my, '230,170,100', 26, 280);
+      Effects.dust(mx, my, 6);
+      Effects.hitstop = Math.max(Effects.hitstop, 0.04);
+      AudioSys.play('door_open');
+      this._chips = [];
+      for (let i = 0; i < 6; i++) this._chips.push({ x: mx + Utils.rand(-22, 22), y: my + Utils.rand(-22, 22), a: Math.random() * 3, l: Utils.rand(6, 16) });
+    }
+  }
 
   _seg(theta = this.angle) {
     const a = this.base + theta;
@@ -63,12 +85,12 @@ class Door {
   }
 
   blocks(px, py, pw, ph) {
-    if (!this._nearBB(px, py, pw, ph)) return false;
+    if (this.broken || !this._nearBB(px, py, pw, ph)) return false;
     return this._segRect(this._seg(), px, py, pw, ph);
   }
 
   blocksPoint(px, py) {
-    if (!this._nearBB(px, py, 0, 0)) return false;
+    if (this.broken || !this._nearBB(px, py, 0, 0)) return false;
     const s = this._seg();
     return Utils.segDist(s.x1, s.y1, s.x2, s.y2, px, py) < this.thick / 2 + 1;
   }
@@ -76,6 +98,7 @@ class Door {
   // Толчок от сущности: (ex,ey) — её центр, (vx,vy) — скорость, с которой она давит.
   // Створка уходит от толкающего со скоростью, зависящей от силы и плеча толчка.
   push(enemies, ex, ey, vx = 0, vy = 0, byPlayer = false) {
+    if (this.broken) return;
     if (ex === undefined) { this.omega += (Math.random() < 0.5 ? -1 : 1) * 6; return; }
 
     const a = this.base + this.angle;
@@ -101,6 +124,7 @@ class Door {
   }
 
   update(dt, enemies, player) {
+    if (this.broken) return;
     this.playerPushTimer -= dt;
     this._soundCooldown -= dt;
 
@@ -149,6 +173,15 @@ class Door {
   }
 
   draw(ctx) {
+    if (this.broken) {
+      // щепки выбитой двери на полу и обломок у петли
+      ctx.fillStyle = '#5a3010';
+      for (const c of this._chips || []) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a); ctx.fillRect(-c.l / 2, -1.5, c.l, 3); ctx.restore(); }
+      ctx.save(); ctx.translate(this.hx, this.hy); ctx.rotate(this.base + 0.4);
+      ctx.fillStyle = '#3a1c0a'; ctx.fillRect(0, -3, 12, 6); ctx.fillStyle = '#7a4018'; ctx.fillRect(1, -2, 10, 4);
+      ctx.restore();
+      return;
+    }
     const s = this._seg();
     const a = this.base + this.angle;
     const t = this.thick;

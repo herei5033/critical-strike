@@ -16,6 +16,14 @@ const Sprites = (() => {
     ctx.fillStyle = '#050407'; ctx.fillRect(x - 0.7, y - 0.7, w + 1.4, h + 1.4);
     ctx.fillStyle = c; ctx.fillRect(x, y, w, h);
   }
+  // Тонкая деталь оружия: тёмный контур, основной цвет, блик сверху
+  function metal(ctx, x, y, w, h, c, hi) {
+    ctx.fillStyle = '#050407'; ctx.fillRect(x - 0.5, y - 0.5, w + 1, h + 1);
+    ctx.fillStyle = c; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = hi; ctx.fillRect(x, y, w, Math.max(0.4, h * 0.28));
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, y + h * 0.72, w, h * 0.28);
+  }
+
   function rng(seed) {
     let s = (seed >>> 0) || 1;
     return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
@@ -24,58 +32,63 @@ const Sprites = (() => {
 
   // ---------- внешность ----------
   const HEROES = {
-    // Дани: зачёсанные назад волосы с пробором, тонкие очки, тёмный костюм и белая рубашка
-    dani: { skin: '#e8b48a', skinDk: '#b98760', hair: '#111118', hairHi: '#3a3c5c', hairStyle: 'slick', glasses: 'thin',
-            jacket: '#1d2133', jacketDk: '#0f111b', shirt: '#eef1f6', pants: '#15171f', shoes: '#08080a', collar: 'suit' },
-    // Гал: растрёпанные волосы, толстые чёрные очки, бородка, голубая рубашка
-    gal:  { skin: '#e2a982', skinDk: '#b27a56', hair: '#15111b', hairHi: '#3c3452', hairStyle: 'messy', glasses: 'thick', beard: '#15111b',
-            jacket: '#6aa3dc', jacketDk: '#3f74aa', shirt: '#9ccaf2', pants: '#283350', shoes: '#3a2818', collar: 'shirt' },
-    // Даур: короткая стрижка, чёрная куртка поверх тёмной рубашки
-    daur: { skin: '#e6ad86', skinDk: '#b5805b', hair: '#0d0b11', hairHi: '#33304a', hairStyle: 'short',
-            jacket: '#17171c', jacketDk: '#09090c', shirt: '#2c3142', pants: '#1a1a20', shoes: '#09090b', collar: 'jacket' },
+    // Дани: короткая стрижка с боковым пробором, тонкие металлические очки,
+    // тёмно-зелёный бомбер с чёрным вязаным воротником, бордовый свитер на молнии, белая футболка, джинсы
+    dani: { skin: '#dfa57e', skinDk: '#ad7752', hair: '#121016', hairHi: '#3a3c52', hairStyle: 'side', glasses: 'thin',
+            jacket: '#26393a', jacketDk: '#142224', shirt: '#5a1a28', tee: '#e8e8ea', knit: '#0e0e10',
+            pants: '#1a2233', shoes: '#3e3328', collar: 'bomber', cuff: '#0e0e10' },
+    // Гала: аккуратная короткая стрижка, тёмные прямоугольные очки, бородка-эспаньолка с усами,
+    // светло-голубая рубашка с длинным рукавом, чёрные брюки, чёрные туфли
+    gal:  { skin: '#e2ab84', skinDk: '#b07a56', hair: '#141218', hairHi: '#3a3850', hairStyle: 'short', glasses: 'rect',
+            beard: '#16121a', beardStyle: 'goatee',
+            jacket: '#bcd3ea', jacketDk: '#8aa4c4', shirt: '#c8dcf0', pants: '#141418', shoes: '#0b0b0d', collar: 'dress', cuff: '#d4e4f4' },
+    // Даур: густая короткая стрижка, чёрная куртка с поднятым воротником поверх тёмной рубашки в клетку
+    daur: { skin: '#e0a57c', skinDk: '#ac7450', hair: '#0f0d12', hairHi: '#34304a', hairStyle: 'crop',
+            jacket: '#18181b', jacketDk: '#09090b', shirt: '#2a2d36', pants: '#1c1c22', shoes: '#0a0a0c', collar: 'jacket', shirtCollar: true },
   };
 
-  const SKINS = [['#f0c09a', '#c08f68'], ['#e2a982', '#b27a56'], ['#c88a5e', '#9a6440'], ['#9a6440', '#6e4428'], ['#6e4428', '#4a2c18']];
-  const HAIR = ['#121016', '#2a1a10', '#4a2e18', '#c8a050', '#8a3a1a', '#5a5a60'];
+  const SKINS = [['#d8b08e', '#a07a5c'], ['#c89a78', '#94684a'], ['#b08060', '#7c5236'], ['#8a5a3c', '#5e3820'], ['#e0c0a8', '#a88a74']];
+  const HAIR = ['#0c0a0e', '#1a120c', '#2a1c12', '#3a3a40', '#4a2a18'];
+  // тёмная, потёртая одежда: кожанки, худи, чёрные костюмы, рабочие куртки
   const OUTFITS = [
-    { jacket: '#4a2c1a', jacketDk: '#2c1a0e', shirt: '#2a2a2a', collar: 'jacket' },               // кожанка
-    { jacket: '#2a3a8a', jacketDk: '#1a2458', shirt: '#2a3a8a', collar: 'track', stripes: '#f0f0f0' }, // спортивный костюм
-    { jacket: '#d8d4c8', jacketDk: '#a09c90', shirt: '#ff7fbf', collar: 'suit' },                 // белый костюм
-    { jacket: '#e05a3a', jacketDk: '#a83a22', shirt: '#e05a3a', collar: 'shirt', print: '#ffd86a' }, // гавайка
-    { jacket: '#3a3a42', jacketDk: '#222228', shirt: '#3a3a42', collar: 'hood' },                 // худи
-    { jacket: '#8a1a22', jacketDk: '#560e14', shirt: '#1a1a1a', collar: 'jacket' },               // красная куртка
-    { jacket: '#1a1a1e', jacketDk: '#0a0a0c', shirt: '#f0f0f0', collar: 'suit', tie: '#8a1a22' },  // чёрный костюм
-    { jacket: '#3a5a2a', jacketDk: '#22381a', shirt: '#3a5a2a', collar: 'track', stripes: '#e0e040' },
+    { jacket: '#2a1a12', jacketDk: '#140c08', shirt: '#1a1414', collar: 'jacket' },                   // старая кожанка
+    { jacket: '#1c1e24', jacketDk: '#0c0d10', shirt: '#1c1e24', collar: 'track', stripes: '#5a5a62' }, // чёрный спортивный костюм
+    { jacket: '#141416', jacketDk: '#060607', shirt: '#2a2a2e', collar: 'suit', tie: '#5a0a12' },     // чёрный костюм
+    { jacket: '#26262c', jacketDk: '#111114', shirt: '#26262c', collar: 'hood' },                     // тёмное худи
+    { jacket: '#3a1010', jacketDk: '#1c0606', shirt: '#121212', collar: 'jacket' },                   // бордовая куртка
+    { jacket: '#2a2e22', jacketDk: '#14170f', shirt: '#2a2e22', collar: 'hood' },                     // оливковое худи
+    { jacket: '#1e2430', jacketDk: '#0c1018', shirt: '#3a3a3a', collar: 'jacket' },                   // рабочая куртка
+    { jacket: '#3a3430', jacketDk: '#1c1816', shirt: '#5a0a12', collar: 'suit' },                     // мятый пиджак
   ];
-  const PANTS = ['#1a1a22', '#283350', '#4a4030', '#2a2a2a', '#3a2a22'];
+  const PANTS = ['#121216', '#1a1e28', '#2a2620', '#18181a', '#221a16'];
 
   function enemyLook(type, seed) {
     const r = rng(seed);
     const pick = a => a[Math.floor(r() * a.length)];
     const [skin, skinDk] = pick(SKINS);
     if (type === 'tank') {
-      return { skin, skinDk, hair: '#121016', hairStyle: 'helmet', helmet: '#2a2e28', visor: '#0a1218',
-               jacket: '#3a4036', jacketDk: '#1e221c', shirt: '#2a2e28', pants: '#2a2e28', shoes: '#0a0a0a',
-               collar: 'armor', bulk: 1.28 };
+      return { skin, skinDk, hair: '#121016', hairStyle: 'helmet', helmet: '#1a1c1a', visor: '#2a0608',
+               jacket: '#22241f', jacketDk: '#0e100c', shirt: '#1a1c18', pants: '#1a1c18', shoes: '#060606',
+               collar: 'armor', skull: true, bulk: 1.28, blood: r() < 0.6 };
     }
     if (type === 'sniper') {
-      return { skin, skinDk, hair: '#121016', hairStyle: 'beanie', beanie: '#2a3a22',
-               jacket: '#3a4a2a', jacketDk: '#22301a', shirt: '#3a4a2a', pants: '#2e3a22', shoes: '#14100a',
-               collar: 'camo', camo: ['#22301a', '#5a6a3a', '#4a3a22'], glasses: 'shades' };
+      return { skin, skinDk, hair: '#121016', hairStyle: 'balaclava', mask: '#16180f',
+               jacket: '#22281a', jacketDk: '#10140a', shirt: '#22281a', pants: '#1c2214', shoes: '#0c0a06',
+               collar: 'camo', camo: ['#10140a', '#323a22', '#2a2216'], glasses: 'goggles' };
     }
     if (type === 'hound') {
-      const coats = [['#1a1414', '#8a5a2a'], ['#3a2414', '#c8904a'], ['#2a2a2e', '#8a8a90'], ['#6a4a2a', '#d8b07a']];
+      const coats = [['#0e0b0b', '#5a3a1c'], ['#1a120c', '#7a5430'], ['#16161a', '#4a4a50']];
       const [coat, tan] = pick(coats);
-      return { coat, tan, collar: pick(['#c82a2a', '#2a5ac8', '#1a1a1a']) };
+      return { coat, tan, collar: pick(['#5a0a0a', '#1a1a1a', '#3a2a10']), scars: true };
     }
     const o = pick(OUTFITS);
-    const style = pick(['bald', 'buzz', 'slick', 'cap', 'short', 'mohawk', 'long', 'buzz', 'short']);
+    const style = pick(['bald', 'buzz', 'slick', 'balaclava', 'hoodup', 'short', 'balaclava', 'buzz', 'long', 'cap']);
     return {
-      skin, skinDk, hair: pick(HAIR), hairHi: 'rgba(255,255,255,0.18)', hairStyle: style,
-      cap: pick(['#c82a2a', '#1a1a1a', '#2a5ac8', '#e0e0e0']),
-      glasses: r() < 0.35 ? 'shades' : null, beard: r() < 0.25 ? '#1a1410' : null,
+      skin, skinDk, hair: pick(HAIR), hairHi: 'rgba(255,255,255,0.1)', hairStyle: o.collar === 'hood' && r() < 0.6 ? 'hoodup' : style,
+      cap: pick(['#141414', '#2a0a0a', '#1a1e14']), mask: pick(['#0e0e10', '#1a1414', '#16180f']),
+      glasses: r() < 0.3 ? 'shades' : null, beard: r() < 0.35 ? '#0e0a08' : null,
       jacket: o.jacket, jacketDk: o.jacketDk, shirt: o.shirt, collar: o.collar, stripes: o.stripes, print: o.print, tie: o.tie,
-      pants: pick(PANTS), shoes: '#0a0a0c', bulk: 0.95 + r() * 0.12,
+      pants: pick(PANTS), shoes: '#060607', bulk: 0.95 + r() * 0.12, blood: r() < 0.35, scar: r() < 0.3,
     };
   }
 
@@ -91,7 +104,21 @@ const Sprites = (() => {
     ell(ctx, hx + 4.6, 0, 1.3, 1.1, 0, L.skinDk); // нос
 
     const st = L.hairStyle;
-    if (st === 'helmet') {
+    if (st === 'balaclava') {
+      // балаклава: закрыта вся голова, видна только полоска глаз
+      circ(ctx, hx - 0.2, 0, 5.6, '#050407');
+      circ(ctx, hx - 0.2, 0, 5.1, L.mask || '#0e0e10');
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
+      for (let i = -3; i <= 3; i += 1.5) { ctx.beginPath(); ctx.moveTo(hx - 4.6, i); ctx.lineTo(hx + 3, i * 1.05); ctx.stroke(); }
+      R(ctx, hx + 3.2, -2.6, 1.6, 5.2, L.skin);
+      R(ctx, hx + 3.8, -2, 0.8, 1, '#c01020'); R(ctx, hx + 3.8, 1, 0.8, 1, '#c01020');
+    } else if (st === 'hoodup') {
+      // капюшон на голове, лицо в тени
+      circ(ctx, hx - 0.8, 0, 6.4, '#050407');
+      circ(ctx, hx - 0.8, 0, 5.9, L.jacketDk);
+      ctx.fillStyle = L.jacket; ctx.beginPath(); ctx.arc(hx - 1.2, 0, 4.8, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(hx + 3.4, 0, 1.8, 3.4, 0, -Math.PI / 2, Math.PI / 2); ctx.fill();
+    } else if (st === 'helmet') {
       circ(ctx, hx - 0.4, 0, 5.8, '#050407');
       circ(ctx, hx - 0.4, 0, 5.3, L.helmet);
       ctx.fillStyle = L.visor; ctx.beginPath(); ctx.arc(hx, 0, 5, -0.9, 0.9); ctx.lineTo(hx + 2, 0); ctx.fill();
@@ -111,7 +138,7 @@ const Sprites = (() => {
       circ(ctx, hx - 1.4, 0, 0.8, 'rgba(255,255,255,0.4)');
     } else if (st !== 'bald') {
       // общая "шапка" волос, лицо спереди остаётся открытым
-      const back = st === 'long' ? 6.4 : st === 'short' || st === 'buzz' ? 4.7 : 5.4;
+      const back = st === 'long' ? 6.4 : st === 'short' || st === 'buzz' || st === 'side' ? 4.8 : st === 'crop' ? 5.2 : 5.4;
       ctx.fillStyle = L.hair;
       ctx.beginPath();
       ctx.arc(hx - 0.5, 0, back, Math.PI * 0.38, Math.PI * 1.62);
@@ -140,6 +167,18 @@ const Sprites = (() => {
         ctx.strokeStyle = L.hairHi; ctx.lineWidth = 0.6;
         for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(hx + 2.4, i); ctx.lineTo(hx - 3.6, i * 1.4); ctx.stroke(); }
         ctx.globalAlpha = 0.35; ell(ctx, hx - 1.2, -2.2, 2, 0.9, 0.2, '#8a8ab0'); ctx.globalAlpha = 1;
+      } else if (st === 'side') {
+        // короткая стрижка с боковым пробором
+        ctx.strokeStyle = L.hairHi; ctx.lineWidth = 0.6;
+        for (let i = -3; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(hx + 2.6, i * 0.9 + 0.6); ctx.lineTo(hx - 3.8, i * 1.3 + 1.2); ctx.stroke(); }
+        line(ctx, hx + 2.4, -2.2, hx - 3.6, -2.6, 0.6, '#000');
+        ctx.globalAlpha = 0.3; ell(ctx, hx - 0.6, 1.4, 2.2, 0.9, 0.1, '#9aa0c8'); ctx.globalAlpha = 1;
+      } else if (st === 'crop') {
+        // густые короткие волосы с объёмом на макушке
+        for (const [px, py] of [[-4, -3], [-4.4, 1.4], [-1.6, -4.6], [-1.4, 4.4], [1.4, -3.8], [1.6, 3.6], [-2.4, 0]]) circ(ctx, hx + px, py, 1.7, L.hair);
+        ctx.strokeStyle = L.hairHi; ctx.lineWidth = 0.55;
+        for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(hx + 3, i * 0.9); ctx.lineTo(hx - 3.4, i * 1.5); ctx.stroke(); }
+        circ(ctx, hx + 3.2, 0.8, 1.1, L.hair);
       } else if (st === 'mohawk') {
         ctx.globalAlpha = 0.5; circ(ctx, hx - 0.6, 0, 4.7, L.skin); ctx.globalAlpha = 1;
         R(ctx, hx - 5.6, -1.2, 9, 2.4, L.hair);
@@ -152,18 +191,25 @@ const Sprites = (() => {
     }
 
     // борода
-    if (L.beard) {
+    if (L.beard && L.beardStyle === 'goatee') {
+      // эспаньолка: острая бородка на подбородке + тонкие усы
+      ctx.fillStyle = L.beard;
+      ctx.beginPath(); ctx.moveTo(hx + 3.6, -1.6); ctx.lineTo(hx + 6.4, 0); ctx.lineTo(hx + 3.6, 1.6); ctx.closePath(); ctx.fill();
+      line(ctx, hx + 4.6, -1.6, hx + 4.6, 1.6, 0.6, L.beard);
+      ell(ctx, hx + 4.9, 0, 0.7, 0.9, 0, L.skinDk);
+    } else if (L.beard) {
       ctx.fillStyle = L.beard;
       ctx.beginPath(); ctx.ellipse(hx + 3.8, 0, 2.3, 3.4, 0, -Math.PI / 2, Math.PI / 2); ctx.fill();
       ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.ellipse(hx + 2.4, 0, 2.6, 4.6, 0, -Math.PI / 2, Math.PI / 2); ctx.fill(); ctx.globalAlpha = 1;
       ell(ctx, hx + 4.7, 0, 0.9, 1.3, 0, L.skinDk);
     }
+    if (L.scar) line(ctx, hx + 1, -3.6, hx + 3.6, -1.6, 0.6, '#7a2a24');
 
     // очки
-    if (L.glasses === 'thin' || L.glasses === 'thick') {
+    if (L.glasses === 'thin' || L.glasses === 'thick' || L.glasses === 'rect') {
       const thick = L.glasses === 'thick';
-      const fc = thick ? '#050407' : '#c8d2e2';
-      const lw = thick ? 1.1 : 0.55;
+      const fc = L.glasses === 'thin' ? '#c8d2e2' : '#1a1a20';
+      const lw = thick ? 1.1 : L.glasses === 'rect' ? 0.8 : 0.55;
       ctx.strokeStyle = fc; ctx.lineWidth = lw;
       ctx.strokeRect(hx + 3.5, -3.6, 1.6, 2.6);
       ctx.strokeRect(hx + 3.5, 1.0, 1.6, 2.6);
@@ -174,6 +220,9 @@ const Sprites = (() => {
       ctx.fillStyle = `rgba(170,220,255,${glint})`;
       ctx.fillRect(hx + 3.7, -3.4, 1.2, 0.9);
       ctx.fillRect(hx + 3.7, 1.2, 1.2, 0.9);
+    } else if (L.glasses === 'goggles') {
+      R(ctx, hx + 3.2, -4, 2.2, 8, '#050407');
+      R(ctx, hx + 3.6, -3.4, 1.4, 2.6, 'rgba(120,255,140,0.55)'); R(ctx, hx + 3.6, 0.8, 1.4, 2.6, 'rgba(120,255,140,0.55)');
     } else if (L.glasses === 'shades') {
       R(ctx, hx + 3.4, -3.8, 2, 3, '#050407'); R(ctx, hx + 3.4, 0.8, 2, 3, '#050407');
       R(ctx, hx + 4.3, -1, 0.8, 2, '#050407');
@@ -193,7 +242,30 @@ const Sprites = (() => {
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(-4 * b, 4 * b, 5, 0.8); ctx.fillRect(-3.4 * b, -6 * b, 4, 0.8);
 
     const c = L.collar;
-    if (c === 'suit') {
+    if (c === 'bomber') {
+      // бомбер: свитер на молнии и белая футболка под ним, чёрный вязаный воротник, карман на молнии
+      ctx.fillStyle = L.shirt;
+      ctx.beginPath(); ctx.moveTo(1.6, -3.4); ctx.lineTo(6 * b, -0.6); ctx.lineTo(6 * b, 0.6); ctx.lineTo(1.6, 3.4); ctx.closePath(); ctx.fill();
+      R(ctx, 4.4, -0.9, 1.6, 1.8, L.tee);
+      line(ctx, 2.4, 0, 5.6, 0, 0.5, '#9a9aa2');
+      ell(ctx, 0.4, 0, 1.8, 5.8, 0, L.knit);
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 0.4;
+      for (let i = -4; i <= 4; i += 1.5) { ctx.beginPath(); ctx.moveTo(-0.6, i); ctx.lineTo(1.6, i); ctx.stroke(); }
+      line(ctx, 3, -3.6, 3, 3.6, 0.5, '#5a5e60');
+      line(ctx, -1.5, -6.5 * b, 2.5, -6.2 * b, 0.6, '#5a5e60');
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      for (let i = 0; i < 5; i++) ctx.fillRect(-4 + i * 1.6, 3.2 + (i % 2), 1, 0.6);
+    } else if (c === 'dress') {
+      // классическая рубашка: воротник с уголками и планка с пуговицами
+      ctx.fillStyle = L.jacketDk;
+      ctx.beginPath(); ctx.moveTo(0.6, -3.6); ctx.lineTo(4.4, -1.6); ctx.lineTo(2, -0.4); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0.6, 3.6); ctx.lineTo(4.4, 1.6); ctx.lineTo(2, 0.4); ctx.closePath(); ctx.fill();
+      line(ctx, 2.2, 0, 6 * b, 0, 0.6, L.jacketDk);
+      for (let i = 0; i < 3; i++) circ(ctx, 3 + i * 1.2, 0, 0.35, '#ffffff');
+      ctx.strokeStyle = 'rgba(80,110,150,0.35)'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(-4, -6); ctx.quadraticCurveTo(-1, -4, 1, -7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-4, 6); ctx.quadraticCurveTo(-1, 4, 1, 7); ctx.stroke();
+    } else if (c === 'suit') {
       ctx.fillStyle = L.shirt;
       ctx.beginPath(); ctx.moveTo(2, -3); ctx.lineTo(6.2 * b, 0); ctx.lineTo(2, 3); ctx.closePath(); ctx.fill();
       line(ctx, 2, -3, 5.8 * b, -0.4, 0.9, L.jacketDk);
@@ -211,6 +283,12 @@ const Sprites = (() => {
     } else if (c === 'jacket') {
       ctx.fillStyle = L.shirt;
       ctx.beginPath(); ctx.moveTo(2.6, -2.6); ctx.lineTo(5.6, 0); ctx.lineTo(2.6, 2.6); ctx.closePath(); ctx.fill();
+      if (L.shirtCollar) {
+        // рубашка в клетку и её воротник
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 0.4;
+        for (let i = 3; i < 6; i += 0.9) { ctx.beginPath(); ctx.moveTo(i, -1.8); ctx.lineTo(i, 1.8); ctx.stroke(); }
+        line(ctx, 2.4, -2.6, 4, -1.2, 0.8, '#3a3e48'); line(ctx, 2.4, 2.6, 4, 1.2, 0.8, '#3a3e48');
+      }
       ell(ctx, 0.6, 0, 2.2, 5.4, 0, L.jacketDk);   // поднятый воротник
       line(ctx, 3.2, -2.8, 3.2, 2.8, 0.5, 'rgba(255,255,255,0.15)');
       R(ctx, 3.4, -0.3, 2.6, 0.6, '#8a8a90'); // молния
@@ -241,6 +319,17 @@ const Sprites = (() => {
       for (let i = 0; i < 9; i++) ell(ctx, -4 + (i * 37 % 9), -8 + (i * 53 % 16), 2.2, 1.4, i, cm[i % cm.length]);
       line(ctx, -3, -8, 4, 8, 1.2, '#2a1a10'); // ремень винтовки
     }
+    if (L.skull) {
+      // белый череп на бронежилете
+      circ(ctx, -1, 0, 2, '#c8c4b8'); R(ctx, -1.6, 1.4, 1.2, 1, '#c8c4b8');
+      circ(ctx, -0.4, -0.8, 0.5, '#050407'); circ(ctx, -0.4, 0.8, 0.5, '#050407');
+    }
+    if (L.blood) {
+      // засохшая кровь на одежде
+      ctx.globalAlpha = 0.75;
+      for (const [px, py, rr] of [[-2, 3, 1.6], [1, 5, 1], [-3.6, -4, 1.2], [0, -6, 0.8]]) circ(ctx, px, py, rr, '#4a0008');
+      ctx.globalAlpha = 1;
+    }
   }
 
   // ---------- руки ----------
@@ -258,6 +347,10 @@ const Sprites = (() => {
     line(ctx, ex, ey, hx, hy, 4.2, '#050407');
     line(ctx, sx, sy, ex, ey, 3.4, L.jacket);
     line(ctx, ex, ey, hx, hy, 3.0, L.jacketDk);
+    if (L.cuff) {
+      const cx = ex + (hx - ex) * 0.78, cy = ey + (hy - ey) * 0.78;
+      line(ctx, cx, cy, ex + (hx - ex) * 0.92, ey + (hy - ey) * 0.92, 3.2, L.cuff);
+    }
     circ(ctx, hx, hy, 2.5, '#050407');
     circ(ctx, hx, hy, 2.0, L.skin);
     return { hx, hy };
@@ -266,72 +359,64 @@ const Sprites = (() => {
   // ---------- оружие ----------
   // Ориентация: рукоять/хват в (0,0), ствол вдоль +X
   const WEAPON_ART = {
+    // Огнестрел — вид СВЕРХУ: видны ствольная коробка, планка, прицел и ствол.
+    // Магазин и рукоять находятся под оружием и сверху не видны.
     glock(ctx) {
-      part(ctx, -2, -1.6, 13, 3.2, '#2a2a30');
-      R(ctx, -1.4, -1.6, 11.6, 0.8, '#4a4a54');
-      for (let i = 0; i < 4; i++) R(ctx, 0.4 + i * 1.1, -1.4, 0.4, 2.6, '#1a1a1e');
-      part(ctx, -1.6, 1.4, 3, 4.6, '#18181c');
-      R(ctx, 10.4, -0.6, 1, 1.2, '#000');
-      R(ctx, 2.6, 1.6, 2.6, 1.4, '#3a3a42');
+      metal(ctx, -1, -1.2, 13, 2.4, '#26262c', '#4a4a56');
+      for (let i = 0; i < 4; i++) R(ctx, -0.4 + i * 0.9, -1, 0.35, 2, '#121216');
+      R(ctx, 5.6, -0.5, 2.4, 1, '#56565f');
+      R(ctx, 11.2, -0.3, 0.7, 0.6, '#d8d8d8');
+      R(ctx, 0.2, -0.25, 0.6, 0.5, '#d8d8d8');
     },
     uzi(ctx) {
-      part(ctx, -4, -2, 17, 4, '#2c2c32');
-      R(ctx, -3.4, -2, 16, 0.9, '#50505a');
-      part(ctx, 13, -0.8, 4, 1.6, '#18181c');
-      part(ctx, 3, 2, 2.4, 7, '#141418');   // магазин
-      part(ctx, -1.4, 2, 2.4, 3.6, '#202026'); // рукоять
-      part(ctx, -9, -1, 5, 1.4, '#3a3a42');  // откидной приклад
-      R(ctx, 6, -2.8, 1.6, 0.8, '#6a6a74');
+      line(ctx, -9, -1.3, -2, -1.1, 0.7, '#3a3a42'); line(ctx, -9, 1.3, -2, 1.1, 0.7, '#3a3a42');
+      line(ctx, -9, -1.3, -9, 1.3, 0.8, '#3a3a42');
+      metal(ctx, -2, -1.6, 15, 3.2, '#2c2c34', '#50505c');
+      R(ctx, 2, -0.5, 6, 1, '#1a1a1e');
+      metal(ctx, 13, -0.6, 4.5, 1.2, '#18181c', '#3a3a42');
+      R(ctx, 0, -0.3, 0.9, 0.6, '#6a6a74'); R(ctx, 11, -0.3, 0.9, 0.6, '#6a6a74');
     },
     m4(ctx) {
-      part(ctx, -11, -2.2, 8, 4.4, '#1e1e22');        // приклад
-      R(ctx, -10.4, -2.2, 7, 1, '#3a3a40');
-      part(ctx, -3, -2.4, 13, 4.8, '#2a2a30');        // ствольная коробка
-      part(ctx, 10, -1.8, 9, 3.6, '#24242a');         // цевьё
-      for (let i = 0; i < 4; i++) R(ctx, 11 + i * 2, -1.8, 0.8, 3.6, '#16161a');
-      part(ctx, 19, -0.7, 7, 1.4, '#18181c');         // ствол
-      part(ctx, 26, -1.1, 2, 2.2, '#0e0e10');         // ДТК
-      part(ctx, 1, -3.8, 6, 1.4, '#16161a');          // рукоятка для переноски / планка
-      part(ctx, 3.5, 2.4, 3, 6.4, '#141418');         // магазин
-      part(ctx, -1.6, 2.4, 2.6, 4, '#1a1a1e');        // рукоять
-      R(ctx, -2.4, -0.4, 22, 0.6, 'rgba(255,255,255,0.07)');
+      metal(ctx, -11, -1.3, 7, 2.6, '#1c1c20', '#34343a');
+      metal(ctx, -4, -0.7, 4, 1.4, '#16161a', '#2a2a30');
+      metal(ctx, 0, -1.4, 11, 2.8, '#26262c', '#44444c');
+      for (let i = 0; i < 6; i++) R(ctx, 0.8 + i * 1.6, -0.25, 0.8, 0.5, '#5a5a64');
+      metal(ctx, 11, -1.3, 9, 2.6, '#202026', '#3a3a42');
+      for (let i = 0; i < 3; i++) R(ctx, 12.2 + i * 2.6, -0.5, 1.6, 1, '#101014');
+      metal(ctx, 20, -0.5, 6, 1, '#141418', '#2a2a30');
+      metal(ctx, 26, -0.8, 2.4, 1.6, '#0c0c0e', '#26262c');
+      circ(ctx, 4.5, 0, 1.3, '#050407'); circ(ctx, 4.5, 0, 0.9, '#2a2a30'); circ(ctx, 4.5, 0, 0.35, '#ff3030');
     },
     ak47(ctx) {
-      part(ctx, -11, -2, 8, 4, '#6a3a1a');            // деревянный приклад
-      R(ctx, -10.4, -2, 7, 1, '#8a5228');
-      part(ctx, -3, -2.2, 12, 4.4, '#2a2a2e');
-      R(ctx, -2.4, -2.2, 11, 0.9, '#4a4a52');
-      part(ctx, 9, -1.8, 8, 3.6, '#7a4220');          // деревянное цевьё
-      R(ctx, 9.4, -1.8, 7.2, 1, '#9a5a2c');
-      part(ctx, 17, -0.7, 9, 1.4, '#1a1a1e');
-      part(ctx, 21, -2.2, 1.2, 1.6, '#1a1a1e');       // мушка
-      part(ctx, 3, 2.2, 3.4, 4, '#3a2a1a');           // изогнутый магазин
-      part(ctx, 4.6, 5.6, 3.4, 3.4, '#3a2a1a');
-      part(ctx, -1.6, 2.2, 2.6, 4, '#5a3216');
+      metal(ctx, -11, -1.3, 9, 2.6, '#5a2e12', '#86502a');
+      ctx.strokeStyle = 'rgba(30,12,4,0.5)'; ctx.lineWidth = 0.3;
+      ctx.beginPath(); ctx.moveTo(-10, -0.4); ctx.lineTo(-3, -0.6); ctx.moveTo(-10, 0.5); ctx.lineTo(-3, 0.4); ctx.stroke();
+      metal(ctx, -2, -1.3, 12, 2.6, '#2a2a2e', '#4a4a52');
+      for (let i = 0; i < 4; i++) R(ctx, 0.5 + i * 2.4, -1.1, 0.4, 2.2, '#18181c');
+      metal(ctx, 10, -1.4, 7, 2.8, '#6a3816', '#94562a');
+      metal(ctx, 13, -0.4, 8, 0.8, '#202024', '#3a3a42');
+      metal(ctx, 17, -0.5, 8, 1, '#18181c', '#2e2e34');
+      R(ctx, 22, -0.7, 0.8, 1.4, '#0e0e10');
+      metal(ctx, 25, -0.8, 2, 1.6, '#101012', '#2a2a30');
     },
     shotgun(ctx) {
-      part(ctx, -11, -2.2, 9, 4.4, '#5a3216');
-      R(ctx, -10.4, -2.2, 8, 1, '#7a4a24');
-      part(ctx, -2, -2.4, 10, 4.8, '#2a2a30');
-      part(ctx, 8, -1.6, 22, 1.6, '#3a3a42');         // ствол
-      part(ctx, 8, 0.4, 18, 1.8, '#2a2a30');          // подствольный магазин
-      part(ctx, 12, -2.4, 8, 5.2, '#6a3a1a');         // помпа
-      for (let i = 0; i < 4; i++) R(ctx, 13 + i * 2, -2.4, 0.7, 5.2, '#4a2810');
-      part(ctx, -1.4, 2.4, 2.6, 3.6, '#4a2810');
-      R(ctx, 29, -1.4, 1, 1.2, '#000');
+      metal(ctx, -11, -1.4, 9, 2.8, '#4e2a12', '#7e4a24');
+      metal(ctx, -2, -1.4, 10, 2.8, '#26262c', '#46464e');
+      R(ctx, 1, -0.4, 4, 0.8, '#121216');
+      metal(ctx, 8, -0.7, 22, 1.4, '#2e2e36', '#5a5a66');
+      metal(ctx, 12, -1.5, 8, 3, '#5e3216', '#8a5028');
+      for (let i = 0; i < 5; i++) R(ctx, 12.8 + i * 1.5, -1.4, 0.5, 2.8, '#3a1e0a');
+      circ(ctx, 29.4, 0, 0.5, '#e0d0a0');
     },
     sniper(ctx) {
-      part(ctx, -13, -2.4, 10, 4.8, '#3a4a2a');
-      R(ctx, -12.4, -2.4, 9, 1, '#5a6a3a');
-      part(ctx, -3, -2.2, 14, 4.4, '#2a2e26');
-      part(ctx, 11, -0.8, 22, 1.6, '#1a1c18');
-      part(ctx, 33, -1.4, 3, 2.8, '#0e0e0c');
-      part(ctx, 0, -4.6, 11, 2.4, '#141612');          // прицел
-      part(ctx, -1.4, -5.1, 2, 3.4, '#0e0e0c');
-      part(ctx, 10, -5.1, 2, 3.4, '#0e0e0c');
-      R(ctx, 11.5, -4.4, 0.8, 1.8, 'rgba(255,60,60,0.9)');
-      part(ctx, 3, 2.2, 3, 4.4, '#141612');
-      part(ctx, -1.6, 2.2, 2.6, 4, '#2a2e26');
+      metal(ctx, -13, -1.5, 11, 3, '#1e2216', '#363e28');
+      metal(ctx, -2, -1.3, 14, 2.6, '#202420', '#3a3e36');
+      metal(ctx, 0, -1.8, 11, 3.6, '#0e100c', '#2a2e26');
+      R(ctx, -0.6, -1.6, 0.8, 3.2, '#3a6a9a'); R(ctx, 10.8, -1.6, 0.8, 3.2, '#3a6a9a');
+      R(ctx, 5, -2.4, 1.2, 4.8, '#0a0a08');
+      metal(ctx, 12, -0.55, 21, 1.1, '#141612', '#2a2e26');
+      metal(ctx, 33, -0.9, 3, 1.8, '#0a0a08', '#22221e');
+      R(ctx, 2, -0.2, 7, 0.4, 'rgba(255,60,60,0.65)');
     },
     bat(ctx) {
       part(ctx, -5, -1, 7, 2, '#1a1a1a');             // обмотка рукояти
@@ -391,19 +476,19 @@ const Sprites = (() => {
     ctx.globalAlpha = 0.7; R(ctx, 10, 2, 5, 3, '#8a0010'); R(ctx, 15, 5, 3, 2, '#8a0010'); ctx.globalAlpha = 1;
   };
   WEAPON_ART.minigun = function (ctx) {
-    part(ctx, -6, -4, 12, 8, '#2a2a30');
-    R(ctx, -5.4, -4, 11, 1.4, '#4a4a54');
-    part(ctx, -3, 4, 6, 4, '#3a3020');                     // короб с лентой
-    for (let i = 0; i < 4; i++) R(ctx, -2.4 + i * 1.4, 7, 0.8, 3, '#d0a040');
-    for (const y of [-2.6, -0.9, 0.9, 2.6]) part(ctx, 6, y - 0.5, 26, 1, '#1a1a1e');
-    part(ctx, 6, -3.6, 2, 7.2, '#3a3a42');
-    part(ctx, 20, -3.6, 2, 7.2, '#3a3a42');
-    part(ctx, 31, -3.4, 2.4, 6.8, '#0e0e10');
+    metal(ctx, -6, -3, 12, 6, '#24242a', '#44444e');
+    R(ctx, -4, -0.4, 8, 0.8, '#121216');
+    line(ctx, -4, -3.4, 4, -3.4, 0.8, '#3a3a42');                 // ручка сверху
+    for (const y of [-1.8, -0.6, 0.6, 1.8]) metal(ctx, 6, y - 0.4, 26, 0.8, '#18181c', '#34343c');
+    metal(ctx, 6, -2.6, 2, 5.2, '#3a3a42', '#5a5a64');
+    metal(ctx, 19, -2.6, 1.6, 5.2, '#3a3a42', '#5a5a64');
+    metal(ctx, 31, -2.4, 2, 4.8, '#0e0e10', '#2a2a30');
+    for (let i = 0; i < 4; i++) R(ctx, -5 + i * 1.3, 3, 0.8, 1.6, '#d0a040');  // лента
   };
 
   const WEAPON_META = {
-    glock: { kind: 'pistol', muzzle: 12 }, uzi: { kind: 'smg', muzzle: 17 }, m4: { kind: 'rifle', muzzle: 28 },
-    ak47: { kind: 'rifle', muzzle: 26 }, shotgun: { kind: 'rifle', muzzle: 30 }, sniper: { kind: 'rifle', muzzle: 36 },
+    glock: { kind: 'pistol', muzzle: 12, eject: 6 }, uzi: { kind: 'smg', muzzle: 17, eject: 5 }, m4: { kind: 'rifle', muzzle: 28, eject: 5 },
+    ak47: { kind: 'rifle', muzzle: 27, eject: 4 }, shotgun: { kind: 'rifle', muzzle: 30, eject: 3 }, sniper: { kind: 'rifle', muzzle: 36, eject: 6 },
     bat: { kind: 'melee', reach: 24, trail: '255,200,140' }, pipe: { kind: 'melee', reach: 22, trail: '200,210,230' },
     knife: { kind: 'melee', reach: 13, trail: '255,255,255' }, sword: { kind: 'melee', reach: 30, trail: '170,230,255' },
     cleaver: { kind: 'melee', reach: 22, trail: '255,80,80' }, minigun: { kind: 'rifle', muzzle: 34 },
@@ -587,38 +672,76 @@ const Sprites = (() => {
   }
 
   // ---------- лежащее тело (мёртв / оглушён) ----------
+  // st.pose: 'back' (на спине, руки раскинуты), 'side' (скрючился на боку), 'face' (лицом вниз),
+  //         'crawl' (ползёт, st.crawl — фаза движения), а также st.stunned
   function drawHumanDown(ctx, L, st) {
     const r = rng(st.seed || 1);
     const stunned = !!st.stunned;
+    const pose = stunned ? 'back' : (st.pose || 'back');
     const b = L.bulk || 1;
+    const cr = st.crawl || 0;
+
     // ноги
-    const spread = stunned ? 2 : 3 + r() * 3;
     for (const side of [-1, 1]) {
-      const fx = -15 - r() * 3, fy = side * (spread + r() * 2);
-      line(ctx, -5, side * 3 * b, fx, fy, 5.6, '#050407');
-      line(ctx, -5, side * 3 * b, fx, fy, 4.4, L.pants);
+      let fx, fy, kx = null, ky = null;
+      if (pose === 'side') {
+        kx = -8; ky = side * 2 + 5; fx = -12 + (side > 0 ? 3 : 0); fy = 9 + side;
+      } else if (pose === 'crawl') {
+        const k = Math.sin(cr + (side > 0 ? 0 : Math.PI));
+        kx = -9 + k * 2; ky = side * (5 + k * 1.5); fx = -16 + k * 3; fy = side * (4 + Math.max(0, k) * 2);
+      } else {
+        const spread = stunned ? 2 : 3 + r() * 3;
+        fx = -15 - r() * 3; fy = side * (spread + r() * 2);
+      }
+      if (kx !== null) {
+        line(ctx, -5, side * 3 * b, kx, ky, 5.6, '#050407'); line(ctx, kx, ky, fx, fy, 5.2, '#050407');
+        line(ctx, -5, side * 3 * b, kx, ky, 4.4, L.pants); line(ctx, kx, ky, fx, fy, 4, L.pants);
+      } else {
+        line(ctx, -5, side * 3 * b, fx, fy, 5.6, '#050407');
+        line(ctx, -5, side * 3 * b, fx, fy, 4.4, L.pants);
+      }
       ell(ctx, fx - 1.6, fy, 2.4, 2.8, 0, L.shoes);
     }
-    // корпус (лежит, вытянут вдоль тела)
+    // корпус
     ell(ctx, 0, 0, 9 * b + 0.8, 7 * b + 0.8, 0, '#050407');
     ell(ctx, 0, 0, 9 * b, 7 * b, 0, L.jacketDk);
     ell(ctx, 0.4, -0.4, 8 * b, 6 * b, 0, L.jacket);
-    if (L.collar === 'suit' || L.collar === 'shirt' || L.collar === 'jacket') {
+    if (pose !== 'face' && pose !== 'crawl' && (L.collar === 'suit' || L.collar === 'shirt' || L.collar === 'jacket' || L.collar === 'bomber' || L.collar === 'dress')) {
       ctx.fillStyle = L.shirt; ctx.beginPath(); ctx.moveTo(2, -2.4); ctx.lineTo(8, 0); ctx.lineTo(2, 2.4); ctx.fill();
     }
-    if (L.collar === 'armor') { R(ctx, -5, -4.5, 10, 9, '#2a2e26'); R(ctx, -4.4, -4, 8.8, 3.4, '#3a4034'); }
-    // руки раскинуты
+    if (pose === 'face' || pose === 'crawl') { ctx.globalAlpha = 0.25; ell(ctx, -1, 0, 6, 4, 0, '#000'); ctx.globalAlpha = 1; }
+    if (L.collar === 'armor') { R(ctx, -5, -4.5, 10, 9, '#22241f'); R(ctx, -4.4, -4, 8.8, 3.4, '#2e3228'); }
+    if (L.blood || pose !== 'back') { ctx.globalAlpha = 0.8; circ(ctx, -1, 2, 2.4, '#5a0010'); circ(ctx, 2, -2, 1.6, '#5a0010'); ctx.globalAlpha = 1; }
+
+    // руки
     for (const side of [-1, 1]) {
-      const ang = stunned ? side * (0.25 + r() * 0.2) : side * (0.6 + r() * 1.2);
-      const hx = 4 + Math.cos(ang) * 14, hy = side * 6 + Math.sin(ang) * 10;
+      let hx, hy;
+      if (pose === 'crawl') {
+        // попеременно тянется руками вперёд
+        const k = Math.sin(cr + (side > 0 ? Math.PI : 0));
+        hx = 12 + k * 4; hy = side * (7 - Math.max(0, k) * 2);
+      } else if (pose === 'face') {
+        hx = 14 + r() * 3; hy = side * (5 + r() * 3);
+      } else if (pose === 'side') {
+        hx = 8 + side * 2; hy = 7 + side * 2;
+      } else {
+        const ang = stunned ? side * (0.25 + r() * 0.2) : side * (0.6 + r() * 1.2);
+        hx = 4 + Math.cos(ang) * 14; hy = side * 6 + Math.sin(ang) * 10;
+      }
       line(ctx, 3, side * 6 * b, hx, hy, 4.4, '#050407');
       line(ctx, 3, side * 6 * b, hx, hy, 3.2, L.jacket);
-      circ(ctx, hx, hy, 2.2, L.skin);
+      circ(ctx, hx, hy, 2.2, (pose === 'crawl' && side > 0) ? '#8a1020' : L.skin);
     }
     // голова
-    ctx.save(); ctx.translate(10, 0); ctx.rotate(stunned ? 0 : (r() - 0.5) * 0.8);
+    ctx.save(); ctx.translate(10, 0);
+    ctx.rotate(stunned ? 0 : pose === 'side' ? 0.6 : pose === 'crawl' ? Math.sin(cr * 0.5) * 0.15 : (r() - 0.5) * 0.8);
     ctx.translate(-1.6, 0);
-    drawHead(ctx, L, 0);
+    if (pose === 'face' || pose === 'crawl') {
+      // лицом вниз — видим затылок
+      circ(ctx, 1.6, 0, 5.4, '#050407');
+      circ(ctx, 1.6, 0, 4.9, L.hairStyle === 'bald' ? L.skin : (L.hairStyle === 'balaclava' ? (L.mask || '#0e0e10') : (L.hairStyle === 'helmet' ? L.helmet : L.hair)));
+      ell(ctx, 1, -5.2, 1.3, 1.7, 0, L.skinDk); ell(ctx, 1, 5.2, 1.3, 1.7, 0, L.skinDk);
+    } else drawHead(ctx, L, 0);
     ctx.restore();
 
     if (stunned) {

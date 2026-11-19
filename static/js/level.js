@@ -18,6 +18,15 @@ const ROOM_THEMES = {
   storage:  { name: 'Склад',     floor: 'concrete', colors: ['#2a2a2f', '#25252a', '#303036'], light: '#ffe08a' },
   server:   { name: 'Серверная', floor: 'raised',   colors: ['#1b2232', '#141a27'],            light: '#40a0ff' },
   hall:     { name: 'Коридор',   floor: 'lino',     colors: ['#2b2232', '#32283b'],            light: '#ff9a5a' },
+  // для статичных уровней
+  classroom:{ name: 'Аудитория', floor: 'lino',     colors: ['#2a2c36', '#30323e'],            light: '#e8f0ff' },
+  library:  { name: 'Библиотека',floor: 'wood',     colors: ['#3a2418', '#30200f', '#42291a'], light: '#ffd8a0' },
+  gym:      { name: 'Спортзал',  floor: 'court',    colors: ['#5a3a20', '#52341c', '#5e3e22'], light: '#fff2d0' },
+  lobby:    { name: 'Холл',      floor: 'marble',   colors: ['#3a3a44', '#2e2e38', '#46464e'], light: '#ffe8c0' },
+  teller:   { name: 'Кассы',     floor: 'marble',   colors: ['#34343e', '#2a2a34', '#3e3e48'], light: '#fff0d0' },
+  vault:    { name: 'Хранилище', floor: 'steel',    colors: ['#2a2e34', '#22262c'],            light: '#9fd0ff' },
+  stage:    { name: 'Сцена',     floor: 'steel',    colors: ['#1a1622', '#14101c'],            light: '#c060ff' },
+  club:     { name: 'Танцпол',   floor: 'dance',    colors: ['#ff2a6d', '#05d9e8', '#c060ff', '#ffd319', '#3fff7f'], light: '#ff3aa0' },
 };
 
 // [предмет, мин, макс, 'wall' | 'center']
@@ -31,6 +40,14 @@ const ROOM_FURNITURE = {
   storage:  [['shelfRack', 1, 3, 'wall'], ['pallet', 0, 2, 'center'], ['crate', 3, 7, 'wall'], ['barrel', 1, 3, 'wall'], ['crate', 0, 3, 'center']],
   server:   [['serverRow', 1, 3, 'center'], ['filing', 0, 2, 'wall'], ['shelfRack', 0, 1, 'wall']],
   hall:     [['plant', 1, 3, 'wall'], ['bench', 0, 2, 'wall'], ['vending', 0, 1, 'wall']],
+  classroom:[['blackboard', 1, 1, 'wall'], ['teacherDesk', 1, 1, 'wall'], ['schoolDesk', 6, 14, 'center'], ['bookshelf', 0, 1, 'wall'], ['plant', 0, 2, 'wall']],
+  library:  [['bookRow', 2, 4, 'center'], ['bookshelf', 3, 7, 'wall'], ['dtable', 0, 1, 'center'], ['lamp', 1, 2, 'wall'], ['armchair', 1, 2, 'wall'], ['plant', 1, 2, 'wall']],
+  gym:      [['mat', 1, 3, 'center'], ['bench', 2, 4, 'wall'], ['lockers', 1, 2, 'wall'], ['crate', 0, 2, 'wall']],
+  lobby:    [['pillar', 2, 4, 'center'], ['bench', 2, 3, 'wall'], ['plant', 2, 4, 'wall'], ['vending', 0, 1, 'wall'], ['coffee', 0, 1, 'center']],
+  teller:   [['counter', 1, 2, 'wall'], ['filing', 1, 2, 'wall'], ['desk', 1, 2, 'wall'], ['plant', 0, 1, 'wall']],
+  vault:    [['safe', 6, 12, 'wall'], ['pallet', 1, 2, 'center'], ['crate', 1, 3, 'wall']],
+  club:     [['speaker', 2, 4, 'wall'], ['pillar', 0, 2, 'center'], ['booth', 0, 2, 'wall']],
+  stage:    [['dj', 1, 1, 'wall'], ['speaker', 2, 4, 'wall']],
 };
 
 // Чем догружать комнату после основного набора
@@ -44,6 +61,13 @@ const ROOM_FILLER = {
   storage:  [['crate', 'wall'], ['barrel', 'wall'], ['shelfRack', 'wall'], ['crate', 'center'], ['pallet', 'center']],
   server:   [['serverRow', 'center'], ['filing', 'wall'], ['crate', 'wall']],
   hall:     [['plant', 'wall'], ['bench', 'wall']],
+  classroom:[['schoolDesk', 'center'], ['plant', 'wall']],
+  library:  [['bookshelf', 'wall'], ['bookRow', 'center'], ['armchair', 'wall']],
+  gym:      [['bench', 'wall'], ['mat', 'center']],
+  lobby:    [['plant', 'wall'], ['bench', 'wall']],
+  teller:   [['filing', 'wall'], ['desk', 'wall'], ['plant', 'wall']],
+  vault:    [['safe', 'wall'], ['crate', 'wall']],
+  club:     [['speaker', 'wall']],
 };
 
 // Сколько раз максимум предмет встречается в одной комнате
@@ -62,6 +86,13 @@ const ROOM_CLUTTER = {
   storage:  ['cardboard', 'stain', 'crack', 'casing', 'paper', 'crack'],
   server:   ['cable', 'cable', 'paper', 'crack'],
   hall:     ['paper', 'butt', 'leaf', 'can', 'stain'],
+  classroom:['paper', 'paper', 'paper', 'can', 'stain'],
+  library:  ['paper', 'paper', 'leaf'],
+  gym:      ['can', 'paper', 'stain'],
+  lobby:    ['paper', 'leaf', 'stain'],
+  teller:   ['paper', 'paper', 'stain'],
+  vault:    ['paper', 'casing', 'crack'],
+  club:     ['bottle', 'shards', 'can', 'butt', 'stain', 'bottle'],
 };
 
 const ROOM_NEON = {
@@ -70,6 +101,19 @@ const ROOM_NEON = {
   kitchen: [['EAT', '#ffd319']],
   hall:    [['EXIT', '#3fff7f']],
   server:  [['NO ENTRY', '#ff3a3a']],
+  club:    [['DANCE', '#ff2a6d'], ['NEON NIGHT', '#05d9e8']],
+  lobby:   [['WELCOME', '#ffd319']],
+  vault:   [['VAULT', '#ffd319']],
+  gym:     [['SPORT', '#3fff7f']],
+  library: [['SILENCE', '#ffd8a0']],
+};
+
+// Материал обломков и прочность мебели по умолчанию
+const ITEM_MAT = {
+  filing: 'metal', cooler: 'metal', fridge: 'metal', shelfRack: 'metal', serverRow: 'metal', vending: 'metal', arcade: 'metal',
+  kitchenRun: 'metal', barrel: 'metal', lockers: 'metal', safe: 'metal', speaker: 'metal', dj: 'metal',
+  coffee: 'glass', tvstand: 'glass', bsink: 'glass', toilet: 'glass', tub: 'glass',
+  couch: 'fabric', armchair: 'fabric', bed: 'fabric', booth: 'fabric',
 };
 
 const RUG_COLORS = [['#3d0e23', '#ff2a6d'], ['#1a2a3d', '#05d9e8'], ['#2d1a3d', '#c060ff'], ['#3d2a1a', '#ffb060'], ['#1a3d2a', '#3fff7f']];
@@ -86,8 +130,10 @@ function shuffled(arr) {
 }
 
 class Level {
-  constructor(w, h) {
+  constructor(w, h, opts = {}) {
     this.w = w; this.h = h;
+    this.opts = opts;
+    this.holes = [];
     this.cols = Math.floor(w / TILE);
     this.rows = Math.floor(h / TILE);
     this.noiseEvents = [];
@@ -100,6 +146,11 @@ class Level {
     this._staticDirty = true;
 
     let ok = false;
+    if (opts.layout) {
+      ok = this._generateLayout(opts.layout);
+      if (!ok) throw new Error('Layout build failed');
+      return;
+    }
     for (let attempt = 0; attempt < 12 && !ok; attempt++) {
       try { ok = this._generate(); } catch (e) { console.error('Level attempt failed:', e); ok = false; }
     }
@@ -134,13 +185,22 @@ class Level {
   }
 
   // ================= Генерация =================
-  _generate() {
+  _reset() {
     const C = this.cols, Rw = this.rows;
     this.grid = [];
     for (let y = 0; y < Rw; y++) { this.grid[y] = new Array(C).fill(T_OUT); }
     this.roomGrid = new Int16Array(C * Rw).fill(-1);
     this.reserved = new Uint8Array(C * Rw);
     this.doorway = new Uint8Array(C * Rw);
+    this.occupied = new Uint8Array(C * Rw);
+    this.itemGrid = new Int16Array(C * Rw).fill(-1);
+    this.destroyed = [];
+    this.brokenWindows = [];
+  }
+
+  _generate() {
+    const C = this.cols, Rw = this.rows;
+    this._reset();
 
     this.rooms = [];
     this.doors = [];
@@ -225,6 +285,11 @@ class Level {
     // --- 6. Комната игрока ---
     const startOpts = this.rooms.filter(r => !r.hall && ['bedroom', 'office', 'lounge', 'kitchen', 'storage'].includes(r.type) && r.w * r.h >= 30);
     this.playerRoom = Utils.choice(startOpts.length ? startOpts : this.rooms.filter(r => !r.hall));
+    return this._populate({});
+  }
+
+  // Мебель, свет, окна и враги — общее для случайных и статичных уровней
+  _populate(o) {
     {
       const t = this._nearestFree(this.playerRoom, this.playerRoom.cx, this.playerRoom.cy);
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this._reserve(t.x + dx, t.y + dy);
@@ -233,7 +298,7 @@ class Level {
 
     // --- 7. Перегородки в больших комнатах ---
     for (const r of this.rooms) {
-      if (r.hall || r.type === 'bathroom' || r === this.playerRoom) continue;
+      if (r.hall || ['bathroom', 'club', 'gym', 'lobby', 'vault', 'classroom'].includes(r.type) || r === this.playerRoom || o.noPartitions) continue;
       if (r.w >= 9 && r.h >= 8 && Math.random() < 0.45) this._tryPartition(r);
     }
 
@@ -255,21 +320,29 @@ class Level {
     // --- 9. Враги ---
     this._buildRoomGraph();
     const nearPlayer = new Set((this._roomGraph.get(this.playerRoom.id) || []).map(e => e.room));
+    const mix = o.mix || { tank: 0.06, hound: 0.07, sniper: 0.08 };
+    const density = o.density || 1;
     for (const r of this.rooms) {
       if (r === this.playerRoom) continue;
       const free = this._freeTiles(r, true);
       if (!free.length) continue;
       let n;
-      if (r.hall) n = Math.random() < 0.6 ? 1 : 0;
-      else n = Utils.clamp(Math.floor(free.length / 30) + Utils.randInt(0, 1), 1, 5);
+      if (r.hall) n = Math.random() < 0.6 * density ? 1 : 0;
+      else n = Utils.clamp(Math.round((free.length / 30 + Utils.randInt(0, 1)) * density), 1, 6);
       if (nearPlayer.has(r)) n = Math.min(n, 2);
+      if (r === o.bossRoom) {
+        // босс в последней комнате уровня, рядом с ним пара охранников
+        const bt = this._nearestFree(r, r.cx, r.cy);
+        this.spawnPoints.push({ x: bt.x * TILE + 5, y: bt.y * TILE + 5, boss: o.boss });
+        n = Math.min(n, 2);
+      }
       for (let i = 0; i < n && free.length; i++) {
         const t = free.splice(Math.floor(Math.random() * free.length), 1)[0];
         const roll = Math.random();
         let type = 'normal';
-        if (roll < 0.06) type = 'tank';
-        else if (roll < 0.13) type = 'hound';
-        else if (roll < 0.21) type = 'sniper';
+        if (roll < mix.tank) type = 'tank';
+        else if (roll < mix.tank + mix.hound) type = 'hound';
+        else if (roll < mix.tank + mix.hound + mix.sniper) type = 'sniper';
 
         const behavior = r.hall ? 'patrol' : Utils.choice(['static', 'patrol', 'patrol']);
         let waypoints = null;
@@ -281,10 +354,46 @@ class Level {
             waypoints.push({ x: wt.x * TILE + 7, y: wt.y * TILE + 7 });
           }
         }
-        this.spawnPoints.push({ x: t.x * TILE + 7, y: t.y * TILE + 7, behavior, waypoints, type });
+        const weapon = type === 'normal' && o.weapons ? Utils.choice(o.weapons) : null;
+        this.spawnPoints.push({ x: t.x * TILE + 7, y: t.y * TILE + 7, behavior, waypoints, type, weapon });
       }
     }
     return true;
+  }
+
+  // Статичный уровень по заготовке: комнаты-прямоугольники и связи между ними.
+  // Мебель и враги расставляются тем же движком, но с фиксированным seed — уровень всегда одинаковый.
+  _generateLayout(L) {
+    this._reset();
+    const C = this.cols;
+    this.rooms = []; this.doors = []; this.arches = []; this.connections = []; this.spawnPoints = [];
+    this.furniture = []; this.decor = this.furniture; this.decals = []; this.rugs = []; this.animated = [];
+    this.windows = []; this.signs = []; this._roomGraph = null; this._staticDirty = true;
+
+    for (const [i, d] of L.rooms.entries()) {
+      for (let y = d.y - 1; y <= d.y + d.h; y++) {
+        for (let x = d.x - 1; x <= d.x + d.w; x++) {
+          const inside = x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h;
+          if (inside) { this.grid[y][x] = T_FLOOR; this.roomGrid[y * C + x] = i; }
+          else if (this.grid[y][x] === T_OUT) this.grid[y][x] = T_WALL;
+        }
+      }
+      const room = { id: i, x: d.x, y: d.y, w: d.w, h: d.h, hall: d.type === 'hall', type: d.type, lights: [], approach: [], label: d.name };
+      room.cx = Math.floor(room.x + room.w / 2);
+      room.cy = Math.floor(room.y + room.h / 2);
+      this.rooms.push(room);
+    }
+    const runs = this._findWallRuns();
+    for (const [a, b, kind] of L.links) {
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      const run = runs.find(r => r.a === lo && r.b === hi);
+      if (!run) { console.warn('Нет общей стены между комнатами', a, b); continue; }
+      if (!this._makeOpening(run, kind || 'door')) console.warn('Не удалось сделать проход', a, b);
+    }
+    this.playerRoom = this.rooms[L.start];
+    return this._populate({
+      bossRoom: this.rooms[L.bossRoom], boss: L.boss, mix: L.mix, density: L.density, weapons: L.weapons, noPartitions: true,
+    });
   }
 
   _split(n, depth, out) {
@@ -425,9 +534,10 @@ class Level {
     }
     this.connections.push({ a: run.a, b: run.b, door: obj });
 
-    // Запрещаем мебель в зоне распахивания двери и прохода
-    const depthR = kind === 'door' ? 2 : 1;
-    for (let i = -1; i <= width; i++) {
+    // Запрещаем мебель в зоне распахивания двери и подхода к ней с обеих сторон
+    const depthR = kind === 'door' ? 3 : 2;
+    const side = kind === 'door' ? 2 : 1;
+    for (let i = -side; i < width + side; i++) {
       for (let d = -depthR; d <= depthR; d++) {
         const tx = horizontal ? start + i : run.fixed + d;
         const ty = horizontal ? run.fixed + d : start + i;
@@ -563,22 +673,32 @@ class Level {
       if (!cands.length) continue;
       const tries = shuffled(cands).slice(0, 8);
       for (const c of tries) {
-        const code = def.solid === 'tall' ? T_TALL : T_LOW;
+        const code = def.solid === 'tall' ? T_TALL : def.solid === 'none' ? T_FLOOR : T_LOW;
         for (let y = c.ty; y < c.ty + c.fh; y++) for (let x = c.tx; x < c.tx + c.fw; x++) this.grid[y][x] = code;
         if (this._roomConnected(room)) {
           let rot;
           if (place === 'wall') rot = [0, Math.PI / 2, Math.PI, -Math.PI / 2][c.dir];
           else rot = c.dir === 0 ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+          const area = c.fw * c.fh;
+          const hp = def.hp !== undefined ? def.hp : (def.solid === 'none' ? 0 : def.solid === 'tall' ? 4 + area * 2 : 2 + area);
           const item = {
             kind, rot, seed: (Math.random() * 1e9) | 0,
             x: (c.tx + c.fw / 2) * TILE, y: (c.ty + c.fh / 2) * TILE,
             W: along * TILE, H: depth * TILE, tall: def.solid === 'tall', room: room.id,
+            hp, maxHp: hp, mat: def.mat || ITEM_MAT[kind] || 'wood', tiles: [],
           };
+          const idx = this.furniture.length;
+          for (let y = c.ty; y < c.ty + c.fh; y++) for (let x = c.tx; x < c.tx + c.fw; x++) {
+            item.tiles.push([x, y]);
+            this.occupied[y * this.cols + x] = 1;
+            if (def.solid !== 'none') this.itemGrid[y * this.cols + x] = idx;
+          }
           this.furniture.push(item);
-          if (def.anim) this.animated.push({ kind: def.anim, x: item.x, y: item.y, rot, W: item.W, H: item.H, seed: item.seed % 1000 });
+          if (def.anim) { item.anim = { kind: def.anim, x: item.x, y: item.y, rot, W: item.W, H: item.H, seed: item.seed % 1000 }; this.animated.push(item.anim); }
           if (def.light) {
             const ox = -Math.sin(rot) * def.light.dy, oy = Math.cos(rot) * def.light.dy;
-            room.lights.push({ x: item.x + ox, y: item.y + oy, r: def.light.radius, color: def.light.color, a: 0.3 });
+            item.light = { x: item.x + ox, y: item.y + oy, r: def.light.radius, color: def.light.color, a: 0.3 };
+            room.lights.push(item.light);
           }
           return true;
         }
@@ -613,7 +733,7 @@ class Level {
   _footprintFree(room, tx, ty, fw, fh) {
     for (let y = ty; y < ty + fh; y++) {
       for (let x = tx; x < tx + fw; x++) {
-        if (this._getGrid(x, y) !== T_FLOOR || this._rg(x, y) !== room.id || this._isReserved(x, y)) return false;
+        if (this._getGrid(x, y) !== T_FLOOR || this._rg(x, y) !== room.id || this._isReserved(x, y) || this.occupied[y * this.cols + x]) return false;
       }
     }
     return true;
@@ -703,7 +823,7 @@ class Level {
         if ((x * 7 + y * 13) % 4 !== 0) continue;
         const rid = this._rg(x + dir[0], y + dir[1]);
         const room = this.rooms[rid];
-        this.windows.push({ x, y, dx: dir[0], dy: dir[1] });
+        this.windows.push({ x, y, dx: dir[0], dy: dir[1], idx: this.windows.length, broken: false });
         room.lights.push({ x: (x + 0.5 + dir[0] * 1.5) * TILE, y: (y + 0.5 + dir[1] * 1.5) * TILE, r: 75, color: '#5a7ac8', a: 0.28 });
       }
     }
@@ -872,10 +992,118 @@ class Level {
     return t === T_WALL || t === T_TALL || t === T_OUT;
   }
 
-  bulletHitsWall(px, py) {
-    if (this.isWallAt(px, py)) return true;
-    for (const d of this.doors) if (d.blocksPoint(px, py)) return true;
+  // b — пуля (если передана, она повреждает то, во что попала)
+  bulletHitsWall(px, py, b) {
+    const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+    const t = this._getGrid(tx, ty);
+    if (t === T_WALL || t === T_OUT) {
+      if (b) {
+        const w = this.windows.find(w => w.x === tx && w.y === ty);
+        if (w && !w.broken) this.damageWindow(w.idx);
+      }
+      return true;
+    }
+    if (t === T_TALL) {
+      if (b) this.damageFurniture(this.itemGrid[ty * this.cols + tx], 1, px, py);
+      return true;
+    }
+    if (t === T_LOW && b) {
+      // пуля пролетает над низкой мебелью, но задевает её и иногда застревает
+      const idx = this.itemGrid[ty * this.cols + tx];
+      if (idx >= 0) {
+        if (!b._hit) b._hit = new Set();
+        if (!b._hit.has(idx)) {
+          b._hit.add(idx);
+          this.damageFurniture(idx, 1, px, py);
+          if (Math.random() < 0.3) return true;
+        }
+      }
+    }
+    for (let i = 0; i < this.doors.length; i++) {
+      const d = this.doors[i];
+      if (d.blocksPoint(px, py)) { if (b) this.damageDoor(i, 1); return true; }
+    }
     return false;
+  }
+
+  // Удар холодным оружием по мебели/двери перед героем
+  meleeHit(x, y, angle, range, amount = 2) {
+    for (const k of [0.55, 0.85]) {
+      const px = x + Math.cos(angle) * range * k, py = y + Math.sin(angle) * range * k;
+      const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+      const idx = this.itemGrid[ty * this.cols + tx];
+      if (idx >= 0) { this.damageFurniture(idx, amount, px, py); return true; }
+      for (let i = 0; i < this.doors.length; i++) if (this.doors[i].blocksPoint(px, py)) { this.damageDoor(i, amount); return true; }
+    }
+    return false;
+  }
+
+  // ---------- разрушение (в корпоративе у клиента решает хост) ----------
+  damageFurniture(idx, amount, hx, hy) {
+    const f = this.furniture[idx];
+    if (!f || f.destroyed || !(f.hp > 0)) return;
+    const cols = { wood: '200,150,90', metal: '220,230,240', glass: '180,230,255', fabric: '200,140,170' };
+    Effects.burst(hx !== undefined ? hx : f.x, hy !== undefined ? hy : f.y, cols[f.mat] || cols.wood, 5, 120);
+    if (this.netClient) { if (this.onNetDamage) this.onNetDamage('f', idx, amount); return; }
+    f.hp -= amount;
+    if (f.hp <= 0) this.destroyFurniture(idx);
+  }
+
+  destroyFurniture(idx) {
+    const f = this.furniture[idx];
+    if (!f || f.destroyed) return;
+    f.destroyed = true;
+    for (const [x, y] of f.tiles) {
+      const k = y * this.cols + x;
+      if (this.grid[y][x] === T_LOW || this.grid[y][x] === T_TALL) this.grid[y][x] = T_FLOOR;
+      this.itemGrid[k] = -1;
+      this.occupied[k] = 0;
+    }
+    if (f.light) { const r = this.rooms[f.room]; r.lights = r.lights.filter(l => l !== f.light); }
+    if (f.anim) this.animated = this.animated.filter(a => a !== f.anim);
+    for (let i = 0; i < Math.max(1, f.tiles.length); i++) {
+      const [tx, ty] = f.tiles[i] || [Math.floor(f.x / TILE), Math.floor(f.y / TILE)];
+      this.decals.push({ kind: 'debris', mat: f.mat, seed: (f.seed + i * 77) | 0, rot: (f.seed % 7) + i, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE });
+    }
+    const cols = { wood: '220,170,110', metal: '230,240,255', glass: '190,240,255', fabric: '220,150,180' };
+    Effects.burst(f.x, f.y, cols[f.mat] || cols.wood, 24, 260);
+    Effects.dust(f.x, f.y, 6);
+    AudioSys.play(f.mat === 'metal' ? 'tank_hit' : 'door_open');
+    this.destroyed.push(idx);
+    this._redrawRegion(f.x - f.W, f.y - f.W, f.x + f.W, f.y + f.W, f.light ? f.light.r : 0);
+  }
+
+  damageWindow(idx) {
+    const w = this.windows[idx];
+    if (!w || w.broken) return;
+    if (this.netClient) { if (this.onNetDamage) this.onNetDamage('w', idx, 1); return; }
+    this.breakWindow(idx);
+  }
+
+  breakWindow(idx) {
+    const w = this.windows[idx];
+    if (!w || w.broken) return;
+    w.broken = true;
+    this.brokenWindows.push(idx);
+    const ix = (w.x + 0.5 + w.dx * 0.8) * TILE, iy = (w.y + 0.5 + w.dy * 0.8) * TILE;
+    for (let i = 0; i < 3; i++) this.decals.push({ kind: 'shards', seed: idx * 31 + i, rot: i, x: ix + (i - 1) * 9, y: iy + (i - 1) * 4 });
+    Effects.burst(ix, iy, '190,240,255', 20, 220);
+    AudioSys.play('empty_click');
+    this._redrawRegion((w.x - 1) * TILE, (w.y - 1) * TILE, (w.x + 2) * TILE, (w.y + 2) * TILE, 0);
+  }
+
+  damageDoor(i, amount) {
+    const d = this.doors[i];
+    if (!d || d.broken) return;
+    if (this.netClient) { if (this.onNetDamage) this.onNetDamage('d', i, amount); return; }
+    d.damage(amount);
+  }
+
+  // Перерисовать кусок статичного слоя (после разрушения) — без пересборки всей карты
+  _redrawRegion(x0, y0, x1, y1, lightR = 0) {
+    if (!this._staticCanvas) return;
+    const m = Math.max(40, lightR);
+    this._renderStatic({ x0: Math.max(0, x0 - m), y0: Math.max(0, y0 - m), x1: Math.min(this.w, x1 + m), y1: Math.min(this.h, y1 + m) });
   }
 
   lineOfSight(x1, y1, x2, y2) {
@@ -915,6 +1143,11 @@ class Level {
 
   // Искры при попадании пули в стену/дверь
   addImpact(x, y, vx, vy) {
+    // след от пули на стене
+    const sp = Math.hypot(vx, vy) || 1;
+    this.holes.push({ x: x - vx / sp * 1.5, y: y - vy / sp * 1.5, r: Utils.rand(1, 1.8) });
+    if (this.holes.length > 500) this.holes.shift();
+    Effects.dust(x - vx / sp * 4, y - vy / sp * 4, 2);
     const a0 = Math.atan2(-vy, -vx);
     for (let i = 0; i < 6; i++) {
       const a = a0 + Utils.rand(-1.1, 1.1);
@@ -1031,6 +1264,38 @@ class Level {
         }
         break;
       }
+      case 'court': {
+        // паркет спортзала (разметка рисуется отдельно)
+        ctx.fillStyle = c[(x + Math.floor(y / 2)) % c.length]; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        for (let i = 0; i < 4; i++) ctx.fillRect(px + i * 8, py, 1, TILE);
+        ctx.fillStyle = 'rgba(255,240,200,0.05)'; ctx.fillRect(px, py, TILE, 2);
+        break;
+      }
+      case 'marble': {
+        ctx.fillStyle = (x + y) % 2 ? c[0] : c[1]; ctx.fillRect(px, py, TILE, TILE);
+        ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px + H(x, y) * 32, py); ctx.quadraticCurveTo(px + 16, py + 16, px + H(y, x) * 32, py + 32); ctx.stroke();
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px, py, TILE, 1); ctx.fillRect(px, py, 1, TILE);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(px + 2, py + 2, TILE - 4, 2);
+        break;
+      }
+      case 'steel': {
+        ctx.fillStyle = c[(x + y) % 2]; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        for (let i = 0; i < 4; i++) ctx.fillRect(px + 3 + i * 7, py + 3 + (i % 2) * 6, 5, 1);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(px, py, TILE, 1); ctx.fillRect(px, py, 1, TILE);
+        ctx.fillStyle = '#4a525c';
+        for (const [ox, oy] of [[3, 3], [28, 3], [3, 28], [28, 28]]) ctx.fillRect(px + ox, py + oy, 1.5, 1.5);
+        break;
+      }
+      case 'dance': {
+        // стеклянные плитки танцпола — подсветка анимируется поверх
+        ctx.fillStyle = '#0c0812'; ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = hexA(c[Math.floor(H(x, y, 3) * c.length)], 0.28); ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(px + 2, py + 2, TILE - 4, 2);
+        break;
+      }
       default: { // lino
         ctx.fillStyle = (x + y) % 2 ? c[0] : c[1]; ctx.fillRect(px, py, TILE, TILE);
         ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(px, py, TILE, 1); ctx.fillRect(px, py, 1, TILE);
@@ -1093,6 +1358,24 @@ class Level {
 
   _drawWindow(ctx, w) {
     const px = w.x * TILE, py = w.y * TILE;
+    if (w.broken) {
+      // пустая рама с осколками по краям
+      ctx.save();
+      ctx.fillStyle = '#0c0a12';
+      if (w.dy !== 0) {
+        ctx.fillRect(px + 2, py + 10, TILE - 4, 9);
+        ctx.fillStyle = '#05060a'; ctx.fillRect(px + 3, py + 11, TILE - 6, 7);
+        ctx.fillStyle = 'rgba(160,210,255,0.6)';
+        for (const [ox, w2] of [[3, 3], [9, 2], [20, 4], [26, 2]]) { ctx.beginPath(); ctx.moveTo(px + ox, py + 11); ctx.lineTo(px + ox + w2, py + 11); ctx.lineTo(px + ox + 1, py + 15); ctx.fill(); }
+      } else {
+        ctx.fillRect(px + 11, py + 2, 9, TILE - 4);
+        ctx.fillStyle = '#05060a'; ctx.fillRect(px + 12, py + 3, 7, TILE - 6);
+        ctx.fillStyle = 'rgba(160,210,255,0.6)';
+        for (const [oy, h2] of [[3, 3], [10, 2], [19, 4], [26, 2]]) { ctx.beginPath(); ctx.moveTo(px + 12, py + oy); ctx.lineTo(px + 12, py + oy + h2); ctx.lineTo(px + 16, py + oy + 1); ctx.fill(); }
+      }
+      ctx.restore();
+      return;
+    }
     ctx.save();
     if (w.dy !== 0) {
       ctx.fillStyle = '#0c0a12'; ctx.fillRect(px + 2, py + 10, TILE - 4, 9);
@@ -1175,13 +1458,26 @@ class Level {
       this._staticCanvas.height = this.h;
       this._staticCtx = this._staticCanvas.getContext('2d');
     }
+    this._renderStatic(null);
+    this._staticDirty = false;
+  }
+
+  // region = {x0,y0,x1,y1} в пикселях или null — весь уровень
+  _renderStatic(region) {
     const ctx = this._staticCtx;
     ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, this.w, this.h);
+    const R = region || { x0: 0, y0: 0, x1: this.w, y1: this.h };
+    const tx0 = Math.max(0, Math.floor(R.x0 / TILE)), ty0 = Math.max(0, Math.floor(R.y0 / TILE));
+    const tx1 = Math.min(this.cols - 1, Math.floor(R.x1 / TILE)), ty1 = Math.min(this.rows - 1, Math.floor(R.y1 / TILE));
+    const px0 = tx0 * TILE, py0 = ty0 * TILE, pw = (tx1 - tx0 + 1) * TILE, ph = (ty1 - ty0 + 1) * TILE;
+    const near = (x, y, m) => x > px0 - m && x < px0 + pw + m && y > py0 - m && y < py0 + ph + m;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip();
+    ctx.clearRect(px0, py0, pw, ph);
 
     // 1. Улица и полы
-    for (let y = 0; y < this.rows; y++) {
-      for (let x = 0; x < this.cols; x++) {
+    for (let y = ty0; y <= ty1; y++) {
+      for (let x = tx0; x <= tx1; x++) {
         const t = this.grid[y][x];
         if (t === T_OUT) { this._drawOutside(ctx, x, y); continue; }
         if (t === T_WALL) continue;
@@ -1190,30 +1486,47 @@ class Level {
         else this._drawThreshold(ctx, x, y);
       }
     }
+    this._drawCourtLines(ctx);
     // 2. Ковры и мусор
-    for (const rug of this.rugs) DecorArt.drawRug(ctx, rug);
-    for (const d of this.decals) DecorArt.drawDecal(ctx, d);
+    for (const rug of this.rugs) if (near(rug.x + rug.w / 2, rug.y + rug.h / 2, Math.max(rug.w, rug.h))) DecorArt.drawRug(ctx, rug);
+    for (const d of this.decals) if (near(d.x, d.y, 40)) DecorArt.drawDecal(ctx, d);
     // 3. Тени у стен
-    for (let y = 0; y < this.rows; y++) {
-      for (let x = 0; x < this.cols; x++) {
+    for (let y = ty0; y <= ty1; y++) {
+      for (let x = tx0; x <= tx1; x++) {
         const t = this.grid[y][x];
         if (t !== T_WALL && t !== T_OUT) this._drawAO(ctx, x, y);
       }
     }
     // 4. Мебель
-    for (const f of this.furniture) this._drawFurniture(ctx, f);
+    for (const f of this.furniture) if (!f.destroyed && near(f.x, f.y, Math.max(f.W, f.H))) this._drawFurniture(ctx, f);
     // 5. Освещение комнат
     this._drawLighting(ctx);
     // 6. Стены, окна, вывески
-    for (let y = 0; y < this.rows; y++) {
-      for (let x = 0; x < this.cols; x++) {
+    for (let y = ty0; y <= ty1; y++) {
+      for (let x = tx0; x <= tx1; x++) {
         if (this.grid[y][x] === T_WALL && !this._isDoorway(x, y)) this._drawWall(ctx, x, y);
       }
     }
-    for (const w of this.windows) this._drawWindow(ctx, w);
-    for (const s of this.signs) this._drawSign(ctx, s);
+    for (const w of this.windows) if (near(w.x * TILE, w.y * TILE, 40)) this._drawWindow(ctx, w);
+    for (const s of this.signs) if (near(s.x, s.y, 120)) this._drawSign(ctx, s);
+    ctx.restore();
+  }
 
-    this._staticDirty = false;
+  // Разметка баскетбольной площадки в спортзале
+  _drawCourtLines(ctx) {
+    for (const r of this.rooms) {
+      if (r.type !== 'gym') continue;
+      const x = (r.x + 1) * TILE, y = (r.y + 1) * TILE, w = (r.w - 2) * TILE, h = (r.h - 2) * TILE;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(240,230,210,0.55)'; ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.beginPath(); ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.15, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,80,60,0.45)';
+      ctx.beginPath(); ctx.arc(x, y + h / 2, Math.min(w, h) * 0.3, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + w, y + h / 2, Math.min(w, h) * 0.3, Math.PI / 2, Math.PI * 1.5); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   draw(ctx, cam, player) {
@@ -1229,6 +1542,22 @@ class Level {
     if (sw > 0 && sh > 0) ctx.drawImage(this._staticCanvas, sx, sy, sw, sh, sx, sy, sw, sh);
 
     const inView = (x, y, m) => x > sx - m && x < sx + sw + m && y > sy - m && y < sy + sh + m;
+    // пульсирующая подсветка танцпола
+    for (const r of this.rooms) {
+      if (r.type !== 'club' || !inView((r.x + r.w / 2) * TILE, (r.y + r.h / 2) * TILE, Math.max(r.w, r.h) * TILE)) continue;
+      const c = ROOM_THEMES.club.colors;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+        if (this.grid[y][x] !== T_FLOOR) continue;
+        const k = Math.sin(this.time * 3 + DecorArt.hash(x, y) * 6.28 + (x + y) * 0.4);
+        if (k < 0.55) continue;
+        ctx.fillStyle = hexA(c[Math.floor(DecorArt.hash(x, y, 3) * c.length)], (k - 0.55) * 0.5);
+        ctx.fillRect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4);
+      }
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(8,6,10,0.85)';
+    for (const h of this.holes) if (inView(h.x, h.y, 10)) { ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2); ctx.fill(); }
     for (const a of this.animated) if (inView(a.x, a.y, 80)) DecorArt.drawAnim(ctx, a, this.time);
     for (const d of this.doors) if (inView(d.hx, d.hy, 80)) d.draw(ctx);
   }

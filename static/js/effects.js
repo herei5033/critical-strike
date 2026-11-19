@@ -15,12 +15,24 @@ const Effects = {
     const sp = Utils.rand(60, 130);
     this.casings.push({
       x, y, vx: Math.cos(a) * sp - Math.cos(angle) * 20, vy: Math.sin(a) * sp - Math.sin(angle) * 20,
-      z: 7, vz: Utils.rand(50, 90), rot: Math.random() * Math.PI * 2, spin: Utils.rand(-25, 25), shell, rest: false,
+      z: 10, vz: Utils.rand(70, 120), rot: Math.random() * Math.PI * 2, spin: Utils.rand(-30, 30), shell, rest: false,
     });
     if (this.casings.length > 320) {
       const i = this.casings.findIndex(c => c.rest);
       this.casings.splice(i >= 0 ? i : 0, 1);
     }
+  },
+
+  // Вспышка у ствола: искры вперёд, клубок дыма
+  muzzle(x, y, angle, big = false) {
+    const n = big ? 10 : 5;
+    for (let i = 0; i < n; i++) {
+      const a = angle + Utils.rand(-0.35, 0.35) * (big ? 1.6 : 1);
+      const sp = Utils.rand(200, 420);
+      this.bursts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: Utils.rand(0.05, 0.14), max: 0.14, color: '255,220,140' });
+    }
+    this.smoke(x, y, angle, big ? 6 : 3);
+    if (big) this.ring(x, y, '255,220,160', 16);
   },
 
   smoke(x, y, angle, n = 3) {
@@ -44,7 +56,7 @@ const Effects = {
     for (let i = 0; i < n; i++) {
       const a = (angle !== null && angle !== undefined) ? angle + Utils.rand(-0.7, 0.7) : Utils.rand(0, Math.PI * 2);
       const d = Utils.rand(3, 30);
-      const r = Utils.rand(1.2, 4.2) * (1 - d / 45);
+      const r = Utils.rand(0.9, 3.2) * (1 - d / 45);
       this.floorBlood.push({ x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, rx: r * Utils.rand(1.2, 2.6), ry: r, rot: a, a: Utils.rand(0.55, 0.9) });
     }
     if (this.floorBlood.length > 900) this.floorBlood.splice(0, this.floorBlood.length - 900);
@@ -87,6 +99,7 @@ const Effects = {
         c.vz = -c.vz * 0.35;
         c.vx *= 0.55; c.vy *= 0.55; c.spin *= 0.5;
         if (Math.abs(c.vz) < 18) { c.rest = true; c.vz = 0; }
+        else if (Math.random() < 0.6) this.bursts.push({ x: c.x, y: c.y, vx: Utils.rand(-30, 30), vy: Utils.rand(-30, 30), life: 0.08, max: 0.1, color: '255,230,150' });
       }
     }
     const step = (arr, damp) => {
@@ -117,12 +130,20 @@ const Effects = {
     ctx.save();
     ctx.translate(c.x, c.y - c.z);
     ctx.rotate(c.rot);
+    // гильзы крупнее и с бликом, чтобы было видно, как они падают и отскакивают
     if (c.shell) {
-      ctx.fillStyle = '#c82a2a'; ctx.fillRect(-2.4, -1, 3.4, 2);
-      ctx.fillStyle = '#d0a040'; ctx.fillRect(1, -1, 1.4, 2);
+      ctx.fillStyle = '#3a0a0a'; ctx.fillRect(-3.2, -1.6, 5.8, 3.2);
+      ctx.fillStyle = '#c82a2a'; ctx.fillRect(-2.8, -1.2, 3.8, 2.4);
+      ctx.fillStyle = '#e0b040'; ctx.fillRect(1, -1.2, 1.6, 2.4);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(-2.8, -1.2, 3.8, 0.6);
     } else {
-      ctx.fillStyle = '#d8a83a'; ctx.fillRect(-1.6, -0.6, 3.2, 1.2);
-      ctx.fillStyle = '#fff0a0'; ctx.fillRect(-1.6, -0.6, 3.2, 0.4);
+      ctx.fillStyle = '#4a3410'; ctx.fillRect(-2.4, -1.1, 4.8, 2.2);
+      ctx.fillStyle = '#e0b040'; ctx.fillRect(-2, -0.8, 4, 1.6);
+      ctx.fillStyle = '#fff4b0'; ctx.fillRect(-2, -0.8, 4, 0.5);
+      ctx.fillStyle = '#a07a20'; ctx.fillRect(1.4, -0.8, 0.6, 1.6);
+    }
+    if (!c.rest && c.z > 1) {
+      ctx.globalAlpha = 0.5; ctx.fillStyle = '#fff6c0'; ctx.fillRect(-0.6, -0.6, 1.2, 1.2); ctx.globalAlpha = 1;
     }
     ctx.restore();
   },

@@ -417,7 +417,82 @@ const DecorArt = (() => {
       R(ctx, -11, 10, 18, 2, '#05d9e8');
     }},
 
-    pillar: { along: 1, depth: 1, solid: 'tall', draw(ctx) {
+
+    // ----- колледж -----
+    schoolDesk: { along: 1, depth: 1, solid: 'low', hp: 3, mat: 'wood', draw(ctx, W, H, r) {
+      chair(ctx, 0, 11, 0, '#2a3a5a', '#1a2440');
+      slab(ctx, -13, -12, 26, 17, 1, '#8a6a42', '#4a3420', '#a8865a');
+      R(ctx, -11, -11, 22, 1, '#b89a6a');
+      if (r() < 0.7) { ctx.save(); ctx.translate(-4, -5); ctx.rotate((r() - 0.5) * 0.5); R(ctx, -4, -3, 9, 6, '#e8e4dc'); R(ctx, -3, -2, 6, 0.6, '#7a7a86'); R(ctx, -3, 0, 5, 0.6, '#7a7a86'); ctx.restore(); }
+      if (r() < 0.5) { R(ctx, 5, -6, 1, 7, '#ffd319'); R(ctx, 5, -6, 1, 1, '#ff9aa0'); }
+    }},
+    teacherDesk: { along: 2, depth: 1, solid: 'low', hp: 5, mat: 'wood', draw(ctx, W, H, r) {
+      chair(ctx, 0, -H / 2 - 4, Math.PI, '#3a2a1e', '#24190f');
+      slab(ctx, -W / 2 + 2, -H / 2 + 3, W - 4, H - 6, 2, '#5a3a22', '#2e1c0e', '#7a5232');
+      R(ctx, -10, -4, 9, 7, '#e8e4dc'); R(ctx, -9, -2, 6, 0.6, '#555');
+      circ(ctx, 12, 0, 3, '#d8d8d8'); circ(ctx, 12, 0, 2, '#3b2414');
+      R(ctx, 2, -5, 6, 4, '#1a1a22'); R(ctx, 2.5, -4.5, 5, 3, '#3a6a9a');
+    }},
+    blackboard: { along: 3, depth: 1, solid: 'none', draw(ctx, W, H) {
+      R(ctx, -W / 2 + 4, -H / 2, W - 8, 6, '#3a2a1a');
+      R(ctx, -W / 2 + 6, -H / 2 + 1, W - 12, 4, '#1e3a2a');
+      ctx.strokeStyle = 'rgba(230,230,230,0.6)'; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(-W / 2 + 12, -H / 2 + 3); ctx.lineTo(-W / 2 + 30, -H / 2 + 2.4); ctx.moveTo(-W / 2 + 40, -H / 2 + 3.2); ctx.lineTo(W / 2 - 14, -H / 2 + 2.6); ctx.stroke();
+      R(ctx, -W / 2 + 8, -H / 2 + 6, W - 16, 1.6, '#5a4630');
+      R(ctx, -6, -H / 2 + 6, 3, 1, '#f0f0f0');
+    }},
+    bookRow: { along: 3, depth: 1, solid: 'tall', hp: 6, mat: 'wood', draw(ctx, W, H, r) {
+      slab(ctx, -W / 2 + 1, -H / 2 + 2, W - 2, H - 4, 1, '#3a2414', '#1f130a', '#55361f');
+      const cols = ['#7a2a2a', '#2a4a7a', '#8a7a3a', '#2a5a3a', '#5a2a6a', '#c8c0a8'];
+      for (const yy of [-H / 2 + 4, 1]) {
+        let x = -W / 2 + 4;
+        while (x < W / 2 - 4) { const bw = 2 + Math.floor(r() * 3); R(ctx, x, yy, bw, H / 2 - 6, cols[Math.floor(r() * cols.length)]); x += bw + 0.5; }
+      }
+    }},
+    // ----- спортзал -----
+    mat: { along: 2, depth: 3, solid: 'none', draw(ctx, W, H, r) {
+      const c = ['#1a3a7a', '#7a1a2a', '#2a5a3a'][Math.floor(r() * 3)];
+      box(ctx, -W / 2 + 3, -H / 2 + 3, W - 6, H - 6, 3, c);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+      for (let i = 1; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-W / 2 + 3, -H / 2 + 3 + i * (H - 6) / 3); ctx.lineTo(W / 2 - 3, -H / 2 + 3 + i * (H - 6) / 3); ctx.stroke(); }
+    }},
+    lockers: { along: 3, depth: 1, solid: 'tall', hp: 8, mat: 'metal', draw(ctx, W, H) {
+      slab(ctx, -W / 2 + 1, -H / 2 + 1, W - 2, H - 3, 1, '#4a5a6a', '#2a3440', '#6a7a8a');
+      const n = 6;
+      for (let i = 0; i < n; i++) {
+        const x = -W / 2 + 2 + i * (W - 4) / n;
+        R(ctx, x, -H / 2 + 2, 0.8, H - 6, '#2a3440');
+        R(ctx, x + 3, H / 2 - 7, 3, 1.2, '#9aa8b8');
+        for (let k = 0; k < 3; k++) R(ctx, x + 2, -H / 2 + 5 + k * 2, (W - 4) / n - 4, 0.6, '#3a4654');
+      }
+    }},
+    // ----- банк -----
+    safe: { along: 1, depth: 1, solid: 'tall', hp: 14, mat: 'metal', draw(ctx) {
+      slab(ctx, -14, -14, 28, 28, 2, '#5a6068', '#2e3238', '#8a9098');
+      box(ctx, -10, -9, 20, 18, 2, '#3e444c');
+      circ(ctx, 0, 0, 5.5, '#2a2e34'); circ(ctx, 0, 0, 4, '#9aa0a8');
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; R(ctx, Math.cos(a) * 3 - 0.4, Math.sin(a) * 3 - 0.4, 0.8, 0.8, '#2a2e34'); }
+      R(ctx, 8, -2, 2, 4, '#c8a040');
+    }},
+    counter: { along: 4, depth: 1, solid: 'low', hp: 10, mat: 'wood', draw(ctx, W, H) {
+      slab(ctx, -W / 2 + 1, -H / 2 + 4, W - 2, H - 8, 2, '#4a2e1a', '#24160c', '#6a4628');
+      R(ctx, -W / 2 + 2, -H / 2 + 2, W - 4, 2, 'rgba(160,210,240,0.55)');
+      for (let i = 1; i < 4; i++) R(ctx, -W / 2 + i * W / 4 - 0.5, -H / 2 + 1, 1, 4, '#8a9098');
+      for (let i = 0; i < 4; i++) { const x = -W / 2 + 8 + i * W / 4; R(ctx, x, -2, 8, 5, '#1a1a22'); R(ctx, x + 0.5, -1.5, 7, 4, '#2a5a4a'); }
+    }},
+    // ----- ночной клуб -----
+    dj: { along: 3, depth: 1, solid: 'low', hp: 6, mat: 'metal', anim: 'dj', light: { color: '#ff3aa0', radius: 90, dy: 26 }, draw(ctx, W, H) {
+      slab(ctx, -W / 2 + 2, -H / 2 + 3, W - 4, H - 7, 2, '#18181e', '#08080a', '#2a2a34');
+      for (const x of [-W / 2 + 14, W / 2 - 14]) { circ(ctx, x, -1, 9, '#050407'); circ(ctx, x, -1, 8, '#141418'); circ(ctx, x, -1, 2, '#c8c8d0'); }
+      R(ctx, -8, -6, 16, 10, '#0e0e14');
+      for (let i = 0; i < 5; i++) R(ctx, -6 + i * 3, -4, 1.4, 6, '#3a3a48');
+    }},
+    speaker: { along: 1, depth: 1, solid: 'tall', hp: 6, mat: 'metal', draw(ctx) {
+      slab(ctx, -14, -14, 28, 28, 2, '#141418', '#060608', '#26262e');
+      circ(ctx, 0, 2, 8, '#050407'); circ(ctx, 0, 2, 6.5, '#1e1e24'); circ(ctx, 0, 2, 2.4, '#3a3a44');
+      circ(ctx, 0, -9, 3, '#050407'); circ(ctx, 0, -9, 2, '#2a2a32');
+    }},
+    pillar: { along: 1, depth: 1, solid: 'tall', hp: 0, draw(ctx) {
       box(ctx, -15, -13, 30, 30, 2, 'rgba(0,0,0,0.5)');
       box(ctx, -15, -15, 30, 30, 2, '#2c2a33');
       box(ctx, -12, -12, 24, 24, 1, '#3a3744');
@@ -476,6 +551,19 @@ const DecorArt = (() => {
         ctx.strokeStyle = '#0a0a0e'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(-14, 0); ctx.bezierCurveTo(-5, -8, 5, 8, 14, 0); ctx.stroke();
         break;
+      case 'debris': {
+        const mats = { wood: ['#5a3a22', '#8a5a32', '#3a2414'], metal: ['#4a5058', '#7a8088', '#2a2e34'], glass: ['#9fd8e8', '#d0f0ff', '#6aa0b8'], fabric: ['#3a2a3a', '#5a3a4a', '#2a1a2a'] };
+        const cols = mats[d.mat] || mats.wood;
+        for (let i = 0; i < 9; i++) {
+          ctx.fillStyle = cols[i % cols.length];
+          const x = (r() - 0.5) * 26, y = (r() - 0.5) * 26;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(r() * 3);
+          ctx.fillRect(-2 - r() * 3, -1, 4 + r() * 5, 1.5 + r() * 2);
+          ctx.restore();
+        }
+        ctx.globalAlpha = 0.3; ell(ctx, 0, 0, 12, 9, 0, '#000'); ctx.globalAlpha = 1;
+        break;
+      }
       case 'puddle':
         ctx.globalAlpha = 0.3; ell(ctx, 0, 0, 10 + r() * 6, 5 + r() * 4, 0, '#8fd8ff');
         ctx.globalAlpha = 0.25; ell(ctx, -3, -1, 4, 1.5, 0, '#ffffff'); ctx.globalAlpha = 1;
@@ -526,6 +614,13 @@ const DecorArt = (() => {
       R(ctx, -11, 10, 18, 2, '#9ff8ff');
       ctx.globalAlpha = 0.12;
       circ(ctx, 0, H / 2 + 6, 15, '#05d9e8');
+    } else if (a.kind === 'dj') {
+      for (const [x, k] of [[-W / 2 + 14, 1], [W / 2 - 14, -1]]) {
+        const ang = t * 6 * k + a.seed;
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(x, -1); ctx.lineTo(x + Math.cos(ang) * 7, -1 + Math.sin(ang) * 7); ctx.stroke();
+      }
+      for (let i = 0; i < 5; i++) { const lv = (Math.sin(t * 9 + i * 1.3) + 1) / 2; R(ctx, -6 + i * 3, 2 - lv * 6, 1.4, lv * 6, i % 2 ? '#ff3aa0' : '#05d9e8'); }
     } else if (a.kind === 'server') {
       const n = Math.round(W / T);
       for (let i = 0; i < n; i++) {

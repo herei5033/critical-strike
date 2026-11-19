@@ -55,7 +55,7 @@ class Pickup {
         if (Utils.dist(nextX, nextY, ex, ey) < 22) {
           if (this.weapon && this.weapon.type === 'melee') {
             // Брошенное холодное оружие убивает (танк теряет 1 HP)
-            e.takeDamage(1, pickups);
+            e.takeDamage(1, pickups, { kind: 'throw', angle: Math.atan2(this.vy, this.vx) });
             if (e.particles) e.particles.push(...Utils.spawnBloodParticles(ex, ey, 20));
           } else {
             e.stun();

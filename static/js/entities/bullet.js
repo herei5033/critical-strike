@@ -35,7 +35,7 @@ class Bullet {
       const t = i / steps;
       const hx = this.px + (this.x - this.px) * t;
       const hy = this.py + (this.y - this.py) * t;
-      if (level.bulletHitsWall(hx, hy)) {
+      if (level.bulletHitsWall(hx, hy, this.cosmetic ? null : this)) {
         this.x = hx; this.y = hy;
         this.dead = true;
         if (level.addImpact) level.addImpact(hx, hy, this.vx, this.vy);

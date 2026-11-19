@@ -56,6 +56,10 @@ class Game {
 
     // Корпоратив и боссы
     this.coopUI = new CoopUI(this);
+    this.campaignUI = new CampaignUI(this);
+    this.soloMode = 0;          // номер уровня кампании или 'endless'
+    this.campaignIdx = null;
+    this.levelBanner = null;
     this.coop = null;
     this.fxBullets = [];      // пули напарников и вражеские пули у клиента — только для вида
     this.bossDirector = null;
@@ -100,11 +104,14 @@ class Game {
 
   startRun() {
     this.coop = null;
-    this.bossDirector = new BossDirector();
+    this.campaignIdx = typeof this.soloMode === 'number' ? this.soloMode : null;
+    // боссы по очкам — в бесконечном режиме; в кампании у каждого уровня свой босс
+    this.bossDirector = this.campaignIdx === null ? new BossDirector() : null;
     this.score = 0;
     this.kills = 0;
     this.playerName = "";
-    this.nameSubmitted = false;
+    this.nameSubmitted = true;
+    this.runSubmitted = false;
 
     AudioSys.stopMusic();
     AudioSys.playMusic('/static/audio/game_music.mp3');
@@ -115,9 +122,22 @@ class Game {
 
   startLevel() {
     AudioSys.init();
-    this._buildLevel();
+    const L = this.campaignIdx !== null ? CAMPAIGN[this.campaignIdx] : null;
+    if (L) Utils.withSeed(L.seed, () => this._buildLevel(L));
+    else this._buildLevel();
     this._spawnPlayer(0);
     this._afterLevelStart();
+    this.levelBanner = L
+      ? { name: L.name, sub: `УРОВЕНЬ ${this.campaignIdx + 1} ИЗ ${CAMPAIGN.length}`, color: L.color, t: 3 }
+      : { name: 'БЕСКОНЕЧНЫЙ ЗАБЕГ', sub: 'боссы приходят за очками', color: '#c060ff', t: 2.5 };
+  }
+
+  // Запись результата забега в таблицу лидеров (имя — никнейм или «ИГРОК»)
+  _submitRun() {
+    if (this.runSubmitted || this.coop) return;
+    this.runSubmitted = true;
+    this.playerName = Nick.get() || 'ИГРОК';
+    this.submitScore(this.playerName);
   }
 
   // Начало матча корпоратива (после того как хост нажал старт)
@@ -159,10 +179,10 @@ class Game {
   }
 
   // Уровень, враги и предметы. Использует только Math.random — поэтому детерминирован при withSeed
-  _buildLevel() {
+  _buildLevel(layout) {
     const worldW = TILE * 60;
     const worldH = TILE * 45;
-    try { this.level = new Level(worldW, worldH); }
+    try { this.level = new Level(worldW, worldH, layout ? { layout } : {}); }
     catch (e) { console.error('Level gen failed:', e); this.level = null; }
 
     if (!this.level) {
@@ -183,7 +203,15 @@ class Game {
       };
     }
 
-    this.enemies = this.level.spawnPoints.map(p => new Enemy(p.x, p.y, p.behavior, p.waypoints, p.type));
+    const diff = layout ? CAMPAIGN.indexOf(layout) : 0;
+    this.enemies = this.level.spawnPoints.map(p => {
+      if (p.boss) return new Boss(p.x, p.y, p.boss, this.coop ? this.coop.players.length : 1);
+      const e = new Enemy(p.x, p.y, p.behavior, p.waypoints, p.type);
+      if (p.weapon) e.weapon = makeWeapon(p.weapon);
+      // с каждым уровнем враги быстрее и зорче
+      if (diff > 0) { e.speed *= 1 + diff * 0.06; e.fovRange *= 1 + diff * 0.08; }
+      return e;
+    });
     this.totalEnemies = this.enemies.length;
     this.bullets = [];
     this.pickups = [];
@@ -295,6 +323,7 @@ class Game {
     }
 
     if (this.state === 'coop') { this.coopUI.update(dt); return; }
+    if (this.state === 'levelSelect') { this.campaignUI.update(dt); return; }
 
     if (this.coop) {
       this.coop.update(dt);
@@ -325,7 +354,7 @@ class Game {
       }
 
       if (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space')) this.startRun();
-      if (Input.wasPressed('Escape')) this.toMenu();
+      if (Input.wasPressed('Escape')) { this.campaignUI.open(); return; }
 
       if (Input.consumeClick()) {
         const mx = Input.mouse.x;
@@ -379,9 +408,27 @@ class Game {
       return;
     }
 
+    if (this.state === 'victory') {
+      this.victoryT += dt;
+      Effects.update(dt, this.level);
+      this.player.updateParticles(dt);
+      if (this.victoryT < 0.8) return;
+      const last = this.campaignIdx >= CAMPAIGN.length - 1;
+      const next = () => { this.campaignIdx++; this.soloMode = this.campaignIdx; this.startLevel(); };
+      if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) { if (last) { this._submitRun(); this.toMenu(); } else next(); return; }
+      if (Input.wasPressed('Escape')) { this._submitRun(); this.toMenu(); return; }
+      if (Input.consumeClick()) {
+        const mx = Input.mouse.x, my = Input.mouse.y, w = this.W, h = this.H;
+        if (mx > w / 2 - 150 && mx < w / 2 + 150 && my > h * 0.62 && my < h * 0.62 + 46) { if (last) { this._submitRun(); this.toMenu(); } else next(); }
+        else if (mx > w / 2 - 150 && mx < w / 2 + 150 && my > h * 0.62 + 58 && my < h * 0.62 + 104) { this._submitRun(); this.toMenu(); }
+      }
+      return;
+    }
+
     if (this.state === 'dead') {
       // Кровь/частицы и тряска продолжают затухать после смерти
       this.player.updateParticles(dt);
+      this.deathT = (this.deathT || 0) + dt;
       Effects.update(dt, this.level);
       this.shake = Math.max(0, this.shake - dt * 2);
 
@@ -393,37 +440,10 @@ class Game {
         return;
       }
 
-      if (!this.nameSubmitted) {
-        if (!Input.touch.moveActive) {
-          if (Input.wasPressed('Enter')) {
-            if (this.playerName.length > 0) {
-              this.submitScore(this.playerName);
-              this.nameSubmitted = true;
-            }
-          } else {
-            for (let key in Input._pressedThisFrame) {
-              if (!Input._pressedThisFrame[key]) continue;
-              if (key.startsWith('Key') && key.length === 4) {
-                this.playerName += key[3];
-                if (this.playerName.length > 12) this.playerName = this.playerName.slice(0, 12);
-              } else if (key === 'Backspace') {
-                this.playerName = this.playerName.slice(0, -1);
-              }
-            }
-          }
-        } else {
-          if (Input.consumeClick()) {
-            const name = prompt("Введите ваше имя:", "PLAYER");
-            if (name) {
-              this.playerName = name.substring(0, 12).toUpperCase();
-              this.submitScore(this.playerName);
-              this.nameSubmitted = true;
-            }
-          }
-        }
-      } else {
-        if (Input.wasPressed('KeyR') || Input.wasPressed('Enter') || Input.wasPressed('Space')) this.startRun();
-        if (Input.wasPressed('Escape')) this.toMenu();
+      if (this.deathT < 1) return;
+      {
+        if (Input.wasPressed('KeyR') || Input.wasPressed('Enter') || Input.wasPressed('Space')) { this.startRun(); return; }
+        if (Input.wasPressed('Escape')) { this.toMenu(); return; }
 
         if (Input.consumeClick()) {
           const mx = Input.mouse.x;
@@ -454,7 +474,11 @@ class Game {
         try {
           this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
         } catch (e) { console.error('PLAYER UPDATE ERROR:', e); }
-        if (this.bullets.length > shotsBefore) this.player._netShots = (this.player._netShots || 0) + 1;
+        if (this.bullets.length > shotsBefore) {
+          this.player._netShots = (this.player._netShots || 0) + 1;
+          const wid = this.player.weapon ? this.player.weapon.id : '';
+          for (let i = shotsBefore; i < this.bullets.length; i++) this.bullets[i].src = wid;
+        }
         if (this.player._thrownPickup) {
           const tp = this.player._thrownPickup;
           if (coopClient) {
@@ -500,14 +524,14 @@ class Game {
         if (!b.dead && !b.isPlayer && !this.player.dead) {
           // Проверка по отрезку, чтобы быстрые пули не пролетали сквозь игрока
           if (Utils.segDist(b.px, b.py, b.x, b.y, pcx, pcy) < 12) {
-            this.player.takeDamage(1); b.dead = true; this.shake = Math.max(this.shake, 0.6);
+            this.player.takeDamage(1, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) }); b.dead = true; this.shake = Math.max(this.shake, 0.6);
             this.chromaticOffset = 10;
           }
         }
         // хост: вражеские пули ранят напарников (урон уходит им по сети)
         if (!b.dead && !b.isPlayer) {
           for (const r of remotes) {
-            if (Utils.segDist(b.px, b.py, b.x, b.y, r.x + 9, r.y + 9) < 12) { r.takeDamage(1); b.dead = true; break; }
+            if (Utils.segDist(b.px, b.py, b.x, b.y, r.x + 9, r.y + 9) < 12) { r.takeDamage(1, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) }); b.dead = true; break; }
           }
         }
       }
@@ -586,14 +610,22 @@ class Game {
       }
 
       if (this.player.dead && !this.coop) {
-        this.state = 'dead'; this.shake = 1.0; this.nameSubmitted = false; this.playerName = "";
-        // никнейм из корпоратива — имя вводить не нужно
-        const nick = Nick.get();
-        if (nick) { this.playerName = nick; this.submitScore(nick); this.nameSubmitted = true; }
+        // имя не спрашиваем: результат записывается под никнеймом (или «ИГРОК»)
+        this.state = 'dead'; this.shake = 1.0; this.deathT = 0;
+        this._submitRun();
       }
       if (!coopClient && this.state === 'playing' && this.enemies.every(e => e.dead)) {
-        this.state = 'levelClear'; this.levelClearTimer = this.coop ? 1.8 : 1.0;
+        if (this.campaignIdx !== null && !this.coop) {
+          this.state = 'victory'; this.victoryT = 0;
+          Progress.unlock(this.campaignIdx + 2);
+          if (this.campaignIdx >= CAMPAIGN.length - 1) this._submitRun();
+          AudioSys.play('game_start');
+          Effects.screenFlash(0.35, '255,240,200');
+        } else {
+          this.state = 'levelClear'; this.levelClearTimer = this.coop ? 1.8 : 1.0;
+        }
       }
+      if (this.levelBanner) { this.levelBanner.t -= dt; if (this.levelBanner.t <= 0) this.levelBanner = null; }
     }
 
     this.shake = Math.max(0, this.shake - dt * 2);
@@ -678,6 +710,12 @@ class Game {
       return;
     }
 
+    if (this.state === 'levelSelect') {
+      this.campaignUI.draw(ctx, this.W, this.H);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
     if (this.state === 'coopIntro' && this.coop) {
       this.coop.drawIntro(ctx, this.W, this.H, this.introT);
       ctx.drawImage(this.scanlines, 0, 0);
@@ -711,6 +749,7 @@ class Game {
     const pcy = this.player.y + this.player.h / 2;
     // Враги видны в комнате игрока и в соседних комнатах за открытыми дверями/арками
     const { lit } = this.level.getLitRooms(this.player);
+    Effects.drawFloor(b);
 
     for (const e of this.enemies) {
       const er = this.level.getRoomAt(e.cx(), e.cy());
@@ -719,7 +758,6 @@ class Game {
       }
     }
 
-    Effects.drawFloor(b);
     for (const p of this.pickups) p.draw(b);
     if (this.coop) for (const r of this.coop.remotes.values()) r.draw(b);
     this.player.draw(b);
@@ -825,6 +863,7 @@ class Game {
       }
     }
     this._drawBossHud(ctx, scale);
+    this._drawLevelBanner(ctx, scale);
 
     // индикатор комбо
     if (this.combo > 1 && this.comboTimer > 0) {
@@ -857,9 +896,14 @@ class Game {
 
     if (this.state === 'dead' && this.coop) { this._drawTeamOver(ctx); return; }
 
+    if (this.state === 'victory') { this._drawVictory(ctx); return; }
+
     if (this.state === 'dead') {
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      // затемнение наступает плавно — чтобы была видна анимация смерти
+      const dk = Utils.clamp(((this.deathT || 0) - 0.4) / 0.8, 0, 1);
+      ctx.fillStyle = `rgba(0,0,0,${0.85 * dk})`;
       ctx.fillRect(0, 0, this.W, this.H);
+      if (dk < 1) return;
       ctx.fillStyle = P.player;
       ctx.font = `bold ${Math.min(48, this.W * 0.08)}px "Courier New", monospace`;
       ctx.textAlign = 'center';
@@ -869,19 +913,14 @@ class Game {
       ctx.font = `${Math.min(28, this.W * 0.05)}px "Courier New", monospace`;
       ctx.fillText(`ОЧКИ: ${this.score}`, this.W / 2, this.H / 2 - 50);
 
-      if (!this.nameSubmitted) {
-        ctx.fillStyle = '#fff';
-        ctx.font = `${Math.min(20, this.W * 0.035)}px "Courier New", monospace`;
-        ctx.fillText('Введите имя и нажмите ENTER:', this.W / 2, this.H / 2 + 20);
-
-        ctx.font = `bold ${Math.min(32, this.W * 0.06)}px "Courier New", monospace`;
-        ctx.fillStyle = P.accent;
-        const nameStr = this.playerName + (Math.floor(performance.now() / 500) % 2 === 0 ? '_' : '');
-        ctx.fillText(nameStr, this.W / 2, this.H / 2 + 70);
-      } else {
+      {
         ctx.fillStyle = '#fff';
         ctx.font = `${Math.min(24, this.W * 0.04)}px "Courier New", monospace`;
-        ctx.fillText(Nick.get() ? `Очки сохранены как ${Nick.get()}` : 'Очки сохранены!', this.W / 2, this.H / 2 + 20);
+        ctx.fillText(`Результат записан: ${this.playerName || Nick.get() || 'ИГРОК'}`, this.W / 2, this.H / 2 + 20);
+        if (this.campaignIdx !== null) {
+          ctx.fillStyle = '#9a94b8'; ctx.font = `${Math.min(16, this.W * 0.03)}px "Courier New", monospace`;
+          ctx.fillText(`Уровень: ${CAMPAIGN[this.campaignIdx].name}`, this.W / 2, this.H / 2 + 44);
+        }
 
         ctx.fillStyle = P.yellow;
         ctx.fillRect(this.W/2 - 120, this.H/2 + 60, 240, 50);
@@ -900,7 +939,13 @@ class Game {
   // Полоса здоровья босса и предупреждение о его появлении
   _drawBossHud(ctx, scale) {
     const boss = this.enemies.find(e => e.isBoss && !e.dead);
-    if (boss) {
+    // полоса появляется, когда босс рядом или уже ранен
+    if (boss && !boss._met && this.player) {
+      const lit = this.level.getLitRooms(this.player).lit;
+      const br = this.level.getRoomAt(boss.cx(), boss.cy());
+      if ((br && lit.has(br)) || boss.hp < boss.maxHp || Utils.dist(boss.x, boss.y, this.player.x, this.player.y) < 320) boss._met = true;
+    }
+    if (boss && boss._met) {
       const bw = Math.min(420, this.W * 0.5), bh = 12;
       const x = this.W / 2 - bw / 2, y = this.H - 34 * scale;
       ctx.save();
@@ -935,6 +980,61 @@ class Game {
       ctx.fillText(bn.title, this.W / 2, this.H * 0.51);
       ctx.restore();
     }
+  }
+
+  // Название уровня при старте
+  _drawLevelBanner(ctx, scale) {
+    if (this.campaignIdx !== null && !this.coop && this.state === 'playing') {
+      ctx.save(); ctx.textAlign = 'center';
+      ctx.font = `bold ${12 * scale}px "Courier New", monospace`;
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText(`${this.campaignIdx + 1}. ${CAMPAIGN[this.campaignIdx].name}`, this.W / 2, 24 * scale);
+      ctx.restore();
+    }
+    const b = this.levelBanner;
+    if (!b || this.state !== 'playing') return;
+    const k = Math.min(1, b.t * 1.5, (3 - b.t) * 3);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, k);
+    ctx.fillStyle = 'rgba(4,2,10,0.6)'; ctx.fillRect(0, this.H * 0.38, this.W, this.H * 0.16);
+    ctx.fillStyle = b.color; ctx.fillRect(0, this.H * 0.38, this.W * k, 2); ctx.fillRect(this.W * (1 - k), this.H * 0.54 - 2, this.W, 2);
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${13 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
+    ctx.fillText(b.sub, this.W / 2, this.H * 0.42);
+    ctx.font = `bold ${Math.min(52, this.W * 0.07)}px "Courier New", monospace`;
+    ctx.shadowColor = b.color; ctx.shadowBlur = 22; ctx.fillStyle = b.color;
+    ctx.fillText(b.name, this.W / 2, this.H * 0.51);
+    ctx.restore();
+  }
+
+  // Экран победы на уровне кампании
+  _drawVictory(ctx) {
+    const W = this.W, H = this.H, M = this.menu;
+    const k = Utils.clamp(this.victoryT / 0.6, 0, 1);
+    ctx.fillStyle = `rgba(4,2,10,${0.85 * k})`; ctx.fillRect(0, 0, W, H);
+    if (k < 1) return;
+    const L = CAMPAIGN[this.campaignIdx];
+    const last = this.campaignIdx >= CAMPAIGN.length - 1;
+    M.glowText(ctx, last ? 'КАМПАНИЯ ПРОЙДЕНА!' : 'УРОВЕНЬ ПРОЙДЕН', W / 2, H * 0.22, L.color, Math.min(46, W * 0.06), 'center', 22);
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.min(22, W * 0.035)}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
+    ctx.fillText(L.name, W / 2, H * 0.3);
+    ctx.font = `bold ${Math.min(28, W * 0.045)}px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
+    ctx.fillText(`ОЧКИ: ${this.score}`, W / 2, H * 0.42);
+    ctx.font = `${Math.min(16, W * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
+    ctx.fillText(`Убито врагов: ${this.kills} / ${this.totalEnemies}`, W / 2, H * 0.48);
+    if (!last) {
+      ctx.fillStyle = '#05d9e8';
+      ctx.fillText(`Открыт уровень: ${CAMPAIGN[this.campaignIdx + 1].name}`, W / 2, H * 0.54);
+    }
+    const bx = W / 2 - 150, by = H * 0.62;
+    const btn = (y, text, c) => {
+      ctx.fillStyle = c; ctx.fillRect(bx, y, 300, 46);
+      ctx.fillStyle = '#05030a'; ctx.font = `bold ${Math.min(18, W * 0.03)}px "Courier New", monospace`;
+      ctx.fillText(text, W / 2, y + 30);
+    };
+    btn(by, last ? 'В МЕНЮ (ENTER)' : `ДАЛЕЕ: ${CAMPAIGN[this.campaignIdx + 1].name} (ENTER)`, L.color);
+    if (!last) btn(by + 58, 'В МЕНЮ (ESC)', '#9a94b8');
   }
 
   // Итог корпоратива
@@ -999,7 +1099,7 @@ class Game {
 
     const chars = [
       { id: 'dani', name: 'ДАНИ', perk: 'Хладнокровие', desc: '+15% скорость, враги замечают позже', hp: 3, speed: 1.15, weapon: 'glock' },
-      { id: 'gal', name: 'ГАЛ', perk: 'Танк', desc: '+1 HP, мощный ближний бой', hp: 4, speed: 1, weapon: null },
+      { id: 'gal', name: 'ГАЛА', perk: 'Танк', desc: '+1 HP, мощный ближний бой', hp: 4, speed: 1, weapon: null },
       { id: 'daur', name: 'ДАУР', perk: 'Оружейник', desc: 'Дробовик со старта, но только 2 HP', hp: 2, speed: 1, weapon: 'shotgun' },
     ];
 

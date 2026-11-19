@@ -5,7 +5,9 @@
 // Сервер только пересылает данные (HTTP-опрос ~10 раз в секунду).
 // =====================================================================
 
-const CHAR_NAMES = { dani: 'ДАНИ', gal: 'ГАЛ', daur: 'ДАУР' };
+const CHAR_NAMES = { dani: 'ДАНИ', gal: 'ГАЛА', daur: 'ДАУР' };
+const DEATH_KINDS = ['bullet', 'shotgun', 'blunt', 'blade', 'fist', 'throw', 'crush'];
+const DEATH_POSES = ['back', 'side', 'face', 'crawl'];
 const CHAR_IDS = ['dani', 'gal', 'daur'];
 const SLOT_COLORS = ['#ffd319', '#05d9e8', '#ff2a6d'];
 
@@ -580,10 +582,12 @@ class RemotePlayer {
   }
 
   // Урон считает хост: отправляем его владельцу героя
-  takeDamage(amount) {
+  takeDamage(amount, cause) {
     if (this.dead || this.hurtCooldown > 0 || !this.session) return;
     this.hurtCooldown = 0.6;
-    this.session.sendTo(this.pid, { t: 'dmg', a: amount });
+    const ev = { t: 'dmg', a: amount };
+    if (cause) { ev.c = DEATH_KINDS.indexOf(cause.kind); ev.g = +(cause.angle || 0).toFixed(2); }
+    this.session.sendTo(this.pid, ev);
   }
 
   draw(ctx) {
@@ -680,6 +684,8 @@ class CoopSession {
       g.pickups = [];
       g.enemies.forEach((e, i) => this._markReplica(e, i));
       g.level.addNoise = (x, y, r) => this.event({ t: 'noise', x: Math.round(x), y: Math.round(y), r });
+      g.level.netClient = true;
+      g.level.onNetDamage = (k, i, a) => this.event({ t: 'env', k, i, a });
       g.level.doors.forEach((d, i) => {
         const orig = d.push.bind(d);
         d.push = (en, ex, ey, vx, vy, byPlayer) => {
@@ -702,9 +708,10 @@ class CoopSession {
   _markReplica(e, i) {
     e._replica = true;
     e._idx = i;
-    e.takeDamage = (a) => this.event({ t: 'hit', e: e._idx, k: 'dmg', a: a || 1 });
+    const cz = c => c ? { c: DEATH_KINDS.indexOf(c.kind), g: +(c.angle || 0).toFixed(2) } : {};
+    e.takeDamage = (a, pickups, cause) => this.event({ t: 'hit', e: e._idx, k: 'dmg', a: a || 1, ...cz(cause) });
     e.stun = () => { if (!e.stunned && !e.dead) this.event({ t: 'hit', e: e._idx, k: 'stun' }); };
-    e.die = () => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'kill' }); };
+    e.die = (pickups, cause) => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'kill', ...cz(cause) }); };
   }
 
   // ---------- каждый кадр ----------
@@ -764,8 +771,12 @@ class CoopSession {
         e.hp, e.weapon ? e.weapon.id : '', e._shots || 0,
         e.swingTimer > 0 ? Math.round((1 - e.swingTimer / (e.swingDur || 0.3)) * 100) : 0,
         e.type, e.seed, e.isBoss ? BOSS_PHASES.indexOf(e.phase) : 0, e.maxHp, e.swingSide || 1,
+        e.deathAnim ? DEATH_KINDS.indexOf(e.deathAnim.kind) + 10 * DEATH_POSES.indexOf(e.deathAnim.endPose || 'back') + (e.deathAnim.crawl || e.deathAnim.pose === 'crawl' ? 100 : 0) : -1,
+        +(e.deathAngle || 0).toFixed(2),
       ]),
-      dr: g.level.doors.map(d => Math.round(d.angle * 100) / 100),
+      dr: g.level.doors.map(d => d.broken ? 9 : Math.round(d.angle * 100) / 100),
+      fd: g.level.destroyed || [],
+      wb: g.level.brokenWindows || [],
       pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
       bu: g.bullets.filter(b => !b.isPlayer && !b.dead).map(b => [b.netId, Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy), b.color]),
       rv: Object.fromEntries(Object.entries(this.revive).map(([k, v]) => [k, Math.round(v * 100) / 100])),
@@ -834,14 +845,21 @@ class CoopSession {
     const g = this.game;
     const rp = this.remotes.get(pid);
     if (!g.level || !e) return;
+    if (e.t === 'env') {
+      if (e.k === 'f') g.level.damageFurniture(e.i, e.a || 1);
+      else if (e.k === 'w') g.level.damageWindow(e.i);
+      else if (e.k === 'd') g.level.damageDoor(e.i, e.a || 1);
+      return;
+    }
     if (e.t === 'hit') {
       const en = g.enemies[e.e];
       if (!en || en.dead) return;
+      const cause = e.c !== undefined && e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined;
       if (e.k === 'dmg') {
-        en.takeDamage(e.a || 1, g.pickups);
+        en.takeDamage(e.a || 1, g.pickups, cause);
         en.particles.push(...Utils.spawnBloodParticles(en.cx(), en.cy(), 10));
       } else if (e.k === 'stun') en.stun();
-      else if (e.k === 'kill') en.die(g.pickups);
+      else if (e.k === 'kill') en.die(g.pickups, cause);
     } else if (e.t === 'door') {
       const d = g.level.doors[e.d];
       if (d) d.push(g.enemies, e.x, e.y, e.vx, e.vy, true);
@@ -869,7 +887,7 @@ class CoopSession {
   _clientEvent(e) {
     const p = this.game.player;
     if (!p) return;
-    if (e.t === 'dmg') { p.takeDamage(e.a || 1); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
+    if (e.t === 'dmg') { p.takeDamage(e.a || 1, e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
     else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
     else if (e.t === 'give') { if (!p.weapon) { p.weapon = makeWeapon(e.w, e.am); AudioSys.play('pickup_weapon'); } }
     else if (e.t === 'revive') { p.revive(); }
@@ -905,8 +923,13 @@ class CoopSession {
     // двери (кроме тех, что мы только что толкнули сами)
     s.dr.forEach((ang, i) => {
       const d = g.level.doors[i];
-      if (d && !(d._localPushT > 0)) { d.angle = ang; d.omega = 0; }
+      if (!d) return;
+      if (ang === 9) { if (!d.broken) { d.hp = 1; d.damage(99); } return; }
+      if (!(d._localPushT > 0)) { d.angle = ang; d.omega = 0; }
     });
+    // разрушенная мебель и разбитые окна
+    for (const i of s.fd || []) { const f = g.level.furniture[i]; if (f && !f.destroyed) g.level.destroyFurniture(i); }
+    for (const i of s.wb || []) { const w = g.level.windows[i]; if (w && !w.broken) g.level.breakWindow(i); }
 
     // предметы
     const byId = new Map(g.pickups.map(p => [p.netId, p]));
@@ -957,8 +980,10 @@ class CoopSession {
     if (!e._hasNet) { e.x = a[0]; e.y = a[1]; e.angle = a[2]; e._px = e.x; e._py = e.y; e._hasNet = true; e._netShots = a[6]; }
     const dead = !!(a[3] & 1), stunned = !!(a[3] & 2);
     if (dead && !e.dead) {
-      e.dead = true; e.stunned = false; e.x = a[0]; e.y = a[1];
-      e._deathFx();
+      e.dead = true; e.stunned = false;
+      const code = a[13] >= 0 ? a[13] : 0;
+      e._deathFx({ kind: DEATH_KINDS[code % 10] || 'bullet', angle: a[14] },
+                 { pose: DEATH_POSES[Math.floor(code / 10) % 10] || 'back', crawl: code >= 100, angle: a[14] });
       const pts = 100 * Math.max(1, combo || 1);
       Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(combo || 1, 5) * 2);
       if (combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${combo} КОМБО`, '#05d9e8', 11);
@@ -992,7 +1017,7 @@ class CoopSession {
   updateReplicas(dt) {
     const k = 1 - Math.exp(-dt * 12);
     for (const e of this.game.enemies) {
-      if (e._hasNet && !e.dead) {
+      if (e._hasNet) {
         e.x += (e._tx - e.x) * k;
         e.y += (e._ty - e.y) * k;
         let da = e._ta - e.angle;
@@ -1000,7 +1025,7 @@ class CoopSession {
         while (da < -Math.PI) da += Math.PI * 2;
         e.angle += da * Math.min(1, dt * 14);
       }
-      e._animTick(dt);
+      e._animTick(dt, this.game.level);
     }
   }
 

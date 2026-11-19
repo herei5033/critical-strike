@@ -43,18 +43,32 @@ class Player {
     this.particles = []; // Частицы крови
   }
 
-  takeDamage(amount) {
+  takeDamage(amount, cause) {
     if (this.dead || this.hurtCooldown > 0) return;
+    this._lastCause = cause;
     this.hurtCooldown = 0.6;
     this.hp -= amount;
     AudioSys.play('player_hurt');
     if (typeof Effects !== 'undefined') Effects.screenFlash(0.28, '255,30,60');
-    if (this.hp <= 0) { this.hp = 0; this.die(); }
+    if (this.hp <= 0) { this.hp = 0; this.die(cause); }
   }
 
   // Частицы обновляются отдельно, чтобы продолжать жить и после смерти игрока
   updateParticles(dt) {
     this.animT += dt;
+    // отлёт тела при смерти
+    const d = this.deathAnim;
+    if (this.dead && d) {
+      d.t += dt;
+      if (Math.abs(d.vx) + Math.abs(d.vy) > 3) {
+        const lv = this._level;
+        const nx = this.x + d.vx * dt, ny = this.y + d.vy * dt;
+        if (!lv || !lv.collides(nx, this.y, this.w, this.h)) this.x = nx; else d.vx = 0;
+        if (!lv || !lv.collides(this.x, ny, this.w, this.h)) this.y = ny; else d.vy = 0;
+        const k = Math.exp(-dt * 7); d.vx *= k; d.vy *= k;
+        if (Math.random() < 0.4) Effects.bloodSplat(this.x + 9, this.y + 9, null, 3);
+      } else d.pool = Math.min(19, (d.pool || 0) + dt * 9);
+    }
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.x += p.vx * dt;
@@ -89,7 +103,7 @@ class Player {
         if (!this._inMeleeArc(e, level, 36, Math.PI / 2.5)) continue;
         landed = true;
         if (e.stunned) {
-          e.die(pickups);
+          e.die(pickups, { kind: 'fist', angle: this.angle });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
         } else {
           e.stun();
@@ -100,8 +114,14 @@ class Player {
         landed = true;
         // ВАЖНО: вторым аргументом передаём массив пикапов (а не врагов),
         // иначе дроп оружия/аптечки попадал в enemies и игра зависала.
-        e.takeDamage(1, pickups);
+        e.takeDamage(1, pickups, { kind: hit.blade ? 'blade' : 'blunt', angle: this.angle });
         this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
+      }
+    }
+    // удар задевает мебель и двери перед героем
+    if (!landed && level.meleeHit) {
+      if (level.meleeHit(this.x + this.w / 2, this.y + this.h / 2, this.angle, hit.fists ? 30 : (hit.range || 40) + 6, hit.fists ? 1 : 2)) {
+        Effects.hitstop = Math.max(Effects.hitstop, 0.03);
       }
     }
     if (landed) {
@@ -115,6 +135,7 @@ class Player {
   update(dt, level, cam, bullets, enemies, pickups) {
     if (this.dead) return;
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
+    this._level = level;
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
 
     // Заглядывание
@@ -239,7 +260,7 @@ class Player {
             }
             Effects.casing(cx + Math.cos(this.angle) * 8, cy + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
             const muz = (Sprites.WEAPON_META[this.weapon.id] || {}).muzzle || 16;
-            Effects.smoke(cx + Math.cos(this.angle) * (muz + 6), cy + Math.sin(this.angle) * (muz + 6), this.angle, this.weapon.id === 'shotgun' ? 5 : 2);
+            Effects.muzzle(cx + Math.cos(this.angle) * (muz + 6), cy + Math.sin(this.angle) * (muz + 6), this.angle, this.weapon.id === 'shotgun');
           } else {
             AudioSys.play('empty_click');
           }
@@ -250,7 +271,7 @@ class Player {
           this.swingSide = -this.swingSide;
           this.swingStab = this.weapon.id === 'knife' && this.swingSide > 0;
           AudioSys.play(this.weapon.sound);
-          this._pendingHit = { delay: this.swingDur * 0.28, range: this.weapon.range };
+          this._pendingHit = { delay: this.swingDur * 0.28, range: this.weapon.range, blade: ['knife', 'sword'].includes(this.weapon.id) };
         }
       } else {
         // Кулаки: удары левой и правой по очереди
@@ -275,10 +296,15 @@ class Player {
     AudioSys.play('pickup_health');
   }
 
-  die() {
+  die(cause = {}) {
     if (this.dead) return;
     this.dead = true;
-    this.deathAngle = this.angle + Math.PI + Utils.rand(-0.4, 0.4);
+    const kind = cause.kind || 'bullet';
+    const ang = cause.angle !== undefined ? cause.angle : this.angle + Math.PI;
+    this.deathAngle = ang + Utils.rand(-0.3, 0.3);
+    const slide = { bullet: 70, shotgun: 200, blunt: 60, blade: 30, crush: 150 }[kind] || 60;
+    this.deathAnim = { t: 0, kind, pose: kind === 'blunt' || kind === 'crush' ? 'side' : kind === 'blade' ? 'face' : 'back',
+                       vx: Math.cos(ang) * slide, vy: Math.sin(ang) * slide, pool: 0, fromAngle: this.angle };
     AudioSys.play('player_death');
     if (typeof Effects !== 'undefined') {
       Effects.bloodSplat(this.x + this.w / 2, this.y + this.h / 2, this.deathAngle, 30);
@@ -314,12 +340,21 @@ class Player {
     ctx.globalAlpha = 1;
 
     if (this.dead) {
-      ctx.fillStyle = '#5a0010';
-      ctx.beginPath(); ctx.ellipse(cx, cy, 20, 14, this.deathAngle, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = P.blood;
-      ctx.beginPath(); ctx.ellipse(cx, cy, 18, 12, this.deathAngle, 0, Math.PI * 2); ctx.fill();
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(this.deathAngle + Math.PI); ctx.scale(1.15, 1.15);
-      Sprites.drawHumanDown(ctx, this.look, { seed: this.seed });
+      const d = this.deathAnim || { t: 9, pose: 'back', pool: 18 };
+      const pr = d.pool || 0;
+      if (pr > 0.5) {
+        ctx.fillStyle = '#4a0008';
+        ctx.beginPath(); ctx.ellipse(cx, cy, pr * 1.35 + 1, pr + 1, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = P.blood;
+        ctx.beginPath(); ctx.ellipse(cx, cy, pr * 1.35, pr, this.deathAngle, 0, Math.PI * 2); ctx.fill();
+      }
+      const fall = Math.min(1, d.t / 0.28);
+      let da = this.deathAngle - (d.fromAngle !== undefined ? d.fromAngle : this.deathAngle);
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(this.deathAngle - da * (1 - fall));
+      const sc = 1.15 * (0.82 + 0.18 * fall); ctx.scale(sc, sc);
+      Sprites.drawHumanDown(ctx, this.look, { seed: this.seed, pose: d.pose });
       ctx.restore();
       return;
     }

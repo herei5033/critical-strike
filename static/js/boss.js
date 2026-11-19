@@ -1,14 +1,36 @@
 // Боссы: появляются, когда общий счёт достигает очередного порога.
 // Каждый следующий порог выше предыдущего, боссы чередуются.
 const BOSS_TYPES = {
+  // --- боссы уровней одиночной кампании ---
+  watchman: {
+    name: 'ВАХТЁР', title: 'Ночной сторож колледжа', hp: 12, speed: 100, weapon: 'pipe', bonus: 1500, behavior: 'charger',
+    look: { skin: '#c8a080', skinDk: '#906848', hair: '#3a3a40', hairStyle: 'cap', cap: '#1a2030', beard: '#4a4a50',
+            jacket: '#262c3a', jacketDk: '#12161e', shirt: '#3a3a42', pants: '#1a1e28', shoes: '#060606', collar: 'jacket', bulk: 1.45, blood: true },
+  },
+  director: {
+    name: 'ДИРЕКТОР', title: 'Здесь решает он', hp: 20, speed: 85, weapon: 'uzi', bonus: 2000, behavior: 'gunner',
+    look: { skin: '#d8b090', skinDk: '#a07a5a', hair: '#0c0a0e', hairHi: 'rgba(255,255,255,0.15)', hairStyle: 'slick', glasses: 'shades',
+            jacket: '#101012', jacketDk: '#050506', shirt: '#d8d8dc', tie: '#6a0a12', pants: '#0e0e10', shoes: '#050505', collar: 'suit', bulk: 1.4 },
+  },
+  collector: {
+    name: 'ИНКАССАТОР', title: 'Охраняет хранилище', hp: 26, speed: 78, weapon: 'minigun', bonus: 2500, behavior: 'gunner',
+    look: { skin: '#c89a78', skinDk: '#94684a', hair: '#121016', hairStyle: 'helmet', helmet: '#1c2018', visor: '#2a0608',
+            jacket: '#22261e', jacketDk: '#0e100c', shirt: '#1a1c18', pants: '#1a1c18', shoes: '#060606', collar: 'armor', skull: true, bulk: 1.55 },
+  },
+  bouncer: {
+    name: 'ВЫШИБАЛА', title: 'Никто не войдёт в VIP', hp: 32, speed: 125, weapon: 'bat', bonus: 3000, behavior: 'charger',
+    look: { skin: '#9a6a48', skinDk: '#6a4428', hair: '#0c0a0e', hairStyle: 'bald', glasses: 'shades', beard: '#0c0a0e',
+            jacket: '#121214', jacketDk: '#050506', shirt: '#121214', pants: '#0e0e10', shoes: '#050505', collar: 'hood', bulk: 1.75, scar: true },
+  },
+  // --- боссы бесконечного режима и корпоратива ---
   butcher: {
-    name: 'МЯСНИК', title: 'Хозяин скотобойни', hp: 14, speed: 110, weapon: 'cleaver', bonus: 1500,
+    name: 'МЯСНИК', title: 'Хозяин скотобойни', hp: 14, speed: 110, weapon: 'cleaver', bonus: 1500, behavior: 'charger',
     look: { skin: '#e0a07a', skinDk: '#a8704c', hair: '#121016', hairStyle: 'bald', beard: '#2a1a10',
             jacket: '#5a4a44', jacketDk: '#2e2420', shirt: '#d8d2c4', pants: '#2a2422', shoes: '#0a0a0a',
             collar: 'apron', bulk: 1.55 },
   },
   general: {
-    name: 'ГЕНЕРАЛ', title: 'Командир охраны', hp: 18, speed: 82, weapon: 'minigun', bonus: 2000,
+    name: 'ГЕНЕРАЛ', title: 'Командир охраны', hp: 18, speed: 82, weapon: 'minigun', bonus: 2000, behavior: 'gunner',
     look: { skin: '#d8a07a', skinDk: '#a87050', hair: '#121016', hairStyle: 'cap', cap: '#2a3a22',
             glasses: 'shades', jacket: '#3a4a2a', jacketDk: '#1e2a16', shirt: '#2a3a22', pants: '#2a3020', shoes: '#0a0a0a',
             collar: 'armor', bulk: 1.45 },
@@ -18,9 +40,10 @@ const BOSS_ORDER = ['butcher', 'general'];
 const BOSS_PHASES = ['hunt', 'windup', 'charge', 'dazed', 'spinup', 'fire'];
 
 class Boss extends Enemy {
-  constructor(x, y, kind, playerCount = 1) {
+  constructor(x, y, kind, playerCount = 1, hpMul = 1) {
     super(x, y, 'static', null, 'boss_' + kind);
-    const def = BOSS_TYPES[kind];
+    const def = BOSS_TYPES[kind] || BOSS_TYPES.butcher;
+    this.behavior = def.behavior;
     this.kind = kind;
     this.isBoss = true;
     this.bossName = def.name;
@@ -28,10 +51,10 @@ class Boss extends Enemy {
     this.bossBonus = def.bonus;
     this.w = 22; this.h = 22;
     // Здоровье растёт с числом игроков
-    this.maxHp = def.hp + Math.round(def.hp * 0.5 * (playerCount - 1));
+    this.maxHp = Math.round((def.hp + def.hp * 0.5 * (playerCount - 1)) * hpMul);
     this.hp = this.maxHp;
     this.speed = def.speed;
-    this.weapon = makeWeapon(kind === 'butcher' ? 'knife' : 'm4');
+    this.weapon = makeWeapon(def.behavior === 'charger' ? 'knife' : 'm4');
     this.visualWeapon = def.weapon;
     this.look = def.look;
     this.fovRange = 2000;
@@ -50,19 +73,19 @@ class Boss extends Enemy {
   // Боссов не оглушить — только вздрагивают
   stun() { this.hitFlash = 0.12; }
 
-  takeDamage(amount, pickups) {
+  takeDamage(amount, pickups, cause) {
     if (this.dead) return;
     this.hp -= amount;
     this.hitFlash = 0.1;
     AudioSys.play('tank_hit');
     Effects.burst(this.cx(), this.cy(), '255,120,120', 8, 160);
-    if (this.hp <= 0) this.die(pickups);
+    if (this.hp <= 0) this.die(pickups, cause);
   }
 
-  die(pickups) {
+  die(pickups, cause) {
     if (this.dead) return;
     this.dead = true;
-    this._deathFx();
+    this._deathFx(cause);
     Effects.screenFlash(0.45, '255,230,180');
     Effects.hitstop = Math.max(Effects.hitstop, 0.18);
     Effects.ring(this.cx(), this.cy(), '255,200,80', 70);
@@ -88,7 +111,7 @@ class Boss extends Enemy {
       if (b.dead || !b.isPlayer) continue;
       if (Utils.segDist(b.px, b.py, b.x, b.y, this.cx(), this.cy()) < 15) {
         b.dead = true;
-        this.takeDamage(1, pickups);
+        this.takeDamage(1, pickups, { kind: b.src === 'shotgun' ? 'shotgun' : 'bullet', angle: Math.atan2(b.vy, b.vx) });
         this.particles.push(...Utils.spawnBloodParticles(this.cx(), this.cy(), 8, Math.atan2(b.vy, b.vx)));
         if (this.dead) return;
       }
@@ -97,7 +120,7 @@ class Boss extends Enemy {
 
   update(dt, level, player, bullets, enemies, pickups) {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
-    this._animTick(dt);
+    this._animTick(dt, level);
     if (this.dead) return;
     this._hitPlayerBullets(bullets, pickups);
     if (this.dead || !player) return;
@@ -112,7 +135,7 @@ class Boss extends Enemy {
     const los = level.lineOfSight(this.cx(), this.cy(), pcx, pcy);
     const toP = Math.atan2(pcy - this.cy(), pcx - this.cx());
 
-    if (this.kind === 'butcher') this._updateButcher(dt, level, player, dist, los, toP);
+    if (this.behavior === 'charger') this._updateButcher(dt, level, player, dist, los, toP);
     else this._updateGeneral(dt, level, player, bullets, enemies, dist, los, toP);
   }
 
@@ -125,7 +148,7 @@ class Boss extends Enemy {
         this.meleeCd = 0.9;
         this.swingDur = 0.36; this.swingTimer = this.swingDur; this.swingSide = -this.swingSide;
         AudioSys.play('melee_swing');
-        player.takeDamage(1);
+        player.takeDamage(1, { kind: 'blade', angle: this.angle });
       }
       if (los && dist < 300 && dist > 70 && this.cooldown <= 0) {
         this.phase = 'windup'; this.phaseT = 0.7;
@@ -158,7 +181,7 @@ class Boss extends Enemy {
         if (!p || p.dead || this._chargeHit.has(p)) continue;
         if (Utils.dist(this.cx(), this.cy(), p.x + p.w / 2, p.y + p.h / 2) < 24) {
           this._chargeHit.add(p);
-          p.takeDamage(2);
+          p.takeDamage(2, { kind: 'crush', angle: this.chargeAngle });
           Effects.ring(p.x + p.w / 2, p.y + p.h / 2, '255,60,60', 30);
         }
       }
@@ -238,20 +261,7 @@ class Boss extends Enemy {
     }
     ctx.globalAlpha = 1;
 
-    if (this.dead) {
-      for (const b of this.bloodStains) {
-        ctx.globalAlpha = b.a;
-        ctx.fillStyle = '#5a0010';
-        ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx * 1.4 + 1, b.ry * 1.4 + 1, b.rot, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = P.blood;
-        ctx.beginPath(); ctx.ellipse(b.x, b.y, b.rx * 1.4, b.ry * 1.4, b.rot, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(this.deathAngle + Math.PI); ctx.scale(1.5, 1.5);
-      Sprites.drawHumanDown(ctx, this.look, { seed: this.seed });
-      ctx.restore();
-      return;
-    }
+    if (this.dead) { this._drawCorpse(ctx, 1.5); return; }
 
     const t = this.animT;
     // предупреждение перед рывком / очередью
