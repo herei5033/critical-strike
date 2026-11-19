@@ -1,7 +1,7 @@
 // Справочная информация об оружии для раздела "ОРУЖИЕ"
 const WEAPON_INFO = [
   { id: 'glock', name: 'GLOCK 17', type: 'ПИСТОЛЕТ',
-    desc: 'Надёжный пистолет, с которым начинают Дани и Гала. Точный и предсказуемый, но магазин небольшой — считайте выстрелы.',
+    desc: 'Надёжный пистолет, который часто носят бандиты. Точный и предсказуемый, но магазин небольшой — считайте выстрелы.',
     tip: 'Хорош для первых комнат: стреляйте одиночными в голову.' },
   { id: 'uzi', name: 'UZI', type: 'ПИСТОЛЕТ-ПУЛЕМЁТ',
     desc: 'Компактный и бешено скорострельный. Поливает комнату свинцом, но магазин пустеет за три секунды.',
@@ -477,7 +477,7 @@ class Menu {
     if (w > 640) {
       const ids = ['dani', 'gal', 'daur'];
       const id = ids[Math.floor(this.t / 4) % 3];
-      const wpn = { dani: 'glock', gal: null, daur: 'shotgun' }[id];
+      const wpn = { dani: null, gal: null, daur: 'shotgun' }[id];
       this._drawHeroPreview(ctx, w * 0.13, h * 0.66, 3.2, id, wpn, Math.PI * 0.08);
       const e = this._previewEnemies[Math.floor(this.t / 4) % 4];
       this._drawEnemyPreview(ctx, w * 0.87, h * 0.66, 3.2, e, Math.PI * 0.92);
@@ -489,7 +489,7 @@ class Menu {
     ctx.font = `${hs}px "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#05d9e8';
-    ctx.fillText('СОВЕТ: ' + tip, w / 2, h - 46);
+    ctx.fillText('СОВЕТ: ' + tip, w / 2, h - 46, w - 24);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.fillText('W/S или мышь — выбор    ENTER / клик — подтвердить', w / 2, h - 22);
   }
@@ -595,38 +595,60 @@ class Menu {
     ctx.fillText('A/D — вкладки    W/S — листать карточки', w / 2, h - 8);
   }
 
-  _keyCap(ctx, x, y, text) {
-    ctx.font = `bold 13px "Courier New", monospace`;
-    const tw = Math.max(34, ctx.measureText(text).width + 16);
-    ctx.fillStyle = '#05030a'; ctx.fillRect(x, y + 2, tw, 24);
-    ctx.fillStyle = '#2a1f44'; ctx.fillRect(x, y, tw, 24);
+  _keyCap(ctx, x, y, text, k = 1) {
+    ctx.font = this._font(13, k, true);
+    const tw = Math.max(34 * k, ctx.measureText(text).width + 16 * k), th = 24 * k - 1;
+    ctx.fillStyle = '#05030a'; ctx.fillRect(x, y + 2, tw, th);
+    ctx.fillStyle = '#2a1f44'; ctx.fillRect(x, y, tw, th);
     ctx.fillStyle = '#3e3060'; ctx.fillRect(x, y, tw, 3);
-    ctx.strokeStyle = '#05d9e8'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, 23);
+    ctx.strokeStyle = '#05d9e8'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(text, x + tw / 2, y + 13);
+    ctx.fillText(text, x + tw / 2, y + th / 2 + 1);
     ctx.textBaseline = 'alphabetic';
     return tw;
   }
 
+  // Текст карточки подгоняется под рамку: draw(k) рисует с масштабом шрифта k и возвращает нижний край.
+  // Сначала «сухие» прогоны без рисования, пока текст не влезет (не мельче 65%).
+  _fit(ctx, bottom, draw) {
+    let k = 1;
+    for (let i = 0; i < 8; i++) {
+      ctx.fillText = () => {}; ctx.fillRect = () => {}; ctx.strokeRect = () => {};
+      let end;
+      try { end = draw(k); } finally { delete ctx.fillText; delete ctx.fillRect; delete ctx.strokeRect; }
+      if (end <= bottom || k <= 0.65) break;
+      k = Math.max(0.65, k - 0.05);
+    }
+    return draw(k);
+  }
+
+  _font(px, k = 1, bold = false) { return `${bold ? 'bold ' : ''}${Math.max(9, Math.round(px * k))}px "Courier New", monospace`; }
+
   _drawControls(ctx, c) {
     const colW = c.w / 2;
-    ctx.textAlign = 'left';
-    this.glowText(ctx, 'КЛАВИАТУРА И МЫШЬ', c.x + 24, c.y + 32, '#ffd319', 15, 'left', 8);
-    this.controls.forEach(([k, d], i) => {
-      const y = c.y + 42 + i * 25;
-      const tw = this._keyCap(ctx, c.x + 24, y, k);
-      ctx.font = `14px "Courier New", monospace`; ctx.textAlign = 'left';
-      ctx.fillStyle = '#e8e4f8'; ctx.fillText(d, c.x + 34 + Math.max(tw, 90), y + 17);
+    // ширина колонки клавиш — по самой широкой клавише, чтобы подписи не наезжали
+    ctx.font = `bold 13px "Courier New", monospace`;
+    const capW = list => Math.max(...list.map(([k]) => Math.max(34, ctx.measureText(k).width + 16)));
+    const kw1 = capW(this.controls), kw2 = capW(this.mobileControls);
+    const rows = Math.max(this.controls.length, this.mobileControls.length);
+    const goal = 'Цель — зачистить уровень от всех врагов. Подбирайте оружие, толкайте двери, ищите аптечки. После смерти очки уходят в общую таблицу лидеров.';
+    this._fit(ctx, c.y + c.h - 10, (k) => {
+      const step = 25 * k;
+      this.glowText(ctx, 'КЛАВИАТУРА И МЫШЬ', c.x + 24, c.y + 30 * k + 4, '#ffd319', 15 * k, 'left', 8);
+      this.glowText(ctx, 'ТЕЛЕФОН', c.x + colW + 10, c.y + 30 * k + 4, '#ffd319', 15 * k, 'left', 8);
+      const y0 = c.y + 40 * k + 4;
+      const col = (list, x, kw, maxW) => list.forEach(([key, d], i) => {
+        const y = y0 + i * step;
+        this._keyCap(ctx, x, y, key, k);
+        ctx.font = this._font(14, k); ctx.textAlign = 'left'; ctx.fillStyle = '#e8e4f8';
+        ctx.fillText(d, x + kw * k + 8, y + 17 * k, maxW - kw * k - 12);
+      });
+      col(this.controls, c.x + 24, kw1, colW - 30);
+      col(this.mobileControls, c.x + colW + 10, kw2, colW - 24);
+      ctx.font = this._font(13, k); ctx.fillStyle = '#05d9e8'; ctx.textAlign = 'left';
+      const gy = y0 + rows * step + 18 * k;
+      return gy + this._wrapText(ctx, goal, c.x + 24, gy, c.w - 48, 17 * k) - 13 * k;
     });
-    this.glowText(ctx, 'ТЕЛЕФОН', c.x + colW + 10, c.y + 32, '#ffd319', 15, 'left', 8);
-    this.mobileControls.forEach(([k, d], i) => {
-      const y = c.y + 42 + i * 25;
-      const tw = this._keyCap(ctx, c.x + colW + 10, y, k);
-      ctx.font = `14px "Courier New", monospace`; ctx.textAlign = 'left';
-      ctx.fillStyle = '#e8e4f8'; ctx.fillText(d, c.x + colW + 20 + Math.max(tw, 110), y + 17);
-    });
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#05d9e8'; ctx.textAlign = 'left';
-    this._wrapText(ctx, 'Цель — зачистить уровень от всех врагов. Подбирайте оружие, толкайте двери, ищите аптечки. После смерти очки уходят в общую таблицу лидеров.', c.x + 24, c.y + c.h - 44, c.w - 48, 17);
   }
 
   _portrait(ctx, img, x, y, s, accent) {
@@ -643,32 +665,45 @@ class Menu {
     const ch = this.charsInfo[this.cardIndex];
     const ps = Math.min(170, c.h - 110);
     this._portrait(ctx, this.game.images[ch.id], c.x + 24, c.y + 24, ps, '#ffd319');
-    this._drawHeroPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 48, 2.4, ch.id, { dani: null, gal: null, daur: 'shotgun' }[ch.id], -Math.PI / 2);
-    const tx = c.x + ps + 60, tw = c.w - ps - 84;
-    this.glowText(ctx, ch.name, tx, c.y + 46, '#ffd319', 28, 'left', 12);
-    ctx.font = `bold 15px "Courier New", monospace`; ctx.fillStyle = '#ff2a6d'; ctx.textAlign = 'left';
-    ctx.fillText('СПОСОБНОСТЬ: ' + ch.perk.toUpperCase(), tx, c.y + 72);
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#e8e4f8';
-    const bh = this._wrapText(ctx, ch.bio, tx, c.y + 98, tw, 17);
-    ctx.font = `bold 14px "Courier New", monospace`; ctx.fillStyle = '#05d9e8';
-    ctx.fillText('ХАРАКТЕРИСТИКИ', tx, c.y + 112 + bh);
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
-    this._wrapText(ctx, ch.stats, tx, c.y + 132 + bh, tw, 17);
+    this._drawHeroPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 46, 2.2, ch.id, { dani: null, gal: null, daur: 'shotgun' }[ch.id], 0);
+    const tx = c.x + ps + 60, tw = c.x + c.w - tx - 24;
+    this._fit(ctx, c.y + c.h - 14, (k) => {
+      let y = c.y + 20 + 26 * k;
+      this.glowText(ctx, ch.name, tx, y, '#ffd319', 28 * k, 'left', 12);
+      y += 26 * k;
+      ctx.font = this._font(15, k, true); ctx.fillStyle = '#ff2a6d'; ctx.textAlign = 'left';
+      ctx.fillText('СПОСОБНОСТЬ: ' + ch.perk.toUpperCase(), tx, y, tw);
+      y += 26 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#e8e4f8';
+      y += this._wrapText(ctx, ch.bio, tx, y, tw, 17 * k);
+      y += 4 * k;
+      ctx.font = this._font(14, k, true); ctx.fillStyle = '#05d9e8';
+      ctx.fillText('ХАРАКТЕРИСТИКИ', tx, y);
+      y += 20 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#c8c2e0';
+      return y + this._wrapText(ctx, ch.stats, tx, y, tw, 17 * k) - 13 * k;
+    });
   }
 
   _drawEnemyCard(ctx, c) {
     const en = this.enemiesInfo[this.cardIndex];
     const ps = Math.min(170, c.h - 110);
     this._portrait(ctx, this.enemyImages[en.id], c.x + 24, c.y + 24, ps, '#ff2a6d');
-    this._drawEnemyPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 48, 2.4, this._previewEnemies[this.cardIndex], -Math.PI / 2);
-    const tx = c.x + ps + 60, tw = c.w - ps - 84;
-    this.glowText(ctx, en.name, tx, c.y + 46, '#ff2a6d', 26, 'left', 12);
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#e8e4f8'; ctx.textAlign = 'left';
-    const bh = this._wrapText(ctx, en.bio, tx, c.y + 76, tw, 17);
-    ctx.font = `bold 14px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
-    ctx.fillText('ОСОБЕННОСТИ', tx, c.y + 92 + bh);
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
-    this._wrapText(ctx, en.stats, tx, c.y + 112 + bh, tw, 17);
+    this._drawEnemyPreview(ctx, c.x + 24 + ps / 2, c.y + 24 + ps + 46, 2.2, this._previewEnemies[this.cardIndex], 0);
+    const tx = c.x + ps + 60, tw = c.x + c.w - tx - 24;
+    this._fit(ctx, c.y + c.h - 14, (k) => {
+      let y = c.y + 20 + 26 * k;
+      this.glowText(ctx, en.name, tx, y, '#ff2a6d', 26 * k, 'left', 12);
+      y += 30 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#e8e4f8'; ctx.textAlign = 'left';
+      y += this._wrapText(ctx, en.bio, tx, y, tw, 17 * k);
+      y += 4 * k;
+      ctx.font = this._font(14, k, true); ctx.fillStyle = '#ffd319';
+      ctx.fillText('ОСОБЕННОСТИ', tx, y);
+      y += 20 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#c8c2e0';
+      return y + this._wrapText(ctx, en.stats, tx, y, tw, 17 * k) - 13 * k;
+    });
   }
 
   _drawBossCard(ctx, c) {
@@ -681,30 +716,42 @@ class Menu {
     ctx.fillStyle = g; ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = 'rgba(255,90,58,0.6)'; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
     ctx.save();
-    ctx.translate(bx + bw / 2, by + bh * 0.48);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 10, 46, 28, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.clip();
+    ctx.translate(bx + bw / 2, by + bh * 0.46);
+    const bs = Math.min(3.4, bh / 75);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 10, 13.5 * bs, 8 * bs, 0, 0, Math.PI * 2); ctx.fill();
     ctx.rotate(-Math.PI / 2 + Math.sin(this.t * 0.9) * 0.25);
-    ctx.scale(3.4, 3.4);
+    ctx.scale(bs, bs);
     Sprites.drawHuman(ctx, def.look, { t: this.t, walk: this.t * 8, move: 0.6, weaponId: def.weapon });
     ctx.restore();
     ctx.font = 'bold 12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff5a3a';
-    ctx.fillText(b.where, bx + bw / 2, by + bh - 14);
+    ctx.fillText(b.where, bx + bw / 2, by + bh - 12, bw - 12);
 
     const tx = bx + bw + 24, tw = c.x + c.w - tx - 24;
-    this.glowText(ctx, def.name, tx, c.y + 46, '#ff5a3a', 26, 'left', 12);
-    ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = '#ffd319'; ctx.textAlign = 'left';
-    ctx.fillText(def.title, tx, c.y + 68);
-    ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#e8e4f8';
-    let y = c.y + 92;
-    y += this._wrapText(ctx, b.desc, tx, y, tw, 16);
-    ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
-    ctx.fillText('КАК ПОБЕДИТЬ', tx, y + 8);
-    ctx.font = '13px "Courier New", monospace'; ctx.fillStyle = '#c8c2e0';
-    y += 26 + this._wrapText(ctx, b.tactic, tx, y + 26, tw, 16);
-    ctx.font = 'bold 12px "Courier New", monospace'; ctx.fillStyle = '#9a94b8';
-    ctx.fillText(`ЗДОРОВЬЕ: ${def.hp} (+50% за каждого напарника)    НАГРАДА: ${def.bonus}`, tx, Math.min(y + 12, c.y + c.h - 40), tw);
-    ctx.fillStyle = '#ff7aff';
-    ctx.fillText(`ТРОФЕЙ: ${WEAPONS[def.drop] ? WEAPONS[def.drop].name : '—'} (только Дани)`, tx, Math.min(y + 30, c.y + c.h - 22), tw);
+    this._fit(ctx, c.y + c.h - 14, (k) => {
+      let y = c.y + 20 + 26 * k;
+      this.glowText(ctx, def.name, tx, y, '#ff5a3a', 26 * k, 'left', 12);
+      y += 22 * k;
+      ctx.font = this._font(13, k, true); ctx.fillStyle = '#ffd319'; ctx.textAlign = 'left';
+      ctx.fillText(def.title, tx, y, tw);
+      y += 22 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#e8e4f8';
+      y += this._wrapText(ctx, b.desc, tx, y, tw, 16 * k);
+      y += 4 * k;
+      ctx.font = this._font(13, k, true); ctx.fillStyle = '#05d9e8';
+      ctx.fillText('КАК ПОБЕДИТЬ', tx, y);
+      y += 18 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#c8c2e0';
+      y += this._wrapText(ctx, b.tactic, tx, y, tw, 16 * k);
+      y += 6 * k;
+      ctx.font = this._font(12, k, true); ctx.fillStyle = '#9a94b8';
+      y += this._wrapText(ctx, `ЗДОРОВЬЕ: ${def.hp} (+50% за каждого напарника)`, tx, y, tw, 16 * k);
+      ctx.fillText(`НАГРАДА: ${def.bonus} очков`, tx, y);
+      y += 18 * k;
+      ctx.fillStyle = '#ff7aff';
+      ctx.fillText(`ТРОФЕЙ: ${WEAPONS[def.drop] ? WEAPONS[def.drop].name : '—'} (только Дани)`, tx, y, tw);
+      return y;
+    });
   }
 
   _weaponStats(info) {
@@ -760,33 +807,37 @@ class Menu {
 
     // текст и характеристики
     const tx = bx + bw + 24, tw = c.x + c.w - tx - 24;
-    this.glowText(ctx, info.name, tx, c.y + 46, '#ffd319', 26, 'left', 12);
-    ctx.font = `13px "Courier New", monospace`; ctx.fillStyle = '#e8e4f8'; ctx.textAlign = 'left';
-    let y = c.y + 74;
-    y += this._wrapText(ctx, info.desc, tx, y, tw, 16);
-    const stats = this._weaponStats(info);
-    if (stats) {
-      y += 4;
-      for (const [label, v, txt] of stats) {
-        ctx.font = `bold 11px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
-        ctx.fillText(label, tx, y);
-        ctx.textAlign = 'right'; ctx.fillStyle = '#ffffff'; ctx.fillText(txt, tx + tw, y); ctx.textAlign = 'left';
-        const segs = 12, fill = Math.round(Utils.clamp(v, 0, 1) * segs);
-        for (let i = 0; i < segs; i++) {
-          ctx.fillStyle = i < fill ? (i < segs * 0.5 ? '#05d9e8' : i < segs * 0.8 ? '#ffd319' : '#ff2a6d') : 'rgba(255,255,255,0.1)';
-          ctx.fillRect(tx + i * (tw / segs), y + 4, tw / segs - 2, 5);
+    this._fit(ctx, c.y + c.h - 14, (k) => {
+      let y = c.y + 20 + 26 * k;
+      this.glowText(ctx, info.name, tx, y, '#ffd319', 26 * k, 'left', 12);
+      y += 26 * k;
+      ctx.font = this._font(13, k); ctx.fillStyle = '#e8e4f8'; ctx.textAlign = 'left';
+      y += this._wrapText(ctx, info.desc, tx, y, tw, 16 * k);
+      const stats = this._weaponStats(info);
+      if (stats) {
+        y += 8 * k;
+        for (const [label, v, txt] of stats) {
+          ctx.font = this._font(11, k, true); ctx.fillStyle = '#9a94b8';
+          ctx.fillText(label, tx, y);
+          ctx.textAlign = 'right'; ctx.fillStyle = '#ffffff'; ctx.fillText(txt, tx + tw, y); ctx.textAlign = 'left';
+          const segs = 12, fill = Math.round(Utils.clamp(v, 0, 1) * segs);
+          for (let i = 0; i < segs; i++) {
+            ctx.fillStyle = i < fill ? (i < segs * 0.5 ? '#05d9e8' : i < segs * 0.8 ? '#ffd319' : '#ff2a6d') : 'rgba(255,255,255,0.1)';
+            ctx.fillRect(tx + i * (tw / segs), y + 4 * k, tw / segs - 2, 5 * k);
+          }
+          y += 24 * k;
         }
-        y += 25;
+      } else {
+        y += 10 * k;
+        const med = info.id === 'medkit';
+        if (med && !ctx.hasOwnProperty('fillText')) for (let i = 0; i < 3; i++) Sprites.star(ctx, tx + 10 + i * 18, y, 6, '#ff5a64');
+        ctx.font = this._font(14, k, true); ctx.fillStyle = med ? '#ff5a64' : '#9adf5a';
+        ctx.fillText(med ? '+1 СЕРДЦЕ' : 'G — БРОСИТЬ, ВЗРЫВ ЧЕРЕЗ 1.8 С', med ? tx + 64 : tx, y + 5, tw);
+        y += 30 * k;
       }
-    } else {
-      y += 10;
-      for (let i = 0; i < 3; i++) Sprites.star(ctx, tx + 10 + i * 18, y, 6, '#ff5a64');
-      ctx.font = `bold 14px "Courier New", monospace`; ctx.fillStyle = '#ff5a64';
-      ctx.fillText('+1 СЕРДЦЕ', tx + 64, y + 5);
-      y += 30;
-    }
-    ctx.font = `bold 12px "Courier New", monospace`; ctx.fillStyle = '#05d9e8';
-    this._wrapText(ctx, '» ' + info.tip, tx, Math.min(y + 4, c.y + c.h - 30), tw, 15);
+      ctx.font = this._font(12, k, true); ctx.fillStyle = '#05d9e8';
+      return y + this._wrapText(ctx, '» ' + info.tip, tx, y, tw, 15 * k) - 11 * k;
+    });
   }
 
   // ================= ТАБЛИЦА ЛИДЕРОВ =================

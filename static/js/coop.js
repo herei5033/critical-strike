@@ -340,7 +340,7 @@ class CoopUI {
     M.drawBackground(ctx, w, h, this.t, 0.45);
     M.glowText(ctx, 'КОРПОРАТИВ', w / 2, 52, '#ff2a6d', Math.min(40, w * 0.06), 'center', 20);
     ctx.font = '13px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText('совместная игра до 3 человек', w / 2, 74);
+    if (this.screen === 'home') ctx.fillText('совместная игра до 3 человек', w / 2, 74);
 
     if (this.screen === 'home') this._drawHome(ctx, w, h);
     else this._drawLobby(ctx, w, h);
@@ -349,9 +349,10 @@ class CoopUI {
       ctx.globalAlpha = Math.min(1, this.msgT);
       ctx.font = 'bold 15px "Courier New", monospace'; ctx.textAlign = 'center';
       const tw = ctx.measureText(this.msg).width + 30;
-      ctx.fillStyle = 'rgba(10,4,20,0.9)'; ctx.fillRect(w / 2 - tw / 2, h - 118, tw, 30);
-      ctx.strokeStyle = '#ffd319'; ctx.strokeRect(w / 2 - tw / 2 + 0.5, h - 117.5, tw - 1, 29);
-      ctx.fillStyle = '#ffd319'; ctx.fillText(this.msg, w / 2, h - 98);
+      // всплывающее сообщение — под заголовком, чтобы не закрывать кнопки
+      ctx.fillStyle = 'rgba(10,4,20,0.92)'; ctx.fillRect(w / 2 - tw / 2, 84, tw, 30);
+      ctx.strokeStyle = '#ffd319'; ctx.strokeRect(w / 2 - tw / 2 + 0.5, 84.5, tw - 1, 29);
+      ctx.fillStyle = '#ffd319'; ctx.fillText(this.msg, w / 2, 104);
       ctx.globalAlpha = 1;
     }
   }
@@ -365,17 +366,21 @@ class CoopUI {
       'Никнейм используется в сетевой игре и в таблице лидеров.',
       'Создайте комнату и сообщите код друзьям — или войдите по их коду.',
     ];
-    lines.forEach((l, i) => ctx.fillText(l, w / 2, h * 0.42 - 54 + i * 18));
-    // три героя бок о бок
-    const ids = ['dani', 'gal', 'daur'];
-    ids.forEach((id, i) => {
-      ctx.save();
-      ctx.translate(w / 2 - 90 + i * 90, h * 0.42 - 100);
-      ctx.rotate(-Math.PI / 2);
-      ctx.scale(1.7, 1.7);
-      Sprites.drawHuman(ctx, Sprites.HEROES[id], { t: this.t + i, walk: this.t * 9 + i, move: 0.7, weaponId: ['glock', null, 'shotgun'][i] });
-      ctx.restore();
-    });
+    // всё раскладываем от верхней кнопки, чтобы ничего не налезало на заголовок
+    const top = this._homeRects(w, h)[0].y;
+    lines.forEach((l, i) => ctx.fillText(l, w / 2, top - 34 + i * 18, w - 24));
+    // три героя бок о бок — в свободном месте между подзаголовком и текстом
+    const free = top - 50 - 84;
+    if (free > 30) {
+      const sc = Math.min(1.7, free / 44), hy = 84 + free / 2 + 4;
+      ['dani', 'gal', 'daur'].forEach((id, i) => {
+        ctx.save();
+        ctx.translate(w / 2 - 90 + i * 90, hy);
+        ctx.scale(sc, sc);
+        Sprites.drawHuman(ctx, Sprites.HEROES[id], { t: this.t + i, walk: this.t * 9 + i, move: 0.7, weaponId: [null, null, 'shotgun'][i] });
+        ctx.restore();
+      });
+    }
     void M;
   }
 
@@ -452,7 +457,7 @@ class CoopUI {
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(0, 6, 26, 14, 0, 0, Math.PI * 2); ctx.fill();
       ctx.rotate(-Math.PI / 2 + Math.sin(this.t) * 0.3);
       ctx.scale(2.4, 2.4);
-      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: 'glock', gal: null, daur: 'shotgun' }[mine] });
+      Sprites.drawHuman(ctx, Sprites.HEROES[mine], { t: this.t, walk: this.t * 9, move: 0.8, weaponId: { dani: null, gal: null, daur: 'shotgun' }[mine] });
       ctx.restore();
     }
 
@@ -476,7 +481,7 @@ class CoopUI {
     const maxLines = Math.floor((H.h - 110) / 16);
     lines.slice(-maxLines).forEach(([l, sys], i) => {
       ctx.fillStyle = sys ? '#05d9e8' : '#e8e4f8';
-      ctx.fillText(l, H.x + 14, H.y + 86 + i * 16);
+      ctx.fillText(l, H.x + 14, H.y + 86 + i * 16, H.w - 28);
     });
     ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(H.x + 10, H.y + H.h - 34, H.w - 20, 24);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
@@ -488,7 +493,7 @@ class CoopUI {
     if (!this.isHost) {
       ctx.textAlign = 'center'; ctx.font = '13px "Courier New", monospace';
       ctx.fillStyle = `rgba(255,211,25,${0.6 + 0.4 * Math.sin(this.t * 3)})`;
-      ctx.fillText('Ожидаем, пока хост начнёт игру…', w / 2, h - 80);
+      ctx.fillText('Ожидаем, пока хост начнёт игру…', w / 2, L.buttons[0].y - 5, w - 24);
     }
   }
 }
@@ -1181,7 +1186,7 @@ class CoopSession {
   // Панель команды: здоровье всех игроков постоянно на экране
   drawPartyHud(ctx, W, scale) {
     const g = this.game;
-    let y = (g._hudBottom || 84 * scale) + 6 * scale;
+    let y = (g._hudBottom || 84 * scale) + 5 * scale;
     for (const rp of this.remotes.values()) {
       const x = 14 * scale;
       ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 200 * scale, 30 * scale);

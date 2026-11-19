@@ -376,12 +376,9 @@ class Game {
       if (Input.consumeClick()) {
         const mx = Input.mouse.x;
         const my = Input.mouse.y;
-        const spacing = 280;
-        const startX = this.W / 2 - spacing;
         for (let i = 0; i < 3; i++) {
-          const x = startX + i * spacing;
-          const y = 200;
-          if (mx > x - 100 && mx < x + 100 && my > y - 80 && my < y + 220) {
+          const r = (this._charRects || [])[i];
+          if (r && mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) {
             if (this.selectedChar === i) {
               this.startRun();
             } else {
@@ -697,7 +694,7 @@ class Game {
     const COL = { dani: '#05d9e8', gal: '#ff2a6d', daur: '#ffd319' };
     const INFO = { dani: ['ДАНИ', 'ТРОФЕЙЩИК'], gal: ['ГАЛА', 'ТАРАН'], daur: ['ДАУР', 'СТРЕЛОК'] };
     const col = COL[pl.charId] || '#05d9e8';
-    const font = (px, bold = true) => `${bold ? 'bold ' : ''}${Math.round(px * s)}px "Courier New", monospace`;
+    const font = (px, bold = true) => `${bold ? 'bold ' : ''}${Math.max(9, Math.round(px * s))}px "Courier New", monospace`;
 
     // отслеживаем урон — HUD вздрагивает и краснеет
     if (this._hudHp === undefined || pl.hp > this._hudHp) this._hudHp = pl.hp;
@@ -706,17 +703,19 @@ class Game {
     const low = pl.hp <= 1 && !pl.dead;
 
     ctx.save();
-    const jx = hurt > 0 ? Utils.rand(-3, 3) * hurt * s : 0;
-    ctx.translate(jx, 0);
+    ctx.translate(hurt > 0 ? Utils.rand(-2, 2) * hurt * s : 0, 0);
 
-    // ===== карточка героя =====
-    const x0 = 12 * s, y0 = 12 * s, pw = 280 * s;
-    this._hudPanel(ctx, x0, y0, pw, 66 * s, col, s);
-    // портрет
-    const ps = 50 * s, px = x0 + 10 * s, py = y0 + 8 * s;
+    const ws = pl.weapon2 ? [pl.weapon, pl.weapon2] : [pl.weapon];
+    const x0 = 10 * s, y0 = 10 * s, pw = 210 * s;
+    const headH = 40 * s, rowH = 24 * s;
+    const ph = headH + ws.length * rowH + (pl.weapon2 ? 12 * s : 0) + 4 * s;
+    this._hudPanel(ctx, x0, y0, pw, ph, col, s);
+
+    // ===== герой =====
+    const ps = 30 * s, px = x0 + 8 * s, py = y0 + 5 * s;
     const img = this.images[pl.charId];
     ctx.save();
-    this._rr(ctx, px, py, ps, ps, 5 * s); ctx.clip();
+    this._rr(ctx, px, py, ps, ps, 4 * s); ctx.clip();
     ctx.fillStyle = '#120a1e'; ctx.fillRect(px, py, ps, ps);
     if (img && img.complete && img.naturalWidth) {
       const iw = img.naturalWidth, ih = img.naturalHeight, m = Math.min(iw, ih);
@@ -729,178 +728,157 @@ class Game {
     }
     ctx.restore();
     ctx.save();
-    this._rr(ctx, px, py, ps, ps, 5 * s);
-    ctx.shadowColor = low ? '#ff2a6d' : col; ctx.shadowBlur = 10 * s;
-    ctx.strokeStyle = low ? '#ff2a6d' : col; ctx.lineWidth = 2 * s; ctx.stroke();
+    this._rr(ctx, px, py, ps, ps, 4 * s);
+    ctx.shadowColor = low ? '#ff2a6d' : col; ctx.shadowBlur = 6 * s;
+    ctx.strokeStyle = low ? '#ff2a6d' : col; ctx.lineWidth = 1.5 * s; ctx.stroke();
     ctx.restore();
 
-    // имя и способность
     const [nm, perk] = INFO[pl.charId] || ['ГЕРОЙ', ''];
-    const tx = px + ps + 12 * s;
+    const tx = px + ps + 8 * s;
     ctx.textAlign = 'left';
-    ctx.font = font(17); ctx.fillStyle = '#fff';
-    ctx.fillText(nm, tx, y0 + 26 * s);
+    ctx.font = font(12); ctx.fillStyle = '#fff';
+    ctx.fillText(nm, tx, y0 + 16 * s);
     const nw = ctx.measureText(nm).width;
-    ctx.font = font(10); ctx.fillStyle = col;
-    ctx.fillText(perk, tx + nw + 8 * s, y0 + 25 * s);
+    ctx.font = font(8); ctx.fillStyle = col;
+    ctx.fillText(perk, tx + nw + 5 * s, y0 + 15 * s);
 
     // сердца
     for (let i = 0; i < pl.maxHp; i++) {
       const filled = i < pl.hp;
-      const hx = tx + 9 * s + i * 24 * s, hy = y0 + 38 * s;
+      const hx = tx + 6 * s + i * 15 * s, hy = y0 + 22 * s;
       const beat = filled && low ? 1 + 0.12 * Math.max(0, Math.sin(t * 9)) : 1;
       ctx.save();
-      ctx.translate(hx, hy); ctx.scale(s * 0.95 * beat, s * 0.95 * beat);
+      ctx.translate(hx, hy); ctx.scale(s * 0.6 * beat, s * 0.6 * beat);
       ctx.beginPath();
       ctx.moveTo(0, 4);
       ctx.bezierCurveTo(-10, -6, -16, 6, 0, 16);
       ctx.bezierCurveTo(16, 6, 10, -6, 0, 4);
       ctx.closePath();
-      if (filled) { ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 8; }
+      if (filled) { ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 6; }
       ctx.fillStyle = filled ? '#ff2a6d' : '#2a1a2e';
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = filled ? '#ff9ac0' : '#4a3450'; ctx.lineWidth = 1.4; ctx.stroke();
-      if (filled) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(-7, 2, 3, 3); }
+      ctx.strokeStyle = filled ? '#ff9ac0' : '#4a3450'; ctx.lineWidth = 1.6; ctx.stroke();
       ctx.restore();
     }
     // гранаты
-    if (pl.grenades > 0) {
-      const gx0 = x0 + pw - 14 * s;
-      for (let i = 0; i < pl.grenades; i++) {
-        ctx.save();
-        ctx.translate(gx0 - i * 16 * s, y0 + 46 * s); ctx.scale(1.6 * s, 1.6 * s);
-        Sprites.drawGrenade(ctx, 0, false);
-        ctx.restore();
-      }
-      ctx.font = font(9, false); ctx.fillStyle = '#9a94b8'; ctx.textAlign = 'right';
-      ctx.fillText('G', gx0 - (pl.grenades - 1) * 16 * s - 11 * s, y0 + 50 * s);
+    for (let i = 0; i < pl.grenades; i++) {
+      ctx.save();
+      ctx.translate(x0 + pw - 12 * s - i * 12 * s, y0 + 28 * s); ctx.scale(1.15 * s, 1.15 * s);
+      Sprites.drawGrenade(ctx, 0, false);
+      ctx.restore();
     }
 
-    // ===== оружие =====
-    let y = y0 + 72 * s;
-    const ws = pl.weapon2 ? [pl.weapon, pl.weapon2] : [pl.weapon];
+    // ===== оружие — строки под героем =====
+    let y = y0 + headH;
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(x0 + 8 * s, y - 2 * s, pw - 16 * s, 1);
     ws.forEach((w, wi) => {
-      const ch = 44 * s;
       const empty = w && w.type === 'ranged' && w.ammo <= 0;
-      this._hudPanel(ctx, x0, y, pw, ch, empty ? '#ff2a6d' : (w ? (w.rare ? '#ff8a30' : w.special ? '#ffd319' : '#05d9e8') : '#6a6488'), s);
+      const iw = 46 * s, ix = x0 + 8 * s;
       // иконка
-      const iw = 76 * s;
-      ctx.fillStyle = 'rgba(255,255,255,0.05)';
-      ctx.fillRect(x0 + 8 * s, y + 5 * s, iw, ch - 10 * s);
       ctx.save();
-      ctx.beginPath(); ctx.rect(x0 + 8 * s, y + 5 * s, iw, ch - 10 * s); ctx.clip();
+      ctx.beginPath(); ctx.rect(ix, y + 1 * s, iw, rowH - 4 * s); ctx.clip();
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(ix, y + 1 * s, iw, rowH - 4 * s);
       if (w) {
         const len = w.length || 20;
-        const k = Math.min(2.6, 56 / len) * s;
-        ctx.translate(x0 + 8 * s + iw / 2 - len * 0.32 * k, y + ch / 2 - 1 * s);
+        const k = Math.min(1.6, 36 / len) * s;
+        ctx.translate(ix + iw / 2 - len * 0.32 * k, y + rowH / 2 - 1 * s);
         ctx.scale(k, k);
-        ctx.shadowColor = 'rgba(255,255,255,0.35)'; ctx.shadowBlur = 4;
+        ctx.shadowColor = 'rgba(255,255,255,0.35)'; ctx.shadowBlur = 3;
         Sprites.drawWeapon(ctx, w.id, true);
       } else {
-        // кулак
-        ctx.translate(x0 + 8 * s + iw / 2, y + ch / 2);
+        ctx.translate(ix + iw / 2, y + rowH / 2 - 1 * s);
         ctx.fillStyle = '#dfa57e';
-        this._rr(ctx, -10 * s, -7 * s, 20 * s, 14 * s, 4 * s); ctx.fill();
+        this._rr(ctx, -7 * s, -5 * s, 14 * s, 10 * s, 3 * s); ctx.fill();
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        for (let i = 0; i < 3; i++) ctx.fillRect((-5 + i * 5) * s, -7 * s, 1 * s, 8 * s);
+        for (let i = 0; i < 3; i++) ctx.fillRect((-3.5 + i * 3.5) * s, -5 * s, 1 * s, 6 * s);
       }
       ctx.restore();
 
-      const nx = x0 + iw + 18 * s, right = x0 + pw - 12 * s;
-      ctx.textAlign = 'left'; ctx.font = font(14); ctx.fillStyle = '#fff';
+      const nx = ix + iw + 7 * s, right = x0 + pw - 8 * s;
       const label = w ? w.name.toUpperCase() : 'КУЛАКИ';
-      ctx.fillText(label, nx, y + 18 * s);
-      if (ws.length > 1) { const lw = ctx.measureText(label).width; ctx.font = font(9, false); ctx.fillStyle = '#9a94b8'; ctx.fillText(wi ? '· ЛЕВАЯ' : '· ПРАВАЯ', nx + lw + 6 * s, y + 17 * s); }
-
+      ctx.textAlign = 'left'; ctx.font = font(10); ctx.fillStyle = empty ? '#ff2a6d' : '#fff';
+      ctx.fillText(label, nx, y + 10 * s, right - nx - 40 * s);
       if (w && w.type === 'ranged') {
-        const bw = right - nx, by = y + 25 * s;
         const frac = w.maxAmmo ? w.ammo / w.maxAmmo : 0;
         const ammoCol = empty ? '#ff2a6d' : frac < 0.25 ? '#ffb040' : '#05d9e8';
+        ctx.font = font(9); ctx.textAlign = 'right'; ctx.fillStyle = ammoCol;
+        const blink = empty && Math.sin(t * 7) > -0.3;
+        ctx.fillText(empty ? (blink ? 'ПУСТО·Q' : '') : `${w.ammo}/${w.maxAmmo}`, right, y + 10 * s);
+        const bx = nx, by = y + 14 * s, bw = right - nx;
         if (w.maxAmmo <= 16) {
-          const gap = 2 * s, pwid = Math.min(9 * s, (bw - gap * (w.maxAmmo - 1)) / w.maxAmmo);
+          const gap = 1.5 * s, pwid = (bw - gap * (w.maxAmmo - 1)) / w.maxAmmo;
           for (let i = 0; i < w.maxAmmo; i++) {
             ctx.fillStyle = i < w.ammo ? ammoCol : 'rgba(255,255,255,0.1)';
-            ctx.fillRect(nx + i * (pwid + gap), by, pwid, 10 * s);
+            ctx.fillRect(bx + i * (pwid + gap), by, pwid, 4 * s);
           }
         } else {
-          const bw2 = bw - 54 * s;
-          ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(nx, by + 2 * s, bw2, 7 * s);
-          ctx.save(); ctx.shadowColor = ammoCol; ctx.shadowBlur = 6;
-          ctx.fillStyle = ammoCol; ctx.fillRect(nx, by + 2 * s, bw2 * frac, 7 * s);
-          ctx.restore();
-          ctx.font = font(11); ctx.textAlign = 'right'; ctx.fillStyle = ammoCol;
-          ctx.fillText(`${w.ammo}/${w.maxAmmo}`, right, by + 10 * s);
-        }
-        if (empty && Math.sin(t * 7) > -0.3) {
-          ctx.font = font(10); ctx.textAlign = 'left'; ctx.fillStyle = '#ff2a6d';
-          ctx.textAlign = 'right'; ctx.fillText('ПУСТО — Q', right, y + 17 * s);
+          ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(bx, by, bw, 4 * s);
+          ctx.fillStyle = ammoCol; ctx.fillRect(bx, by, bw * frac, 4 * s);
         }
       } else {
-        ctx.font = font(10, false); ctx.fillStyle = '#9a94b8'; ctx.textAlign = 'left';
-        ctx.fillText(w ? 'БЛИЖНИЙ БОЙ' : (pl.charId === 'gal' ? 'УБИВАЕТ С ОДНОГО УДАРА' : 'ОГЛУШАЕТ'), nx, y + 33 * s);
+        ctx.font = font(8, false); ctx.fillStyle = '#9a94b8';
+        ctx.fillText(w ? 'ближний бой' : (pl.charId === 'gal' ? 'убивает с удара' : 'оглушает'), nx, y + 19 * s);
       }
-      y += ch + 5 * s;
+      if (ws.length > 1) {
+        ctx.font = font(7, false); ctx.fillStyle = '#6a6488'; ctx.textAlign = 'left';
+        ctx.fillText(wi ? 'Л' : 'П', ix + 2 * s, y + 8 * s);
+      }
+      y += rowH;
     });
     if (pl.weapon2) {
-      ctx.font = font(10); ctx.textAlign = 'left';
+      ctx.font = font(8); ctx.textAlign = 'left';
       ctx.fillStyle = pl.dualSpread ? '#ffd319' : '#6a6488';
-      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : 'ПКМ / CTRL — ВРАЗБРОС', x0 + 4 * s, y + 9 * s);
-      y += 14 * s;
+      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : 'ПКМ/CTRL — вразброс', x0 + 10 * s, y + 7 * s);
     }
     ctx.restore();
-    this._hudBottom = y;
+    this._hudBottom = y0 + ph;
 
     // ===== справа: очки, убийства, комбо =====
     const R = this.W - rightMargin;
-    const rw = 200 * s, rx = R - rw;
-    this._hudPanel(ctx, rx, y0, rw, 70 * s, '#ffd319', s);
-    ctx.textAlign = 'right';
-    ctx.font = font(9, false); ctx.fillStyle = '#9a94b8';
-    ctx.fillText('ОЧКИ', R - 10 * s, y0 + 14 * s);
-    // число очков плавно догоняет реальное
+    const rw = 150 * s, rx = R - rw, rh = 44 * s;
+    this._hudPanel(ctx, rx, y0, rw, rh, '#ffd319', s);
     this._hudScore = this._hudScore === undefined || this._hudScore > this.score ? this.score : this._hudScore + Math.ceil((this.score - this._hudScore) * 0.2);
     const bump = this._hudScore < this.score ? 1.08 : 1;
+    ctx.textAlign = 'left'; ctx.font = font(8, false); ctx.fillStyle = '#9a94b8';
+    ctx.fillText('ОЧКИ', rx + 10 * s, y0 + 13 * s);
     ctx.save();
-    ctx.font = font(26 * bump); ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 12 * s; ctx.fillStyle = '#ffd319';
-    ctx.fillText(String(this._hudScore), R - 10 * s, y0 + 40 * s);
+    ctx.textAlign = 'right';
+    ctx.font = font(18 * bump); ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 8 * s; ctx.fillStyle = '#ffd319';
+    ctx.fillText(String(this._hudScore), R - 8 * s, y0 + 22 * s);
     ctx.restore();
-    // убийства
     const kFrac = this.totalEnemies ? Math.min(1, this.kills / this.totalEnemies) : 0;
-    ctx.font = font(10); ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
-    ctx.fillText(`☠ ${this.kills}/${this.totalEnemies}`, rx + 12 * s, y0 + 60 * s);
-    const kbx = rx + 84 * s, kbw = rw - 96 * s;
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(kbx, y0 + 53 * s, kbw, 6 * s);
-    ctx.fillStyle = kFrac >= 1 ? '#3dff8a' : '#ff2a6d'; ctx.fillRect(kbx, y0 + 53 * s, kbw * kFrac, 6 * s);
+    ctx.font = font(9); ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.fillText(`☠ ${this.kills}/${this.totalEnemies}`, rx + 10 * s, y0 + 37 * s);
+    const kbx = rx + 62 * s, kbw = rw - 70 * s;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(kbx, y0 + 32 * s, kbw, 4 * s);
+    ctx.fillStyle = kFrac >= 1 ? '#3dff8a' : '#ff2a6d'; ctx.fillRect(kbx, y0 + 32 * s, kbw * kFrac, 4 * s);
 
-    let ry = y0 + 78 * s;
-    // следующий босс (бесконечный режим и корпоратив)
+    let ry = y0 + rh + 4 * s;
     const bd = this.bossDirector;
     if (bd && !bd.active && !this.enemies.some(e => e.isBoss && !e.dead)) {
       const left = Math.max(0, bd.nextScore - this.score);
-      ctx.font = font(10); ctx.textAlign = 'right'; ctx.fillStyle = left < 300 ? '#ff2a6d' : '#9a94b8';
-      ctx.fillText(left > 0 ? `БОСС ЧЕРЕЗ ${left} ОЧК.` : 'БОСС БЛИЗКО…', R - 4 * s, ry + 6 * s);
-      ry += 16 * s;
+      ctx.font = font(8); ctx.textAlign = 'right'; ctx.fillStyle = left < 300 ? '#ff2a6d' : '#9a94b8';
+      ctx.fillText(left > 0 ? `БОСС ЧЕРЕЗ ${left}` : 'БОСС БЛИЗКО…', R - 4 * s, ry + 8 * s);
+      ry += 12 * s;
     }
-    // комбо
     if (this.combo > 1 && this.comboTimer > 0) {
       const k = Utils.clamp(this.comboTimer / 3, 0, 1);
-      const cs = 20 + Math.min(this.combo, 8) * 2;
+      const cs = 15 + Math.min(this.combo, 8) * 1.5;
       const pop = 1 + Math.max(0, (this.comboTimer - 2.75) * 1.2);
-      ctx.save();
-      ctx.translate(R - 4 * s, ry + 22 * s); ctx.scale(pop, pop);
-      ctx.font = font(cs); ctx.textAlign = 'right';
       const cc = this.combo >= 6 ? '#ffd319' : this.combo >= 4 ? '#ff8a30' : '#ff2a6d';
-      ctx.shadowColor = cc; ctx.shadowBlur = 14 * s; ctx.fillStyle = cc;
+      ctx.save();
+      ctx.translate(R - 4 * s, ry + 18 * s); ctx.scale(pop, pop);
+      ctx.font = font(cs); ctx.textAlign = 'right';
+      ctx.shadowColor = cc; ctx.shadowBlur = 10 * s; ctx.fillStyle = cc;
       ctx.fillText(`x${this.combo}`, 0, 0);
       const cw = ctx.measureText(`x${this.combo}`).width;
-      ctx.shadowBlur = 0; ctx.font = font(10); ctx.fillStyle = '#fff';
-      ctx.fillText('КОМБО', -cw - 6 * s, -2 * s);
+      ctx.shadowBlur = 0; ctx.font = font(8); ctx.fillStyle = '#fff';
+      ctx.fillText('КОМБО', -cw - 4 * s, -2 * s);
       ctx.restore();
-      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(R - 130 * s, ry + 30 * s, 126 * s, 4 * s);
-      ctx.fillStyle = cc_bar(k); ctx.fillRect(R - 130 * s, ry + 30 * s, 126 * s * k, 4 * s);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(R - 90 * s, ry + 23 * s, 86 * s, 3 * s);
+      ctx.fillStyle = k < 0.3 ? '#ff2a6d' : '#05d9e8'; ctx.fillRect(R - 90 * s, ry + 23 * s, 86 * s * k, 3 * s);
     }
-    function cc_bar(k) { return k < 0.3 ? '#ff2a6d' : '#05d9e8'; }
   }
 
   _drawHearts(ctx) {
@@ -1354,6 +1332,11 @@ class Game {
     const imgSize = isMobile ? 110 : 150;
     const baseY = isMobile ? 150 : 200;
 
+    const descH = isMobile ? 0 : 92;
+    // на невысоком экране сжимаем всю сцену, чтобы карточки и подсказка помещались
+    const fitK = Math.min(1, (this.H - 44) / (baseY - 80 + cardH + descH + 14));
+    ctx.save();
+    ctx.translate(this.W / 2, 0); ctx.scale(fitK, fitK); ctx.translate(-this.W / 2, 0);
     M.glowText(ctx, 'ВЫБОР ПЕРСОНАЖА', this.W / 2, isMobile ? 46 : 70, '#05d9e8', isMobile ? 26 : 38);
 
     for (let i = 0; i < 3; i++) {
@@ -1362,12 +1345,14 @@ class Game {
       const isSel = i === this.selectedChar;
       const bob = isSel ? Math.sin(this.charSelectAnim) * 6 : 0;
       const top = baseY - 80 + bob;
+      this._charRects = this._charRects || [];
+      this._charRects[i] = { x: this.W / 2 + (x - cardW / 2 - this.W / 2) * fitK, y: (baseY - 80) * fitK, w: cardW * fitK, h: (cardH + descH) * fitK };
 
       ctx.save();
       if (isSel) {
         ctx.translate(x, top + cardH / 2); ctx.scale(1.04, 1.04); ctx.translate(-x, -(top + cardH / 2));
       } else ctx.globalAlpha = 0.72;
-      M.panel(ctx, x - cardW / 2, top, cardW, cardH, isSel ? '#ffd319' : 'rgba(5,217,232,0.5)', 0.82);
+      M.panel(ctx, x - cardW / 2, top, cardW, cardH + descH, isSel ? '#ffd319' : 'rgba(5,217,232,0.5)', 0.82);
 
       const img = this.images[c.id];
       const ix = x - imgSize / 2, iy = top + 14;
@@ -1406,16 +1391,33 @@ class Game {
       ctx.font = `10px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
       ctx.fillText('СКОРОСТЬ', x, ty + 16);
       if (!isMobile) {
-        ctx.font = `12px "Courier New", monospace`; ctx.fillStyle = isSel ? '#e8e4f8' : '#777';
-        this._wrapText(ctx, c.desc, x, ty + 34, cardW - 30, 15);
+        // описание подбираем по размеру, чтобы не вылезало за карточку
+        const avail = top + cardH + descH - 14 - (ty + 34);
+        let fs = 12;
+        for (; fs > 9; fs--) {
+          ctx.font = `${fs}px "Courier New", monospace`;
+          if ((this._countLines(ctx, c.desc, cardW - 28) - 1) * (fs + 3) <= avail) break;
+        }
+        ctx.fillStyle = isSel ? '#e8e4f8' : '#8a84a0';
+        this._wrapText(ctx, c.desc, x, ty + 34, cardW - 28, fs + 3);
       }
       ctx.restore();
     }
+    ctx.restore();
 
     ctx.textAlign = 'center';
     ctx.font = `14px "Courier New", monospace`;
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.fillText('A/D — выбор    ENTER / тап по карточке — старт    ESC — назад', this.W / 2, this.H - 24);
+  }
+
+  _countLines(ctx, text, maxWidth) {
+    let n = 1, line = '';
+    for (const word of text.split(' ')) {
+      const test = line + word + ' ';
+      if (ctx.measureText(test).width > maxWidth && line) { n++; line = word + ' '; } else line = test;
+    }
+    return n;
   }
 
   _wrapText(ctx, text, x, y, maxWidth, lineHeight) {
