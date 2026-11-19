@@ -357,7 +357,7 @@ class CoopUI {
       if (act === 0) this._askNick();
       else if (act === 1) this._create();
       else if (act === 2) this._join();
-      else if (act === 3 || Input.wasPressed('Escape')) { this.game.toMenu(); }
+      else if (act === 3 || Input.wasPressed('Escape')) { this.game.toMenu(); this.game.modesUI.open(); }
       if (act >= 0) AudioSys.play('menu_select');
       return;
     }

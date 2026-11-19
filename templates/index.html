@@ -36,6 +36,20 @@
     <button id="btn-pause" class="pbtn">II</button>
   </div>
 
+  <!-- Мобильное управление (Samsa Kombat): стик слева, кнопки ударов справа -->
+  <div id="mobile-fight-controls" class="mobile-overlay">
+    <div id="zone-fmove" class="touch-zone"><span class="zone-hint">ХОД · ВВЕРХ — ПРЫЖОК · ВНИЗ — ПРИСЕД</span></div>
+    <div id="stick-fmove" class="stick"><div class="stick-knob"></div></div>
+    <div id="fight-btns">
+      <button class="fbtn" id="fbtn-s"><span>ПРИЁМ</span></button>
+      <button class="fbtn" id="fbtn-b"><span>БЛОК</span></button>
+      <button class="fbtn" id="fbtn-k"><span>НОГА</span></button>
+      <button class="fbtn" id="fbtn-p"><span>РУКА</span></button>
+    </div>
+    <button class="fbtn fbtn-fatal" id="fbtn-f"><span>ФАТА<br>ЛИТИ</span></button>
+    <button id="fbtn-pause" class="pbtn">II</button>
+  </div>
+
   <!-- Мобильное управление (Меню) -->
   <div id="mobile-menu-controls" class="mobile-overlay">
     <button class="nbtn nbtn-back" id="btn-back">◀ НАЗАД</button>
@@ -80,6 +94,10 @@
   <script src="{{ url_for('static', filename='js/p2p.js') }}"></script>
   <script src="{{ url_for('static', filename='js/coop.js') }}"></script>
   <script src="{{ url_for('static', filename='js/menu.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/modes.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/kombat_art.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/kombat_stages.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/kombat.js') }}"></script>
   <script src="{{ url_for('static', filename='js/game.js') }}"></script>
   <script src="{{ url_for('static', filename='js/mobile.js') }}"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>

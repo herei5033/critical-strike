@@ -267,6 +267,7 @@ class Mission {
   // панель задания и стрелка к цели
   drawHud(ctx, W, H, s) {
     const o = this.obj, g = this.g;
+    this.panelBottom = 0;
     if (!o || this.complete || g.state !== 'playing') return;
     const rm = (window.innerWidth < 800 ? 100 : 20) * s;
     const left = 10 * s + 210 * s + 10, right = W - rm - 150 * s - 10;
@@ -277,6 +278,7 @@ class Mission {
     else if (o.type === 'hold') prog = `  ${Math.floor(Math.min(1, this.prog / o.t) * 100)}%`;
     else if (o.type === 'kill') prog = `  ${Math.min(o.n, g.kills - this.base)}/${o.n}`;
     const ph = 44 * s;
+    this.panelBottom = py + ph;     // надпись комнаты рисуется под панелью задания
     g.menu.panel(ctx, px, py, pw, ph, this.doneT >= 0 ? '#3dff8a' : this.ch.color, 0.88);
     ctx.textAlign = 'left';
     ctx.font = `bold ${Math.max(9, Math.round(10 * s))}px "Courier New", monospace`; ctx.fillStyle = this.ch.color;

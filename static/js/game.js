@@ -58,11 +58,14 @@ class Game {
     this.coopUI = new CoopUI(this);
     this.campaignUI = new CampaignUI(this);
     this.storyUI = new StoryUI(this);
+    this.modesUI = new ModesUI(this);
+    this.kombat = new SamsaKombat(this);
     this.storyIdx = null;       // глава сюжета (когда soloMode === 'story')
     this.dialogue = null;
     this.tutorial = null;       // урок обучения (полигон НВП)
     this.allies = [];           // клоны Дани
     this.pulls = [];            // стволы, летящие к Дауру (арсенал)
+    this.fireTrail = [];        // огненный след рывка Галы
     this.mission = null;        // задания главы сюжета
     this.thoughts = new Thoughts(this);   // мысли героя над головой
     this.radio = new Radio(this);         // сообщения союзников по рации
@@ -442,6 +445,7 @@ class Game {
     this.tutorial = null;
     this.allies = [];
     this.pulls = [];
+    this.fireTrail = [];
     this.mission = null;
     this.radio.q = []; this.radio.cur = null; this.thoughts.cur = null;
     if (this.coop) { this.coop.dispose(); this.coop = null; this.coopUI.leave(true); }
@@ -481,6 +485,8 @@ class Game {
     if (this.state === 'coop') { this.coopUI.update(dt); return; }
     if (this.state === 'levelSelect') { this.campaignUI.update(dt); return; }
     if (this.state === 'storySelect') { this.storyUI.update(dt); return; }
+    if (this.state === 'modes') { this.menu.t += dt; this.modesUI.update(dt); return; }
+    if (this.state === 'kombat') { this.menu.t += dt; this.kombat.update(dt); return; }
     if (this.state === 'dialogue') {
       if (this.dialogue) this.dialogue.update(dt); else this.state = 'playing';
       Effects.update(dt * 0.3, this.level);
@@ -902,6 +908,7 @@ class Game {
     for (const a of this.allies) a.update(dt, this);
     this.allies = this.allies.filter(a => !a.dead);
     this._updatePulls(dt);
+    this._updateFireTrail(dt);
     const p = this.player;
     if (!p || p.dead) return;
     if (p._wantClones) {
@@ -998,6 +1005,67 @@ class Game {
       this.coop.sendTo(pid, { t: 'give', w: pk.weapon.id, am: pk.weapon.ammo, s: 'w2', fx: Math.round(pk.x), fy: Math.round(pk.y) });
       this.pulls.push({ w: pk.weapon, sx: pk.x, sy: pk.y, x: pk.x, y: pk.y, t: 0, target: rp, equip: false });
     }
+  }
+
+  // ---------- огненный след рывка Галы: горит 2,5 с, поджигает всех, кто наступит ----------
+  _updateFireTrail(dt) {
+    const dashers = [];
+    if (this.player && !this.player.dead && this.player.charId === 'gal' && this.player.dashT > 0) dashers.push(this.player);
+    if (this.coop) for (const rp of this.coop.remotes.values()) if (!rp.dead && rp.charId === 'gal' && rp.mode === 3) dashers.push(rp);
+    for (const d of dashers) {
+      const x = d.x + 9, y = d.y + 9, last = d._trailLast;
+      if (!last || Utils.dist(last.x, last.y, x, y) > 12) {
+        d._trailLast = { x, y };
+        this.fireTrail.push({ x, y, t: 0, life: 2.5, by: d.charId, seed: Math.random() * 10 });
+      }
+    }
+    for (const d of [this.player]) if (d && d.dashT <= 0) d._trailLast = null;
+    const owner = !this.coop || this.coop.isHost;
+    for (const f of this.fireTrail) {
+      f.t += dt;
+      if (Math.random() < dt * 6) Effects.burst(f.x + Utils.rand(-6, 6), f.y + Utils.rand(-6, 6), '255,140,40', 1, 40);
+      if (!owner) continue;
+      for (const e of this.enemies) {
+        if (e.dead || (e._trailCd || 0) > 0) continue;
+        if (Utils.dist(f.x, f.y, e.cx(), e.cy()) < 18) {
+          e._trailCd = 0.45;
+          e.takeDamage(1, this.pickups, { kind: 'burn', angle: 0, by: f.by });
+          Effects.burst(e.cx(), e.cy(), '255,140,40', 5, 120);
+        }
+      }
+    }
+    for (const e of this.enemies) if (e._trailCd > 0) e._trailCd -= dt;
+    this.fireTrail = this.fireTrail.filter(f => f.t < f.life);
+    if (this.fireTrail.length > 220) this.fireTrail.splice(0, this.fireTrail.length - 220);
+  }
+
+  _drawFireTrail(ctx) {
+    if (!this.fireTrail.length) return;
+    const now = performance.now() / 1000;
+    ctx.save();
+    // выжженный пол
+    for (const f of this.fireTrail) {
+      ctx.fillStyle = `rgba(20,8,4,${0.35 * (1 - f.t / f.life)})`;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 11, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of this.fireTrail) {
+      const k = 1 - f.t / f.life, fl = 0.75 + 0.25 * Math.sin(now * 18 + f.seed * 5);
+      const r = (9 + 5 * fl) * Math.min(1, f.t * 8) * (0.5 + 0.5 * k);
+      const g = ctx.createRadialGradient(f.x, f.y - 2, 0, f.x, f.y, r * 1.6);
+      g.addColorStop(0, `rgba(255,230,150,${0.55 * k})`);
+      g.addColorStop(0.45, `rgba(255,120,30,${0.45 * k})`);
+      g.addColorStop(1, 'rgba(200,40,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r * 1.6, 0, Math.PI * 2); ctx.fill();
+      // язычки пламени
+      for (let i = 0; i < 2; i++) {
+        const ph = (now * 2.2 + f.seed + i * 0.5) % 1;
+        ctx.fillStyle = `rgba(255,${170 - ph * 100},40,${0.5 * k * (1 - ph)})`;
+        ctx.beginPath(); ctx.arc(f.x + Math.sin(f.seed * 7 + i * 3) * 5, f.y - ph * 14, 3.5 * (1 - ph) + 1, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
   }
 
   _updatePulls(dt) {
@@ -1648,6 +1716,18 @@ class Game {
       return;
     }
 
+    if (this.state === 'modes') {
+      this.modesUI.draw(ctx, this.W, this.H);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
+    if (this.state === 'kombat') {
+      this.kombat.draw(ctx, this.W, this.H);
+      ctx.drawImage(this.scanlines, 0, 0);
+      return;
+    }
+
     if (this.state === 'levelSelect') {
       this.campaignUI.draw(ctx, this.W, this.H);
       ctx.drawImage(this.scanlines, 0, 0);
@@ -1698,6 +1778,7 @@ class Game {
 
     for (const p of this.pickups) p.draw(b);
     if (this.coop) for (const r of this.coop.remotes.values()) r.draw(b);
+    this._drawFireTrail(b);
     for (const a of this.allies) a.draw(b);
     this._drawPulls(b);
     this.player.draw(b);
@@ -1931,7 +2012,8 @@ class Game {
       ctx.globalAlpha = Math.min(1, r.t * 2, (2.2 - r.t) * 4);
       ctx.font = `bold ${14 * scale}px "Courier New", monospace`;
       ctx.shadowColor = '#05d9e8'; ctx.shadowBlur = 8; ctx.fillStyle = '#e8f8ff';
-      ctx.fillText(r.text.toUpperCase(), this.W / 2, 44 * scale, this.W * 0.5);
+      const pb = this.mission && this.mission.panelBottom;
+      ctx.fillText(r.text.toUpperCase(), this.W / 2, pb ? pb + 18 * scale : 44 * scale, this.W * 0.5);
       ctx.restore();
     }
     const b = this.levelBanner;
@@ -2046,7 +2128,7 @@ class Game {
 
     const chars = [
       { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, огненный РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
       { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 10 убийств', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 

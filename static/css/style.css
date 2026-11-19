@@ -147,8 +147,37 @@ body[data-hero="gal"] #btn-ult.ready { display: flex; animation: ultPulse 0.6s i
 .nbtn-confirm { width: 96px; border-color: rgba(255, 211, 25, 0.7); color: #ffd319; font-size: 20px; }
 .nbtn-back { width: auto; padding: 0 14px; font-size: 14px; border-color: rgba(255, 42, 109, 0.6); color: #ff7aa8; }
 
+/* --- Слой Samsa Kombat (телефон) --- */
+#zone-fmove { left: 0; width: 50%; }
+#fight-btns {
+  position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: 70px 70px; gap: 10px; z-index: 1002; pointer-events: none;
+}
+.fbtn {
+  pointer-events: auto; touch-action: none;
+  width: 70px; height: 70px; border-radius: 50%;
+  border: 2px solid rgba(255, 90, 26, 0.75); background: rgba(26, 6, 6, 0.55);
+  color: #ffe6d0; font: bold 12px 'Courier New', monospace; line-height: 1.05;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  box-shadow: 0 0 14px rgba(255, 90, 26, 0.35);
+}
+.fbtn.pressed { transform: scale(0.92); background: rgba(255, 90, 26, 0.45); }
+#fbtn-b { border-color: rgba(5, 217, 232, 0.75); box-shadow: 0 0 14px rgba(5, 217, 232, 0.35); }
+#fbtn-s { border-color: rgba(255, 211, 25, 0.8); }
+.fbtn-fatal {
+  position: absolute; right: 180px; bottom: 40px; width: 84px; height: 84px; z-index: 1002;
+  border-color: #ff1020; background: rgba(160, 0, 16, 0.55); font-size: 13px; display: none;
+  animation: ultPulse 0.5s infinite alternate;
+}
+.fbtn-fatal.on { display: flex; }
+@media (max-height: 430px) {
+  #fight-btns { grid-template-columns: 58px 58px; gap: 8px; }
+  .fbtn { width: 58px; height: 58px; font-size: 11px; }
+  .fbtn-fatal { width: 70px; height: 70px; right: 150px; }
+}
+
 /* На ПК мобильное управление не показывается */
-body:not(.is-mobile) #mobile-game-controls, body:not(.is-mobile) #mobile-menu-controls { display: none !important; }
+body:not(.is-mobile) #mobile-game-controls, body:not(.is-mobile) #mobile-menu-controls, body:not(.is-mobile) #mobile-fight-controls { display: none !important; }
 
 /* Оверлей поворота */
 #rotate-overlay {

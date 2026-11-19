@@ -562,7 +562,7 @@ class StoryUI {
     if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD')) this._switch('tutorial');
     if (Input.wasPressed('Tab')) this._switch(this.tab === 'story' ? 'tutorial' : 'story');
     if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) { this._choose(this.cur); return; }
-    if (Input.wasPressed('Escape')) { this.game.toMenu(); return; }
+    if (Input.wasPressed('Escape')) { this.game.toMenu(); this.game.modesUI.open(); return; }
     const mx = Input.mouse.x, my = Input.mouse.y, click = Input.consumeClick();
     if (click) for (const r of this._tabRects(this.game.W)) if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { this._switch(r.id); return; }
     this._rects(this.game.W, this.game.H).forEach((r, i) => {

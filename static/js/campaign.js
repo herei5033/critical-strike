@@ -188,7 +188,7 @@ class CampaignUI {
     if (Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA') || Input.wasPressed('MobileUp')) { this.sel = (this.sel + n - 1) % n; AudioSys.play('menu_move'); }
     if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD') || Input.wasPressed('MobileDown')) { this.sel = (this.sel + 1) % n; AudioSys.play('menu_move'); }
     if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) this._choose(this.sel);
-    if (Input.wasPressed('Escape')) { this.game.toMenu(); return; }
+    if (Input.wasPressed('Escape')) { this.game.toMenu(); this.game.modesUI.open(); return; }
     const mx = Input.mouse.x, my = Input.mouse.y;
     const rects = this._rects(this.game.W, this.game.H);
     const click = Input.consumeClick();

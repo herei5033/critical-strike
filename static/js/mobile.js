@@ -83,6 +83,21 @@
   tapBtn('btn-kick', () => Input.simulatePress('KeyF'));
   tapBtn('btn-ult', () => Input.simulatePress('KeyE'));
   tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
+  // Samsa Kombat
+  floatingStick('zone-fmove', 'stick-fmove', 52,
+    (x, y, m) => {
+      Input.setMove(x, y);
+      const up = y < -0.6;
+      if (up && !Input._fUp && window.game) window.game.kombat._mobJump = true;
+      Input._fUp = up;
+    },
+    () => { Input.setMove(0, 0); Input._fUp = false; });
+  tapBtn('fbtn-p', () => Input.simulatePress('KeyJ'));
+  tapBtn('fbtn-k', () => Input.simulatePress('KeyK'));
+  tapBtn('fbtn-s', () => Input.simulatePress('KeyI'));
+  tapBtn('fbtn-f', () => Input.simulatePress('KeyF'));
+  tapBtn('fbtn-b', () => { Input.keys.KeyL = true; }, () => { Input.keys.KeyL = false; });
+  tapBtn('fbtn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
   // меню
   tapBtn('btn-up', () => Input.simulatePress('MobileUp'));
   tapBtn('btn-down', () => Input.simulatePress('MobileDown'));
@@ -96,8 +111,11 @@
     const g = window.game;
     if (!g) return;
     const playing = g.state === 'playing' || g.state === 'levelClear';
+    const K = g.kombat, fighting = g.state === 'kombat' && K && K.screen === 'battle' && !K.paused && K.phase !== 'over';
     $('mobile-game-controls').classList.toggle('active', playing && !TextField.active);
-    $('mobile-menu-controls').classList.toggle('active', !playing && !TextField.active && g.state !== 'loading' && g.state !== 'levelLoad');
+    $('mobile-fight-controls').classList.toggle('active', fighting);
+    $('fbtn-f').classList.toggle('on', fighting && K.phase === 'finish' && !!K.finishW && K.finishW.side === 0);
+    $('mobile-menu-controls').classList.toggle('active', !playing && !fighting && !TextField.active && g.state !== 'loading' && g.state !== 'levelLoad');
     const p = g.player;
     if (!playing || !p) return;
     document.body.dataset.hero = p.charId;
