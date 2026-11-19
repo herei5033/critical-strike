@@ -23,7 +23,7 @@ const AudioSys = {
     if (!this.ctx) this.init();
     if (!this.ctx || this.musicCache[url]) return;
     const r = await fetch(url);
-    if (!r.ok) return;
+    if (!r.ok) { (this._missing = this._missing || new Set()).add(url); return; }
     this.musicCache[url] = await this.ctx.decodeAudioData(await r.arrayBuffer());
   },
 
@@ -82,10 +82,12 @@ const AudioSys = {
   },
 
   playMusic(trackPath) {
+    this.lastTrack = trackPath;     // чтобы включить музыку обратно из паузы
     if (!this.ctx || !this.musicEnabled) return;
     if (this.currentTrack === trackPath && this.musicSource) return;
 
     this.stopMusic();
+    if (this._missing && this._missing.has(trackPath)) return;   // файла нет — просто тишина
 
     const start = (decoded) => {
       if (!this.musicEnabled || !decoded) return;
@@ -105,7 +107,9 @@ const AudioSys = {
       })
       .then(buffer => this.ctx.decodeAudioData(buffer))
       .then(decoded => {
-        if (!this.musicEnabled) return;
+        this.musicCache[trackPath] = decoded;
+        // пока грузилось, могли попросить другой трек
+        if (!this.musicEnabled || this.lastTrack !== trackPath || this.musicSource) return;
         this.musicSource = this.ctx.createBufferSource();
         this.musicSource.buffer = decoded;
         this.musicSource.loop = true;
@@ -113,7 +117,7 @@ const AudioSys = {
         this.musicSource.start();
         this.currentTrack = trackPath;
       })
-      .catch(e => console.warn('Music load failed:', e));
+      .catch(e => { (this._missing = this._missing || new Set()).add(trackPath); console.warn('Music load failed:', trackPath, e.message); });
   },
 
   stopMusic() {

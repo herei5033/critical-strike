@@ -430,6 +430,7 @@ class Game {
   leaveMatch() {
     TextField.close();
     this._exitAsk = null;
+    this.paused = null;
     if (this.coop) { this.coop.dispose(); this.coop = null; }
     this.coopUI.inMatch = false;
     this.player = null; this.level = null; this.enemies = []; this.bullets = []; this.pickups = []; this.cam = null;
@@ -442,6 +443,7 @@ class Game {
   toMenu() {
     TextField.close();
     this._exitAsk = null;
+    this.paused = null;
     this.tutorial = null;
     this.allies = [];
     this.pulls = [];
@@ -475,6 +477,8 @@ class Game {
       }
       return;
     }
+
+    this._syncQuiet();
 
     // Эффекты
     this.lightFlicker += dt * 15;
@@ -514,6 +518,10 @@ class Game {
     }
 
     if (this.coop && this._updateExitAsk(dt)) return;
+    if (!this.coop && this.paused) {
+      if (this.state !== 'playing') this.paused = null;
+      else { this._updatePauseMenu(); return; }
+    }
     if (this.player && this.player.rageT > 0 && !this.player.dead) this.shake = Math.max(this.shake || 0, 0.22);
 
     if (this.state === 'coopIntro') {
@@ -556,7 +564,8 @@ class Game {
     }
 
     if (this.state === 'playing' || this.state === 'dead' || this.state === 'levelClear') {
-      if (!this.coop && Input.wasPressed('Escape') && this.state !== 'levelClear' && !(this.state === 'dead' && !this.nameSubmitted)) { this.toMenu(); return; }
+      if (!this.coop && this.state === 'playing' && this._escPressed()) { this._openPause(); AudioSys.play('menu_move'); return; }
+      if (!this.coop && this.state === 'dead' && Input.wasPressed('Escape') && this.nameSubmitted) { this.toMenu(); return; }
     }
     // Чат корпоратива
     if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
@@ -616,8 +625,18 @@ class Game {
       if (this.coop) {
         // итоги, затем хост возвращает всех в своё лобби (хост может сделать это сразу)
         this.coop.overUpdate(dt);
-        if (this.coop && this.coop.isHost && (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter') || Input.consumeClick())) {
-          this.coopUI.backToLobby();
+        if (this.coop && this.coop.isHost) {
+          const R = this._teamOverRects(), mx = Input.mouse.x, my = Input.mouse.y;
+          const inR = r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h;
+          this._toSel = this._toSel || 0;
+          if (Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA') || Input.wasPressed('MobileUp')) this._toSel = 0;
+          if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD') || Input.wasPressed('MobileDown')) this._toSel = 1;
+          if (inR(R.again)) this._toSel = 0; else if (inR(R.lobby)) this._toSel = 1;
+          let act = (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) ? this._toSel : -1;
+          if (Input.wasPressed('KeyR')) act = 0;
+          if (Input.consumeClick()) act = inR(R.again) ? 0 : inR(R.lobby) ? 1 : -1;
+          if (act === 0) { AudioSys.play('menu_select'); this._toSel = 0; this.coopUI.restart(); }
+          else if (act === 1) { AudioSys.play('menu_select'); this.coopUI.backToLobby(); }
         }
         return;
       }
@@ -653,7 +672,7 @@ class Game {
       const coopClient = this.coop && !this.coop.isHost;
       if (!this.player.dead) {
         const shotsBefore = this.bullets.length;
-        const frozen = this._exitAsk ? [Input.keys, Input._pressedThisFrame, Input.mouse.down, Input.mouse.right] : null;
+        const frozen = (this._exitAsk || this.paused) ? [Input.keys, Input._pressedThisFrame, Input.mouse.down, Input.mouse.right] : null;
         if (frozen) { Input.keys = {}; Input._pressedThisFrame = {}; Input.mouse.down = false; Input.mouse.right = false; }
         try {
           this.player.update(dt, this.level, this.cam, this.bullets, this.enemies, this.pickups);
@@ -1529,10 +1548,13 @@ class Game {
   // true — кадр занят диалогом (ввод не передаём дальше)
   _updateExitAsk(dt) {
     const live = ['playing', 'levelClear', 'dead', 'coopIntro'].includes(this.state);
-    if (!live) { this._exitAsk = null; return false; }
+    if (!live) { this._exitAsk = null; this.paused = null; return false; }
     if (!this._exitAsk) {
-      if ((Input.wasPressed('Escape') || Input.wasPressed('MobileEscape')) && !TextField.active) {
-        this._exitAsk = { t: 0, sel: 1 };
+      if (this.paused) { this._updatePauseMenu(); return this.state === 'coopIntro'; }
+      if (this._escPressed() && !TextField.active) {
+        // после поражения команды — сразу вопрос о выходе, в игре — меню
+        if (this.state === 'dead') this._exitAsk = { t: 0, sel: 1 };
+        else this._openPause();
         AudioSys.play('menu_move');
         return true;
       }
@@ -1544,7 +1566,7 @@ class Game {
     const R = this._exitRects();
     const mx = Input.mouse.x, my = Input.mouse.y;
     const inR = r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h;
-    if (Input.wasPressed('Escape') || Input.wasPressed('MobileEscape')) { this._exitAsk = null; return true; }
+    if (this._escPressed()) { this._exitAsk = null; return true; }
     if (Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA')) a.sel = 0;
     if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD')) a.sel = 1;
     if (inR(R.yes)) a.sel = 0; else if (inR(R.no)) a.sel = 1;
@@ -1604,6 +1626,7 @@ class Game {
       ctx.restore();
       if (this._exitAsk) this._drawExitAsk(ctx);
     }
+    if (this.paused && !this._exitAsk) this._drawPauseMenu(this.ctx);
   }
 
   // Неоновая полоса загрузки, по которой бегут три героя
@@ -2094,7 +2117,121 @@ class Game {
     ctx.fillText(this.coop.isHost ? 'Результат команды записан в таблицу лидеров' : 'Хост записал результат команды в таблицу лидеров', W / 2, H - 60);
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     const n = this.coop.lobbyIn;
-    ctx.fillText(this.coop.isHost ? `ENTER / клик — в лобби сейчас (авто через ${n} с)` : 'Хост скоро вернёт всех в лобби…', W / 2, H - 34);
+    if (this.coop.isHost) {
+      const R = this._teamOverRects();
+      this._pauseBtn(ctx, R.again, 'НАЧАТЬ ЗАНОВО', (this._toSel || 0) === 0, '#3dff8a');
+      this._pauseBtn(ctx, R.lobby, `В ЛОББИ (${n})`, this._toSel === 1, '#05d9e8');
+    } else ctx.fillText('Хост может начать заново или вернуть всех в лобби…', W / 2, H - 34);
+  }
+
+  _teamOverRects() {
+    const W = this.W, H = this.H, bw = Math.min(200, W * 0.32), bh = 36, gap = 14;
+    return { again: { x: W / 2 - bw - gap / 2, y: H - 58, w: bw, h: bh }, lobby: { x: W / 2 + gap / 2, y: H - 58, w: bw, h: bh } };
+  }
+
+  // ---------- тихая дорожка: зачистка уровня, паузы, справочник ----------
+  _wantQuiet() {
+    if (this.paused) return true;
+    if (this.state === 'levelClear' || this.state === 'victory') return true;
+    if (this.state === 'menu' && this.menu.showHelp) return true;
+    if (this.state === 'kombat' && this.kombat.screen === 'battle' && this.kombat.paused) return true;
+    return false;
+  }
+
+  _syncQuiet() {
+    const want = this._wantQuiet();
+    if (want === !!this._quiet) return;
+    if (want) {
+      this._quiet = { resume: AudioSys.lastTrack };
+      AudioSys.playMusic(QUIET_TRACK);
+    } else {
+      const q = this._quiet;
+      this._quiet = null;
+      // возвращаем прежнюю музыку, если за это время никто не включил другую
+      if (AudioSys.lastTrack === QUIET_TRACK && q.resume) AudioSys.playMusic(q.resume);
+    }
+  }
+
+  // ---------- меню паузы (ESC) ----------
+  // одиночная игра стоит; в корпоративе мир живёт дальше, просто открыто меню
+  _escPressed() {
+    if (!(Input.wasPressed('Escape') || Input.wasPressed('MobileEscape'))) return false;
+    const now = performance.now();
+    if (now - (this._escAt || 0) < 300) return false;     // кнопка паузы на телефоне держится несколько кадров
+    this._escAt = now;
+    return true;
+  }
+
+  _openPause() { this.paused = { sel: 0 }; }
+
+  _pauseItems() {
+    const list = [{ id: 'resume', text: 'ПРОДОЛЖИТЬ' }];
+    if (!this.coop || this.coop.isHost) list.push({ id: 'restart', text: 'НАЧАТЬ ЗАНОВО' });
+    list.push({ id: 'music', text: AudioSys.musicEnabled ? 'МУЗЫКА: ВКЛ' : 'МУЗЫКА: ВЫКЛ' });
+    list.push({ id: 'menu', text: 'В ГЛАВНОЕ МЕНЮ' });
+    return list;
+  }
+
+  _pauseRects() {
+    const n = this._pauseItems().length, bw = Math.min(300, this.W * 0.6), bh = 40, gap = 12;
+    const y0 = this.H / 2 - (n * bh + (n - 1) * gap) / 2 + 20;
+    return Array.from({ length: n }, (_, i) => ({ x: this.W / 2 - bw / 2, y: y0 + i * (bh + gap), w: bw, h: bh }));
+  }
+
+  _updatePauseMenu() {
+    const P = this.paused, items = this._pauseItems(), n = items.length;
+    if (P.sel >= n) P.sel = n - 1;
+    if (this._escPressed()) { this.paused = null; return; }
+    if (Input.wasPressed('ArrowUp') || Input.wasPressed('KeyW') || Input.wasPressed('MobileUp')) { P.sel = (P.sel + n - 1) % n; AudioSys.play('menu_move'); }
+    if (Input.wasPressed('ArrowDown') || Input.wasPressed('KeyS') || Input.wasPressed('MobileDown')) { P.sel = (P.sel + 1) % n; AudioSys.play('menu_move'); }
+    const R = this._pauseRects(), mx = Input.mouse.x, my = Input.mouse.y;
+    const hit = R.findIndex(r => mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h);
+    if (hit >= 0 && (this._pmx || 0) !== mx + my) P.sel = hit;
+    this._pmx = mx + my;
+    let act = (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) ? P.sel : -1;
+    if (Input.consumeClick()) act = hit;
+    if (act < 0) return;
+    const id = items[act].id;
+    AudioSys.play('menu_select');
+    if (id === 'resume') this.paused = null;
+    else if (id === 'music') {
+      const on = AudioSys.toggleMusic();
+      if (on && AudioSys.lastTrack) { AudioSys.currentTrack = null; AudioSys.playMusic(AudioSys.lastTrack); }
+      const mi = this.menu.items.findIndex(s => s.startsWith('МУЗЫКА'));
+      if (mi >= 0) this.menu.items[mi] = on ? 'МУЗЫКА: ВКЛ' : 'МУЗЫКА: ВЫКЛ';
+    } else if (id === 'restart') {
+      this.paused = null;
+      if (this.coop) { this.coopUI.restart(); return; }
+      if (this.tutorial) { this._startTutorialNow(Math.max(0, TUTORIALS.indexOf(this.tutorial.def))); return; }
+      this.startRun();
+    } else if (id === 'menu') {
+      this.paused = null;
+      if (this.coop) this._exitAsk = { t: 0, sel: 1 };
+      else this.toMenu();
+    }
+  }
+
+  _pauseBtn(ctx, r, text, on, col) {
+    ctx.fillStyle = on ? col : 'rgba(10,5,22,0.9)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    ctx.font = `bold ${Math.min(16, r.w / 10)}px "Courier New", monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = on ? '#05030a' : '#ffffff';
+    ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  _drawPauseMenu(ctx) {
+    const W = this.W, H = this.H, M = this.menu, items = this._pauseItems(), R = this._pauseRects();
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = this.coop ? 'rgba(4,2,10,0.55)' : 'rgba(4,2,10,0.72)'; ctx.fillRect(0, 0, W, H);
+    M.glowText(ctx, this.coop ? 'МЕНЮ' : 'ПАУЗА', W / 2, R[0].y - 44, '#ffd319', Math.min(40, W * 0.06), 'center', 16);
+    ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#c8c2e0';
+    ctx.fillText(this.coop ? 'Игра не остановлена — напарники продолжают бой' : 'Игра остановлена', W / 2, R[0].y - 16);
+    items.forEach((it, i) => this._pauseBtn(ctx, R[i], it.text, i === this.paused.sel, it.id === 'menu' ? '#ff2a6d' : it.id === 'restart' ? '#3dff8a' : '#05d9e8'));
+    if (!Input.isMobile) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillText('W/S — выбор   ENTER — выбрать   ESC — продолжить', W / 2, R[R.length - 1].y + 66); }
+    ctx.restore();
   }
 
   // Вспышки выстрелов освещают всё вокруг

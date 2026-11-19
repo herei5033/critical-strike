@@ -311,6 +311,15 @@ class CoopUI {
     this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed }, this.net);
   }
 
+  // Хост: начать корпоратив заново с теми же игроками (все проходят через лобби и сразу стартуют)
+  restart() {
+    if (!this.isHost) return;
+    if (this.net) this.net.broadcast({ t: 'toLobby' });
+    this.game.leaveMatch();
+    this.addChat('', 'Хост начал корпоратив заново', true);
+    this._start();
+  }
+
   backToLobby() {
     if (!this.isHost) return;
     if (this.net) this.net.broadcast({ t: 'toLobby' });

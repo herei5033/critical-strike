@@ -12,7 +12,9 @@ const GAME_SOUNDS = [
   'enemy_death', 'punch', 'melee_swing', 'player_hurt', 'player_death', 'footstep',
   'tank_hit', 'hound_bark', 'sniper_charge', 'sniper_shot',
 ];
-const MUSIC = ['/static/audio/menu_music.mp3', '/static/audio/game_music.mp3'];
+// silence.mp3 — необязательная тихая дорожка для пауз, справочника и экрана зачистки
+const QUIET_TRACK = '/static/audio/silence.mp3';
+const MUSIC = ['/static/audio/menu_music.mp3', '/static/audio/game_music.mp3', QUIET_TRACK];
 
 const LOAD_LABELS = { sound: 'звуки', music: 'музыка', image: 'изображения', portrait: 'портреты' };
 

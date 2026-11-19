@@ -110,7 +110,7 @@
     requestAnimationFrame(sync);
     const g = window.game;
     if (!g) return;
-    const playing = g.state === 'playing' || g.state === 'levelClear';
+    const playing = (g.state === 'playing' || g.state === 'levelClear') && !g.paused && !g._exitAsk;
     const K = g.kombat, fighting = g.state === 'kombat' && K && K.screen === 'battle' && !K.paused && K.phase !== 'over';
     $('mobile-game-controls').classList.toggle('active', playing && !TextField.active);
     $('mobile-fight-controls').classList.toggle('active', fighting);
