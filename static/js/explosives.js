@@ -151,12 +151,12 @@ const Flames = {
   reset() { this.list = []; },
 
   spawn(x, y, a, damaging, by) {
-    for (let i = 0; i < 2; i++) {
-      const aa = a + Utils.rand(-0.16, 0.16);
-      const sp = Utils.rand(240, 320);
-      this.list.push({ x, y, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: Utils.rand(0.38, 0.5), max: 0.5, r: 3, dmg: damaging, by });
+    for (let i = 0; i < 3; i++) {
+      const aa = a + Utils.rand(-0.2, 0.2);
+      const sp = Utils.rand(340, 440);
+      this.list.push({ x, y, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: Utils.rand(0.6, 0.75), max: 0.75, r: 4, dmg: damaging, by });
     }
-    if (this.list.length > 500) this.list.splice(0, this.list.length - 500);
+    if (this.list.length > 700) this.list.splice(0, this.list.length - 700);
   },
 
   update(dt, game) {
@@ -167,13 +167,13 @@ const Flames = {
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
       if (level.isWallAt(nx, ny)) { p.vx *= -0.2; p.vy *= -0.2; p.life = Math.min(p.life, 0.12); }
       else { p.x = nx; p.y = ny; }
-      p.vx *= Math.exp(-dt * 2.4); p.vy *= Math.exp(-dt * 2.4);
-      p.r += dt * 26;
+      p.vx *= Math.exp(-dt * 1.8); p.vy *= Math.exp(-dt * 1.8);
+      p.r += dt * 30;
       if (p.life <= 0) { this.list.splice(i, 1); continue; }
       if (!p.dmg) continue;
       for (const e of game.enemies) {
         if (e.dead || (e._burnCd || 0) > 0) continue;
-        if (Utils.dist(p.x, p.y, e.cx(), e.cy()) < p.r + 7) {
+        if (Utils.dist(p.x, p.y, e.cx(), e.cy()) < p.r + 10) {
           e._burnCd = 0.22;
           e.takeDamage(1, game.pickups, { kind: 'burn', angle: Math.atan2(p.vy, p.vx), by: p.by });
           Effects.burst(e.cx(), e.cy(), '255,140,40', 4, 120);

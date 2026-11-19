@@ -1181,7 +1181,7 @@ class CoopSession {
   // Панель команды: здоровье всех игроков постоянно на экране
   drawPartyHud(ctx, W, scale) {
     const g = this.game;
-    let y = 84 * scale;
+    let y = (g._hudBottom || 84 * scale) + 6 * scale;
     for (const rp of this.remotes.values()) {
       const x = 14 * scale;
       ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 200 * scale, 30 * scale);

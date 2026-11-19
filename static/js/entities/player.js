@@ -237,7 +237,7 @@ class Player {
     this.attackTimer2 = Math.max(0, this.attackTimer2 - dt);
     this.flash2 = Math.max(0, this.flash2 - dt);
     this.recoil2 = Math.max(0, this.recoil2 - dt * 9);
-    this.dualSpread = !!this.weapon2 && (Input.isDown('ControlLeft') || Input.isDown('ControlRight'));
+    this.dualSpread = !!this.weapon2 && (Input.mouse.right || Input.isDown('ControlLeft') || Input.isDown('ControlRight'));
 
     // Граната (G): летит туда, куда смотрит курсор
     if (Input.wasPressed('KeyG') && this.grenades > 0) {
@@ -341,7 +341,7 @@ class Player {
       Effects.smoke(cx - Math.cos(a) * 18, cy - Math.sin(a) * 18, a + Math.PI, 8);
       return true;
     }
-    const mk = (ang) => { const b = new Bullet(bx, by, ang, w.bulletSpeed, true, w.color); b.src = w.id; b.dmg = w.damage || 1; b.owner = this.charId; bullets.push(b); };
+    const mk = (ang) => { const b = new Bullet(bx, by, ang, w.bulletSpeed, true, w.color); b.src = w.id; b.dmg = w.damage || 1; b.owner = this.charId; if (w.life) b.life = w.life; bullets.push(b); };
     if (w.pellets) for (let i = 0; i < w.pellets; i++) mk(a + Utils.rand(-w.spread, w.spread));
     else mk(a + (w.spread ? Utils.rand(-w.spread, w.spread) : 0));
     Effects.casing(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, a, w.id === 'shotgun');

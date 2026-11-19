@@ -403,7 +403,8 @@ class Game {
       TextField.open({ placeholder: 'Сообщение команде (Enter — отправить, Esc — отмена)', maxLength: 120, onSubmit: (v) => this.coop && this.coop.sendChat(v) });
     }
 
-    if (this.state === 'menu') { this.menu.update(dt); return; }
+    if (this.state === 'menu') { AudioSys.listener = null; this.menu.update(dt); return; }
+    AudioSys.listener = this.player && !this.player.dead ? { x: this.player.x + this.player.w / 2, y: this.player.y + this.player.h / 2 } : null;
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     if (!this.player || !this.level || !this.cam) return;
 
@@ -668,6 +669,240 @@ class Game {
     } catch (e) {}
   }
 
+  // ---------- HUD ----------
+  _rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Полупрозрачная неоновая плашка
+  _hudPanel(ctx, x, y, w, h, col, s) {
+    ctx.save();
+    this._rr(ctx, x, y, w, h, 6 * s);
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, 'rgba(22,12,38,0.86)'); g.addColorStop(1, 'rgba(8,4,16,0.86)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    ctx.fillStyle = col; ctx.fillRect(x, y, 3 * s, h);
+    ctx.restore();
+  }
+
+  _drawHud(ctx, s, rightMargin) {
+    const pl = this.player;
+    const t = performance.now() / 1000;
+    const COL = { dani: '#05d9e8', gal: '#ff2a6d', daur: '#ffd319' };
+    const INFO = { dani: ['ДАНИ', 'ТРОФЕЙЩИК'], gal: ['ГАЛА', 'ТАРАН'], daur: ['ДАУР', 'СТРЕЛОК'] };
+    const col = COL[pl.charId] || '#05d9e8';
+    const font = (px, bold = true) => `${bold ? 'bold ' : ''}${Math.round(px * s)}px "Courier New", monospace`;
+
+    // отслеживаем урон — HUD вздрагивает и краснеет
+    if (this._hudHp === undefined || pl.hp > this._hudHp) this._hudHp = pl.hp;
+    if (pl.hp < this._hudHp) { this._hudHp = pl.hp; this._hudHurtAt = t; }
+    const hurt = Utils.clamp(1 - (t - (this._hudHurtAt || -9)) / 0.6, 0, 1);
+    const low = pl.hp <= 1 && !pl.dead;
+
+    ctx.save();
+    const jx = hurt > 0 ? Utils.rand(-3, 3) * hurt * s : 0;
+    ctx.translate(jx, 0);
+
+    // ===== карточка героя =====
+    const x0 = 12 * s, y0 = 12 * s, pw = 280 * s;
+    this._hudPanel(ctx, x0, y0, pw, 66 * s, col, s);
+    // портрет
+    const ps = 50 * s, px = x0 + 10 * s, py = y0 + 8 * s;
+    const img = this.images[pl.charId];
+    ctx.save();
+    this._rr(ctx, px, py, ps, ps, 5 * s); ctx.clip();
+    ctx.fillStyle = '#120a1e'; ctx.fillRect(px, py, ps, ps);
+    if (img && img.complete && img.naturalWidth) {
+      const iw = img.naturalWidth, ih = img.naturalHeight, m = Math.min(iw, ih);
+      ctx.drawImage(img, (iw - m) / 2, (ih - m) * 0.2, m, m, px, py, ps, ps);
+    }
+    if (pl.dead) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(px, py, ps, ps); }
+    if (hurt > 0 || low) {
+      ctx.fillStyle = `rgba(255,0,40,${Math.max(hurt * 0.6, low ? 0.18 + 0.15 * Math.sin(t * 8) : 0)})`;
+      ctx.fillRect(px, py, ps, ps);
+    }
+    ctx.restore();
+    ctx.save();
+    this._rr(ctx, px, py, ps, ps, 5 * s);
+    ctx.shadowColor = low ? '#ff2a6d' : col; ctx.shadowBlur = 10 * s;
+    ctx.strokeStyle = low ? '#ff2a6d' : col; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.restore();
+
+    // имя и способность
+    const [nm, perk] = INFO[pl.charId] || ['ГЕРОЙ', ''];
+    const tx = px + ps + 12 * s;
+    ctx.textAlign = 'left';
+    ctx.font = font(17); ctx.fillStyle = '#fff';
+    ctx.fillText(nm, tx, y0 + 26 * s);
+    const nw = ctx.measureText(nm).width;
+    ctx.font = font(10); ctx.fillStyle = col;
+    ctx.fillText(perk, tx + nw + 8 * s, y0 + 25 * s);
+
+    // сердца
+    for (let i = 0; i < pl.maxHp; i++) {
+      const filled = i < pl.hp;
+      const hx = tx + 9 * s + i * 24 * s, hy = y0 + 38 * s;
+      const beat = filled && low ? 1 + 0.12 * Math.max(0, Math.sin(t * 9)) : 1;
+      ctx.save();
+      ctx.translate(hx, hy); ctx.scale(s * 0.95 * beat, s * 0.95 * beat);
+      ctx.beginPath();
+      ctx.moveTo(0, 4);
+      ctx.bezierCurveTo(-10, -6, -16, 6, 0, 16);
+      ctx.bezierCurveTo(16, 6, 10, -6, 0, 4);
+      ctx.closePath();
+      if (filled) { ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 8; }
+      ctx.fillStyle = filled ? '#ff2a6d' : '#2a1a2e';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = filled ? '#ff9ac0' : '#4a3450'; ctx.lineWidth = 1.4; ctx.stroke();
+      if (filled) { ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(-7, 2, 3, 3); }
+      ctx.restore();
+    }
+    // гранаты
+    if (pl.grenades > 0) {
+      const gx0 = x0 + pw - 14 * s;
+      for (let i = 0; i < pl.grenades; i++) {
+        ctx.save();
+        ctx.translate(gx0 - i * 16 * s, y0 + 46 * s); ctx.scale(1.6 * s, 1.6 * s);
+        Sprites.drawGrenade(ctx, 0, false);
+        ctx.restore();
+      }
+      ctx.font = font(9, false); ctx.fillStyle = '#9a94b8'; ctx.textAlign = 'right';
+      ctx.fillText('G', gx0 - (pl.grenades - 1) * 16 * s - 11 * s, y0 + 50 * s);
+    }
+
+    // ===== оружие =====
+    let y = y0 + 72 * s;
+    const ws = pl.weapon2 ? [pl.weapon, pl.weapon2] : [pl.weapon];
+    ws.forEach((w, wi) => {
+      const ch = 44 * s;
+      const empty = w && w.type === 'ranged' && w.ammo <= 0;
+      this._hudPanel(ctx, x0, y, pw, ch, empty ? '#ff2a6d' : (w ? (w.rare ? '#ff8a30' : w.special ? '#ffd319' : '#05d9e8') : '#6a6488'), s);
+      // иконка
+      const iw = 76 * s;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillRect(x0 + 8 * s, y + 5 * s, iw, ch - 10 * s);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0 + 8 * s, y + 5 * s, iw, ch - 10 * s); ctx.clip();
+      if (w) {
+        const len = w.length || 20;
+        const k = Math.min(2.6, 56 / len) * s;
+        ctx.translate(x0 + 8 * s + iw / 2 - len * 0.32 * k, y + ch / 2 - 1 * s);
+        ctx.scale(k, k);
+        ctx.shadowColor = 'rgba(255,255,255,0.35)'; ctx.shadowBlur = 4;
+        Sprites.drawWeapon(ctx, w.id, true);
+      } else {
+        // кулак
+        ctx.translate(x0 + 8 * s + iw / 2, y + ch / 2);
+        ctx.fillStyle = '#dfa57e';
+        this._rr(ctx, -10 * s, -7 * s, 20 * s, 14 * s, 4 * s); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        for (let i = 0; i < 3; i++) ctx.fillRect((-5 + i * 5) * s, -7 * s, 1 * s, 8 * s);
+      }
+      ctx.restore();
+
+      const nx = x0 + iw + 18 * s, right = x0 + pw - 12 * s;
+      ctx.textAlign = 'left'; ctx.font = font(14); ctx.fillStyle = '#fff';
+      const label = w ? w.name.toUpperCase() : 'КУЛАКИ';
+      ctx.fillText(label, nx, y + 18 * s);
+      if (ws.length > 1) { const lw = ctx.measureText(label).width; ctx.font = font(9, false); ctx.fillStyle = '#9a94b8'; ctx.fillText(wi ? '· ЛЕВАЯ' : '· ПРАВАЯ', nx + lw + 6 * s, y + 17 * s); }
+
+      if (w && w.type === 'ranged') {
+        const bw = right - nx, by = y + 25 * s;
+        const frac = w.maxAmmo ? w.ammo / w.maxAmmo : 0;
+        const ammoCol = empty ? '#ff2a6d' : frac < 0.25 ? '#ffb040' : '#05d9e8';
+        if (w.maxAmmo <= 16) {
+          const gap = 2 * s, pwid = Math.min(9 * s, (bw - gap * (w.maxAmmo - 1)) / w.maxAmmo);
+          for (let i = 0; i < w.maxAmmo; i++) {
+            ctx.fillStyle = i < w.ammo ? ammoCol : 'rgba(255,255,255,0.1)';
+            ctx.fillRect(nx + i * (pwid + gap), by, pwid, 10 * s);
+          }
+        } else {
+          const bw2 = bw - 54 * s;
+          ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(nx, by + 2 * s, bw2, 7 * s);
+          ctx.save(); ctx.shadowColor = ammoCol; ctx.shadowBlur = 6;
+          ctx.fillStyle = ammoCol; ctx.fillRect(nx, by + 2 * s, bw2 * frac, 7 * s);
+          ctx.restore();
+          ctx.font = font(11); ctx.textAlign = 'right'; ctx.fillStyle = ammoCol;
+          ctx.fillText(`${w.ammo}/${w.maxAmmo}`, right, by + 10 * s);
+        }
+        if (empty && Math.sin(t * 7) > -0.3) {
+          ctx.font = font(10); ctx.textAlign = 'left'; ctx.fillStyle = '#ff2a6d';
+          ctx.textAlign = 'right'; ctx.fillText('ПУСТО — Q', right, y + 17 * s);
+        }
+      } else {
+        ctx.font = font(10, false); ctx.fillStyle = '#9a94b8'; ctx.textAlign = 'left';
+        ctx.fillText(w ? 'БЛИЖНИЙ БОЙ' : (pl.charId === 'gal' ? 'УБИВАЕТ С ОДНОГО УДАРА' : 'ОГЛУШАЕТ'), nx, y + 33 * s);
+      }
+      y += ch + 5 * s;
+    });
+    if (pl.weapon2) {
+      ctx.font = font(10); ctx.textAlign = 'left';
+      ctx.fillStyle = pl.dualSpread ? '#ffd319' : '#6a6488';
+      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : 'ПКМ / CTRL — ВРАЗБРОС', x0 + 4 * s, y + 9 * s);
+      y += 14 * s;
+    }
+    ctx.restore();
+    this._hudBottom = y;
+
+    // ===== справа: очки, убийства, комбо =====
+    const R = this.W - rightMargin;
+    const rw = 200 * s, rx = R - rw;
+    this._hudPanel(ctx, rx, y0, rw, 70 * s, '#ffd319', s);
+    ctx.textAlign = 'right';
+    ctx.font = font(9, false); ctx.fillStyle = '#9a94b8';
+    ctx.fillText('ОЧКИ', R - 10 * s, y0 + 14 * s);
+    // число очков плавно догоняет реальное
+    this._hudScore = this._hudScore === undefined || this._hudScore > this.score ? this.score : this._hudScore + Math.ceil((this.score - this._hudScore) * 0.2);
+    const bump = this._hudScore < this.score ? 1.08 : 1;
+    ctx.save();
+    ctx.font = font(26 * bump); ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 12 * s; ctx.fillStyle = '#ffd319';
+    ctx.fillText(String(this._hudScore), R - 10 * s, y0 + 40 * s);
+    ctx.restore();
+    // убийства
+    const kFrac = this.totalEnemies ? Math.min(1, this.kills / this.totalEnemies) : 0;
+    ctx.font = font(10); ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.fillText(`☠ ${this.kills}/${this.totalEnemies}`, rx + 12 * s, y0 + 60 * s);
+    const kbx = rx + 84 * s, kbw = rw - 96 * s;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(kbx, y0 + 53 * s, kbw, 6 * s);
+    ctx.fillStyle = kFrac >= 1 ? '#3dff8a' : '#ff2a6d'; ctx.fillRect(kbx, y0 + 53 * s, kbw * kFrac, 6 * s);
+
+    let ry = y0 + 78 * s;
+    // следующий босс (бесконечный режим и корпоратив)
+    const bd = this.bossDirector;
+    if (bd && !bd.active && !this.enemies.some(e => e.isBoss && !e.dead)) {
+      const left = Math.max(0, bd.nextScore - this.score);
+      ctx.font = font(10); ctx.textAlign = 'right'; ctx.fillStyle = left < 300 ? '#ff2a6d' : '#9a94b8';
+      ctx.fillText(left > 0 ? `БОСС ЧЕРЕЗ ${left} ОЧК.` : 'БОСС БЛИЗКО…', R - 4 * s, ry + 6 * s);
+      ry += 16 * s;
+    }
+    // комбо
+    if (this.combo > 1 && this.comboTimer > 0) {
+      const k = Utils.clamp(this.comboTimer / 3, 0, 1);
+      const cs = 20 + Math.min(this.combo, 8) * 2;
+      const pop = 1 + Math.max(0, (this.comboTimer - 2.75) * 1.2);
+      ctx.save();
+      ctx.translate(R - 4 * s, ry + 22 * s); ctx.scale(pop, pop);
+      ctx.font = font(cs); ctx.textAlign = 'right';
+      const cc = this.combo >= 6 ? '#ffd319' : this.combo >= 4 ? '#ff8a30' : '#ff2a6d';
+      ctx.shadowColor = cc; ctx.shadowBlur = 14 * s; ctx.fillStyle = cc;
+      ctx.fillText(`x${this.combo}`, 0, 0);
+      const cw = ctx.measureText(`x${this.combo}`).width;
+      ctx.shadowBlur = 0; ctx.font = font(10); ctx.fillStyle = '#fff';
+      ctx.fillText('КОМБО', -cw - 6 * s, -2 * s);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(R - 130 * s, ry + 30 * s, 126 * s, 4 * s);
+      ctx.fillStyle = cc_bar(k); ctx.fillRect(R - 130 * s, ry + 30 * s, 126 * s * k, 4 * s);
+    }
+    function cc_bar(k) { return k < 0.3 ? '#ff2a6d' : '#05d9e8'; }
+  }
+
   _drawHearts(ctx) {
     const hp = this.player ? this.player.hp : 0;
     const maxHp = this.player ? this.player.maxHp : 3;
@@ -854,27 +1089,8 @@ class Game {
     }
 
     const scale = Math.min(1, this.W / 960);
-    const wdesc = w => w.name + (w.type === 'ranged' ? ` ${w.ammo}/${w.maxAmmo}` : '');
-    const wname = this.player.weapon ? wdesc(this.player.weapon) + (this.player.weapon2 ? '  |  ' + wdesc(this.player.weapon2) : '') : '— КУЛАКИ —';
-    const ammoText = (this.player.grenades ? `   ГРАНАТ: ${this.player.grenades}` : '') + (this.player.weapon2 ? (this.player.dualSpread ? '  [ВРАЗБРОС]' : '') : '');
-
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(10 * scale, 10 * scale, 380 * scale, 30 * scale);
-    ctx.fillStyle = P.accent;
-    ctx.font = `bold ${15 * scale}px "Courier New", monospace`;
-    ctx.textAlign = 'left';
-    ctx.fillText(`WEAPON: ${wname}${ammoText}`, 20 * scale, 31 * scale);
-
-    this._drawHearts(ctx);
-
-    ctx.fillStyle = P.yellow;
-    ctx.font = `bold ${18 * scale}px "Courier New", monospace`;
-    ctx.textAlign = 'right';
     const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
-    ctx.fillText(`УБИТО: ${this.kills} / ${this.totalEnemies}`, this.W - rightMargin, 30 * scale);
-
-    ctx.fillStyle = P.white;
-    ctx.fillText(`ОЧКИ: ${this.score}`, this.W - rightMargin, 55 * scale);
+    this._drawHud(ctx, scale, rightMargin);
 
     if (this.coop) {
       this.coop.drawPartyHud(ctx, this.W, scale);
@@ -893,22 +1109,6 @@ class Game {
     this._drawBossHud(ctx, scale);
     this._drawLevelBanner(ctx, scale);
 
-    // индикатор комбо
-    if (this.combo > 1 && this.comboTimer > 0) {
-      const k = this.comboTimer / 3;
-      const cs = (22 + Math.min(this.combo, 6) * 2) * scale;
-      ctx.save();
-      ctx.font = `bold ${cs}px "Courier New", monospace`;
-      ctx.textAlign = 'right';
-      ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 12;
-      ctx.fillStyle = '#ff2a6d';
-      ctx.fillText(`x${this.combo} КОМБО`, this.W - rightMargin, 88 * scale);
-      ctx.restore();
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.fillRect(this.W - rightMargin - 120 * scale, 96 * scale, 120 * scale, 4 * scale);
-      ctx.fillStyle = '#05d9e8';
-      ctx.fillRect(this.W - rightMargin - 120 * scale, 96 * scale, 120 * scale * k, 4 * scale);
-    }
 
     if (this.state === 'levelClear') {
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -1141,9 +1341,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Быстрый, берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1.15, weapon: 'glock' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Убивает кулаком с удара, сбивает бандитов на бегу', hp: 4, speed: 1, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Два ствола', desc: 'Огнестрел в каждой руке, CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'shotgun' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Самый быстрый, враги замечают его позже. Берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1.15, weapon: null },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Самый живучий. Убивает кулаком с одного удара и сбивает бандитов, врезаясь в них на бегу', hp: 4, speed: 1, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Начинает с дробовиком. Держит по огнестрелу в каждой руке, ПКМ/CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'shotgun' },
     ];
 
     const isMobile = this.W < 800;

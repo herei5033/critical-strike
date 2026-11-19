@@ -101,7 +101,7 @@ const AudioSys = {
     return this.musicEnabled;
   },
 
-  play(name) {
+  play(name, vol = 1) {
     if (!this.ctx || !this.ready) return;
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
 
@@ -110,7 +110,21 @@ const AudioSys = {
 
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.ctx.destination);
+    if (vol < 0.999) {
+      const g = this.ctx.createGain();
+      g.gain.value = vol;
+      source.connect(g); g.connect(this.ctx.destination);
+    } else source.connect(this.ctx.destination);
     source.start();
+  },
+
+  // Звук в точке мира: тише с расстоянием от героя, далёкие не слышны
+  listener: null,
+  playAt(name, x, y, range = 650) {
+    if (!this.listener) { this.play(name); return; }
+    const d = Math.hypot(x - this.listener.x, y - this.listener.y);
+    const vol = 1 - d / range;
+    if (vol <= 0.03) return;
+    this.play(name, Math.min(1, vol * vol + 0.05));
   }
 };

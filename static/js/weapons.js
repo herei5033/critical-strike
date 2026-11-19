@@ -1,32 +1,33 @@
+// Баланс: spread — разброс (рад), life — время жизни пули (ограничивает дальность), damage — урон за попадание
 const WEAPONS = {
-  m4: { id: 'm4', name: 'M4', type: 'ranged', cooldown: 0.12, ammo: 30, maxAmmo: 30, bulletSpeed: 800, color: '#88ccff', length: 22, sound: 'shoot_m4' },
-  ak47: { id: 'ak47', name: 'AK-47', type: 'ranged', cooldown: 0.15, ammo: 25, maxAmmo: 25, bulletSpeed: 750, color: '#ffaa55', length: 22, sound: 'shoot_ak47' },
-  glock: { id: 'glock', name: 'Glock', type: 'ranged', cooldown: 0.25, ammo: 12, maxAmmo: 12, bulletSpeed: 700, color: '#dddddd', length: 14, sound: 'shoot_glock' },
-  uzi: { id: 'uzi', name: 'Uzi', type: 'ranged', cooldown: 0.08, ammo: 40, maxAmmo: 40, bulletSpeed: 650, color: '#ff77dd', length: 16, sound: 'shoot_uzi' },
-  // Дробовик: стреляет веером
-  shotgun: { id: 'shotgun', name: 'Дробовик', type: 'ranged', cooldown: 0.9, ammo: 6, maxAmmo: 6, bulletSpeed: 600,
-             color: '#ff4444', length: 24, sound: 'shoot_shotgun', spread: 0.4, pellets: 5 },
-  bat: { id: 'bat', name: 'Бита', type: 'melee', cooldown: 0.5, range: 52, color: '#a0622b', length: 18, sound: 'melee_swing' },
-  pipe: { id: 'pipe', name: 'Труба', type: 'melee', cooldown: 0.45, range: 46, color: '#9a9a9a', length: 16, sound: 'melee_swing' },
-  knife: { id: 'knife', name: 'Нож', type: 'melee', cooldown: 0.3, range: 38, color: '#dddddd', length: 9, sound: 'melee_swing' },
-  sword: { id: 'sword', name: 'Меч', type: 'melee', cooldown: 0.4, range: 58, color: '#e8e8ff', length: 22, sound: 'melee_swing' },
+  glock: { id: 'glock', name: 'Glock', type: 'ranged', cooldown: 0.22, ammo: 15, maxAmmo: 15, bulletSpeed: 760, spread: 0.02, color: '#dddddd', length: 14, sound: 'shoot_glock' },
+  uzi: { id: 'uzi', name: 'Uzi', type: 'ranged', cooldown: 0.075, ammo: 36, maxAmmo: 36, bulletSpeed: 680, spread: 0.09, life: 0.6, color: '#ff77dd', length: 16, sound: 'shoot_uzi' },
+  m4: { id: 'm4', name: 'M4', type: 'ranged', cooldown: 0.11, ammo: 30, maxAmmo: 30, bulletSpeed: 860, spread: 0.025, color: '#88ccff', length: 22, sound: 'shoot_m4' },
+  ak47: { id: 'ak47', name: 'AK-47', type: 'ranged', cooldown: 0.13, ammo: 30, maxAmmo: 30, bulletSpeed: 800, spread: 0.05, color: '#ffaa55', length: 22, sound: 'shoot_ak47' },
+  // Дробовик: веер дробин, бьёт недалеко
+  shotgun: { id: 'shotgun', name: 'Дробовик', type: 'ranged', cooldown: 0.8, ammo: 7, maxAmmo: 7, bulletSpeed: 660, life: 0.4,
+             color: '#ff4444', length: 24, sound: 'shoot_shotgun', spread: 0.32, pellets: 6 },
+  bat: { id: 'bat', name: 'Бита', type: 'melee', cooldown: 0.45, range: 54, color: '#a0622b', length: 18, sound: 'melee_swing' },
+  pipe: { id: 'pipe', name: 'Труба', type: 'melee', cooldown: 0.4, range: 48, color: '#9a9a9a', length: 16, sound: 'melee_swing' },
+  knife: { id: 'knife', name: 'Нож', type: 'melee', cooldown: 0.26, range: 40, color: '#dddddd', length: 9, sound: 'melee_swing' },
+  sword: { id: 'sword', name: 'Меч', type: 'melee', cooldown: 0.38, range: 60, color: '#e8e8ff', length: 22, sound: 'melee_swing' },
 
   // Редкие — лежат на уровне, врагам не достаются
-  rpg: { id: 'rpg', name: 'РПГ', type: 'ranged', cooldown: 1.1, ammo: 2, maxAmmo: 2, bulletSpeed: 430, color: '#ffb040',
+  rpg: { id: 'rpg', name: 'РПГ', type: 'ranged', cooldown: 1.0, ammo: 3, maxAmmo: 3, bulletSpeed: 430, color: '#ffb040',
          length: 30, sound: 'shoot_shotgun', projectile: 'rocket', rare: true },
-  flamer: { id: 'flamer', name: 'Огнемёт', type: 'ranged', cooldown: 0.05, ammo: 140, maxAmmo: 140, bulletSpeed: 270, color: '#ff8a30',
+  flamer: { id: 'flamer', name: 'Огнемёт', type: 'ranged', cooldown: 0.045, ammo: 200, maxAmmo: 200, bulletSpeed: 380, color: '#ff8a30',
             length: 28, sound: 'throw', projectile: 'flame', rare: true },
 
   // Оружие снайперов и боссов — его может подобрать только Дани
-  sniper: { id: 'sniper', name: 'Снайперская винтовка', type: 'ranged', cooldown: 1.0, ammo: 6, maxAmmo: 6, bulletSpeed: 1500, damage: 3,
+  sniper: { id: 'sniper', name: 'Снайперка', type: 'ranged', cooldown: 0.9, ammo: 7, maxAmmo: 7, bulletSpeed: 1600, damage: 3,
             color: '#ff6060', length: 36, sound: 'sniper_shot', special: 'dani' },
-  minigun: { id: 'minigun', name: 'Миниган', type: 'ranged', cooldown: 0.06, ammo: 160, maxAmmo: 160, bulletSpeed: 720, spread: 0.1,
+  minigun: { id: 'minigun', name: 'Миниган', type: 'ranged', cooldown: 0.055, ammo: 180, maxAmmo: 180, bulletSpeed: 740, spread: 0.11,
              color: '#ffb040', length: 34, sound: 'shoot_uzi', special: 'dani' },
-  goldenUzi: { id: 'goldenUzi', name: 'Золотой Uzi', type: 'ranged', cooldown: 0.06, ammo: 70, maxAmmo: 70, bulletSpeed: 780,
+  goldenUzi: { id: 'goldenUzi', name: 'Золотой Uzi', type: 'ranged', cooldown: 0.06, ammo: 70, maxAmmo: 70, bulletSpeed: 800, spread: 0.05,
                color: '#ffd319', length: 16, sound: 'shoot_uzi', special: 'dani' },
-  cleaver: { id: 'cleaver', name: 'Тесак Мясника', type: 'melee', cooldown: 0.42, range: 56, color: '#c8ccd4', length: 20, sound: 'melee_swing', special: 'dani' },
-  nightstick: { id: 'nightstick', name: 'Дубинка Вахтёра', type: 'melee', cooldown: 0.28, range: 48, color: '#2a2a30', length: 18, sound: 'melee_swing', special: 'dani' },
-  spikedBat: { id: 'spikedBat', name: 'Бита с гвоздями', type: 'melee', cooldown: 0.42, range: 60, color: '#7a4a22', length: 22, sound: 'melee_swing', special: 'dani' },
+  cleaver: { id: 'cleaver', name: 'Тесак', type: 'melee', cooldown: 0.36, range: 58, color: '#c8ccd4', length: 20, sound: 'melee_swing', special: 'dani' },
+  nightstick: { id: 'nightstick', name: 'Дубинка', type: 'melee', cooldown: 0.24, range: 50, color: '#2a2a30', length: 18, sound: 'melee_swing', special: 'dani' },
+  spikedBat: { id: 'spikedBat', name: 'Бита с гвоздями', type: 'melee', cooldown: 0.4, range: 62, color: '#7a4a22', length: 22, sound: 'melee_swing', special: 'dani' },
 };
 
 function makeWeapon(id, ammo) {

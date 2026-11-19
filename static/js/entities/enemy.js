@@ -132,7 +132,7 @@ class Enemy {
       fromAngle: this.angle,
     };
     this.pool = { r: 0, max: (kind === 'blade' ? 20 : kind === 'shotgun' ? 19 : 15) * (this.isBoss ? 1.5 : 1), x: this.cx(), y: this.cy() };
-    AudioSys.play('enemy_death');
+    AudioSys.playAt('enemy_death', this.cx(), this.cy(), 800);
     const gore = { shotgun: 30, blade: 22, bullet: 14, blunt: 9, fist: 6, throw: 8, crush: 20, explosion: 34, burn: 2 }[kind] || 12;
     if (kind === 'burn') { Effects.burst(this.cx(), this.cy(), '255,140,40', 16, 160); Effects.smoke(this.cx(), this.cy(), 0, 8); }
     Effects.bloodSplat(this.cx(), this.cy(), ang, gore);
@@ -508,7 +508,7 @@ class Enemy {
     if (this.state !== 'chase' && this.state !== 'attack') {
       if (this.canSeePlayer(player, level)) {
         this.state = 'chase';
-        if (this.type === 'hound') AudioSys.play('hound_bark');
+        if (this.type === 'hound') AudioSys.playAt('hound_bark', this.cx(), this.cy(), 900);
       }
     }
 
@@ -593,7 +593,7 @@ class Enemy {
             this.flashTimer = 0.06;
             this.recoil = 1;
             this._shots = (this._shots || 0) + 1;
-            AudioSys.play(this.weapon.sound);
+            AudioSys.playAt(this.weapon.sound, this.cx(), this.cy(), 900);
             level.addNoise(this.x, this.y, 400);
             Effects.casing(this.cx() + Math.cos(this.angle) * 8, this.cy() + Math.sin(this.angle) * 8, this.angle, this.weapon.id === 'shotgun');
             Effects.muzzle(this.cx() + Math.cos(this.angle) * 30, this.cy() + Math.sin(this.angle) * 30, this.angle, this.weapon.id === 'shotgun');
@@ -603,10 +603,10 @@ class Enemy {
               // Дробовик у врага тоже стреляет веером
               for (let i = 0; i < this.weapon.pellets; i++) {
                 const a = this.angle + Utils.rand(-this.weapon.spread, this.weapon.spread);
-                { const nb = new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; bullets.push(nb); }
+                { const nb = new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; if (this.weapon.life) nb.life = this.weapon.life; bullets.push(nb); }
               }
             } else {
-              { const nb = new Bullet(bx, by, this.angle, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; bullets.push(nb); }
+              { const nb = new Bullet(bx, by, this.angle + Utils.rand(-0.06, 0.06) + (this.weapon.spread ? Utils.rand(-this.weapon.spread, this.weapon.spread) : 0), this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; if (this.weapon.life) nb.life = this.weapon.life; bullets.push(nb); }
             }
           } else {
             this.weapon = null;

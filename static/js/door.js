@@ -25,6 +25,9 @@ class Door {
     }
 
     this.hp = 8;             // столько попаданий/ударов выдерживает створка
+    this.jamHits = 0;        // неудачные толчки врагов подряд
+    this.jamT = 0;
+    this.lockT = 0;          // после захлопывания дверь ненадолго заперта для врагов
     this.broken = false;
     this.angle = 0;          // отклонение створки от закрытого положения, рад
     this.omega = 0;          // угловая скорость, рад/с
@@ -36,6 +39,33 @@ class Door {
 
   // Считаем дверь "открытой" (для тумана войны и навигации), когда створка отошла заметно
   get open() { return this.broken || Math.abs(this.angle) > 0.4; }
+
+  // Проблемная дверь захлопывается сама: застрявших в проёме выталкивает и оглушает
+  _slam(enemies, player) {
+    this.jamHits = 0;
+    this.lockT = 4;
+    this.angle = 0; this.omega = 0;
+    const r = { x: this.x - 4, y: this.y - 4, w: this.w + 8, h: this.h + 8 };
+    for (const e of enemies) {
+      if (e.dead) continue;
+      const inDoor = e.x < r.x + r.w && e.x + e.w > r.x && e.y < r.y + r.h && e.y + e.h > r.y;
+      if (!inDoor && !this._segRect(this._seg(), e.x, e.y, e.w, e.h)) continue;
+      // выталкиваем на ту сторону стены, где у него центр
+      if (this.horizontal) {
+        const side = e.cy() > this.y + TILE / 2 ? 1 : -1;
+        e.y = side > 0 ? this.y + TILE + 3 : this.y - e.h - 3;
+      } else {
+        const side = e.cx() > this.x + TILE / 2 ? 1 : -1;
+        e.x = side > 0 ? this.x + TILE + 3 : this.x - e.w - 3;
+      }
+      e._px = e.x; e._py = e.y;
+      e.stun();
+      if (e._path) e._path = null;
+    }
+    Effects.dust(this.x + this.w / 2, this.y + this.h / 2, 6);
+    AudioSys.playAt('door_open', this.hx, this.hy);
+    AudioSys.playAt('punch', this.hx, this.hy);
+  }
 
   // Пули и удары разбивают дверь
   damage(amount) {
@@ -99,6 +129,7 @@ class Door {
   // Створка уходит от толкающего со скоростью, зависящей от силы и плеча толчка.
   push(enemies, ex, ey, vx = 0, vy = 0, byPlayer = false) {
     if (this.broken) return;
+    if (!byPlayer && this.lockT > 0) return;
     if (ex === undefined) { this.omega += (Math.random() < 0.5 ? -1 : 1) * 6; return; }
 
     const a = this.base + this.angle;
@@ -115,8 +146,10 @@ class Door {
 
     if (Math.sign(this.omega) !== sgn || Math.abs(this.omega) < Math.abs(target)) {
       if (Math.abs(this.omega) < 1.2 && this._soundCooldown <= 0) {
-        AudioSys.play('door_open');
+        AudioSys.playAt('door_open', this.hx, this.hy);
         this._soundCooldown = 0.45;
+        // враг снова и снова дёргает дверь — значит, где-то застрял
+        if (!byPlayer && ex !== undefined) { this.jamHits++; this.jamT = 3; }
       }
       this.omega = target;
     }
@@ -125,6 +158,10 @@ class Door {
 
   update(dt, enemies, player) {
     if (this.broken) return;
+    this.lockT = Math.max(0, this.lockT - dt);
+    this.jamT -= dt;
+    if (this.jamT <= 0) this.jamHits = 0;
+    if (this.jamHits >= 5) this._slam(enemies || [], player);
     this.playerPushTimer -= dt;
     this._soundCooldown -= dt;
 
