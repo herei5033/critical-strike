@@ -230,7 +230,7 @@ const StoryAssets = {
     const c = CAST[id];
     if (!c) return null;
     if (c.hero && game.images[id] && game.images[id].naturalWidth) return game.images[id];
-    if (!(id in this.imgs)) {
+    if (!(id in this.imgs) && !Assets.has({ type: 'portrait', name: id })) {
       const img = new Image();
       img.onerror = () => { this.imgs[id] = null; };
       img.src = `/static/img/story/${id}.png`;
@@ -263,12 +263,9 @@ const StoryAssets = {
     else AudioSys.play('menu_move', 0.18);
   },
   // музыка главы, если положена static/audio/story/chapterN.mp3
-  async music(n) {
+  music(n) {
     const url = `/static/audio/story/chapter${n}.mp3`;
-    try {
-      const r = await fetch(url, { method: 'HEAD' });
-      if (r.ok) { AudioSys.stopMusic(); AudioSys.playMusic(url); }
-    } catch (e) {}
+    if (AudioSys.musicCache[url]) { AudioSys.stopMusic(); AudioSys.playMusic(url); }
   },
 };
 
@@ -398,23 +395,39 @@ class Dialogue {
 }
 
 // =====================================================================
-// Экран выбора главы
+// Экран сюжета: вкладки «ГЛАВЫ» и «ОБУЧЕНИЕ»
 // =====================================================================
 class StoryUI {
-  constructor(game) { this.game = game; this.sel = 0; this.t = 0; this.msg = ''; this.msgT = 0; }
+  constructor(game) { this.game = game; this.sel = 0; this.tsel = 0; this.tab = 'story'; this.t = 0; this.msg = ''; this.msgT = 0; }
 
-  open() {
+  open(tab) {
+    if (tab) this.tab = tab;
     this.sel = Math.min(this.sel, StoryProgress.unlocked() - 1);
     this.game.state = 'storySelect';
   }
 
+  get list() { return this.tab === 'story' ? STORY : TUTORIALS; }
+  get cur() { return this.tab === 'story' ? this.sel : this.tsel; }
+  set cur(v) { if (this.tab === 'story') this.sel = v; else this.tsel = v; }
+
+  _tabRects(w) {
+    const tw = Math.min(170, (w - 40) / 2);
+    return [{ id: 'story', x: w / 2 - tw - 4, y: 90, w: tw, h: 28 }, { id: 'tutorial', x: w / 2 + 4, y: 90, w: tw, h: 28 }];
+  }
+
   _rects(w, h) {
-    const lw = Math.min(330, w * 0.4), rh = Math.min(46, (h - 190) / STORY.length - 6);
-    const x = Math.max(16, w / 2 - (lw + Math.min(470, w * 0.5) + 20) / 2), y0 = 110;
-    return STORY.map((_, i) => ({ x, y: y0 + i * (rh + 6), w: lw, h: rh }));
+    const n = this.list.length;
+    const lw = Math.min(330, w * 0.4), rh = Math.min(this.tab === 'story' ? 46 : 64, (h - 200) / n - 6);
+    const x = Math.max(16, w / 2 - (lw + Math.min(470, w * 0.5) + 20) / 2), y0 = 130;
+    return this.list.map((_, i) => ({ x, y: y0 + i * (rh + 6), w: lw, h: rh }));
   }
 
   _choose(i) {
+    if (this.tab === 'tutorial') {
+      AudioSys.play('menu_select');
+      this.game.startTutorial(i);
+      return;
+    }
     if (i >= StoryProgress.unlocked()) {
       this.msg = `Сначала пройдите «${STORY[i - 1].title}»`; this.msgT = 2.5;
       AudioSys.play('empty_click');
@@ -426,18 +439,24 @@ class StoryUI {
     this.game.state = 'charSelect';
   }
 
+  _switch(tab) { if (this.tab !== tab) { this.tab = tab; AudioSys.play('menu_move'); } }
+
   update(dt) {
     this.t += dt;
     this.msgT = Math.max(0, this.msgT - dt);
-    const n = STORY.length;
-    if (Input.wasPressed('ArrowUp') || Input.wasPressed('KeyW') || Input.wasPressed('MobileUp')) { this.sel = (this.sel + n - 1) % n; AudioSys.play('menu_move'); }
-    if (Input.wasPressed('ArrowDown') || Input.wasPressed('KeyS') || Input.wasPressed('MobileDown')) { this.sel = (this.sel + 1) % n; AudioSys.play('menu_move'); }
-    if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) this._choose(this.sel);
+    const n = this.list.length;
+    if (Input.wasPressed('ArrowUp') || Input.wasPressed('KeyW') || Input.wasPressed('MobileUp')) { this.cur = (this.cur + n - 1) % n; AudioSys.play('menu_move'); }
+    if (Input.wasPressed('ArrowDown') || Input.wasPressed('KeyS') || Input.wasPressed('MobileDown')) { this.cur = (this.cur + 1) % n; AudioSys.play('menu_move'); }
+    if (Input.wasPressed('ArrowLeft') || Input.wasPressed('KeyA')) this._switch('story');
+    if (Input.wasPressed('ArrowRight') || Input.wasPressed('KeyD')) this._switch('tutorial');
+    if (Input.wasPressed('Tab')) this._switch(this.tab === 'story' ? 'tutorial' : 'story');
+    if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) { this._choose(this.cur); return; }
     if (Input.wasPressed('Escape')) { this.game.toMenu(); return; }
     const mx = Input.mouse.x, my = Input.mouse.y, click = Input.consumeClick();
+    if (click) for (const r of this._tabRects(this.game.W)) if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { this._switch(r.id); return; }
     this._rects(this.game.W, this.game.H).forEach((r, i) => {
       if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) {
-        if ((this._lm || 0) !== mx + my) this.sel = i;
+        if ((this._lm || 0) !== mx + my) this.cur = i;
         if (click) this._choose(i);
       }
     });
@@ -449,59 +468,108 @@ class StoryUI {
     M.drawBackground(ctx, w, h, this.t, 0.5);
     M.glowText(ctx, 'СЮЖЕТ', w / 2, 52, '#ffd319', Math.min(40, w * 0.06), 'center', 18);
     ctx.font = `${Math.min(13, w * 0.022)}px "Courier New", monospace`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.fillText('«ПРЕПОДЫ. ПЕРЕЗАПУСК» — колледж № 7, Актау', w / 2, 78, w - 24);
-    const open = StoryProgress.unlocked();
-    const R = this._rects(w, h);
-    R.forEach((r, i) => {
-      const ch = STORY[i], locked = i >= open, on = i === this.sel;
-      ctx.save();
-      ctx.globalAlpha = locked ? 0.45 : 1;
-      ctx.fillStyle = on ? 'rgba(40,20,60,0.92)' : 'rgba(10,5,22,0.8)';
+    ctx.fillText('«ПРЕПОДЫ. ПЕРЕЗАПУСК» — колледж № 7, Актау', w / 2, 76, w - 24);
+    // вкладки
+    for (const r of this._tabRects(w)) {
+      const on = this.tab === r.id;
+      ctx.fillStyle = on ? 'rgba(255,42,109,0.85)' : 'rgba(10,5,22,0.75)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.fillStyle = ch.color; ctx.fillRect(r.x, r.y, on ? 5 : 3, r.h);
-      ctx.strokeStyle = on ? ch.color : 'rgba(255,255,255,0.12)'; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-      ctx.font = `bold ${Math.min(14, r.h * 0.34)}px "Courier New", monospace`; ctx.textAlign = 'left'; ctx.fillStyle = on ? '#fff' : '#c8c2e0';
-      ctx.fillText(locked ? `🔒 ГЛАВА ${i + 1}` : ch.title, r.x + 14, r.y + r.h * 0.45, r.w - 24);
-      ctx.font = `${Math.min(11, r.h * 0.27)}px "Courier New", monospace`; ctx.fillStyle = '#8a84a0';
-      ctx.fillText(locked ? 'закрыто' : ch.place, r.x + 14, r.y + r.h * 0.8, r.w - 24);
-      ctx.restore();
-    });
-    // описание выбранной главы
-    const ch = STORY[this.sel], locked = this.sel >= open;
-    const dx = R[0].x + R[0].w + 20, dw = Math.min(470, w - dx - 16), dy = R[0].y, dh = R[R.length - 1].y + R[0].h - dy;
-    if (dw > 160) {
-      M.panel(ctx, dx, dy, dw, dh, ch.color, 0.85);
-      ctx.textAlign = 'left';
-      M.glowText(ctx, locked ? '???' : ch.title, dx + 18, dy + 34, ch.color, Math.min(18, dw * 0.045), 'left', 10);
-      ctx.font = `bold ${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
-      ctx.fillText(locked ? '' : ch.place, dx + 18, dy + 58, dw - 36);
-      ctx.font = `${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
-      let y = dy + 86;
-      y += M._wrapText(ctx, locked ? 'Пройдите предыдущую главу, чтобы открыть эту.' : ch.blurb, dx + 18, y, dw - 36, 18);
-      if (!locked) {
-        const Lv = ch.level.campaign !== undefined ? CAMPAIGN[ch.level.campaign] : ch.level;
-        const boss = BOSS_TYPES[ch.level.campaign !== undefined ? Lv.boss : ch.level.boss];
-        y += 10;
-        ctx.fillStyle = '#05d9e8'; ctx.font = `bold ${Math.min(12, dw * 0.028)}px "Courier New", monospace`;
-        ctx.fillText('ЛОКАЦИЯ', dx + 18, y); ctx.fillStyle = '#ffffff'; ctx.fillText(Lv.name, dx + 110, y, dw - 128);
-        y += 20;
-        ctx.fillStyle = '#ff5a3a'; ctx.fillText('БОСС', dx + 18, y); ctx.fillStyle = '#ffffff'; ctx.fillText(boss ? `${boss.name} — ${boss.title}` : '—', dx + 110, y, dw - 128);
-        y += 20;
-        const who = [...new Set([...ch.intro, ...ch.outro].map(l => l[0]).filter(s => s && CAST[s] && !CAST[s].hero && !CAST[s].villain && !CAST[s].phone))];
-        if (who.length) {
-          ctx.fillStyle = '#ffd319'; ctx.fillText('В ГЛАВЕ', dx + 18, y);
-          ctx.fillStyle = '#c8c2e0'; ctx.font = `${Math.min(12, dw * 0.028)}px "Courier New", monospace`;
-          M._wrapText(ctx, who.map(s => CAST[s].name).join(', '), dx + 110, y, dw - 128, 16);
-        }
-      }
+      ctx.strokeStyle = on ? '#ffd319' : 'rgba(5,217,232,0.4)'; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.font = `bold ${Math.min(14, r.w / 9)}px "Courier New", monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = on ? '#fff' : '#9a94b8';
+      ctx.fillText(r.id === 'story' ? 'ГЛАВЫ' : 'ОБУЧЕНИЕ', r.x + r.w / 2, r.y + r.h / 2 + 1);
+      ctx.textBaseline = 'alphabetic';
     }
+    const R = this._rects(w, h);
+    if (this.tab === 'story') this._drawStory(ctx, w, h, R); else this._drawTutorials(ctx, w, h, R);
     if (this.msgT > 0) {
       ctx.globalAlpha = Math.min(1, this.msgT);
       ctx.font = 'bold 14px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd319';
-      ctx.fillText(this.msg, w / 2, h - 52, w - 24);
+      ctx.fillText(this.msg, w / 2, h - 46, w - 24);
       ctx.globalAlpha = 1;
     }
     ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.fillText('W/S — выбор   ENTER — играть   ESC — назад', w / 2, h - 22, w - 24);
+    ctx.fillText('A/D или TAB — вкладки   W/S — выбор   ENTER — играть   ESC — назад', w / 2, h - 20, w - 24);
+  }
+
+  _row(ctx, r, on, locked, color, title, sub) {
+    ctx.save();
+    ctx.globalAlpha = locked ? 0.45 : 1;
+    ctx.fillStyle = on ? 'rgba(40,20,60,0.92)' : 'rgba(10,5,22,0.8)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = color; ctx.fillRect(r.x, r.y, on ? 5 : 3, r.h);
+    ctx.strokeStyle = on ? color : 'rgba(255,255,255,0.12)'; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    ctx.font = `bold ${Math.min(14, r.h * 0.32)}px "Courier New", monospace`; ctx.textAlign = 'left'; ctx.fillStyle = on ? '#fff' : '#c8c2e0';
+    ctx.fillText(title, r.x + 14, r.y + r.h * 0.45, r.w - 24);
+    ctx.font = `${Math.min(11, r.h * 0.25)}px "Courier New", monospace`; ctx.fillStyle = '#8a84a0';
+    ctx.fillText(sub, r.x + 14, r.y + r.h * 0.8, r.w - 24);
+    ctx.restore();
+  }
+
+  _detail(R, w) {
+    const dx = R[0].x + R[0].w + 20, dw = Math.min(470, w - dx - 16), dy = R[0].y, dh = R[R.length - 1].y + R[0].h - dy;
+    return { dx, dw, dy, dh };
+  }
+
+  _drawStory(ctx, w, h, R) {
+    const M = this.game.menu, open = StoryProgress.unlocked();
+    R.forEach((r, i) => {
+      const ch = STORY[i], locked = i >= open;
+      this._row(ctx, r, i === this.sel, locked, ch.color, locked ? `🔒 ГЛАВА ${i + 1}` : ch.title, locked ? 'закрыто' : ch.place);
+    });
+    const ch = STORY[this.sel], locked = this.sel >= open;
+    const { dx, dw, dy, dh } = this._detail(R, w);
+    if (dw <= 160) return;
+    M.panel(ctx, dx, dy, dw, dh, ch.color, 0.85);
+    ctx.textAlign = 'left';
+    M.glowText(ctx, locked ? '???' : ch.title, dx + 18, dy + 34, ch.color, Math.min(18, dw * 0.045), 'left', 10);
+    ctx.font = `bold ${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
+    ctx.fillText(locked ? '' : ch.place, dx + 18, dy + 58, dw - 36);
+    ctx.font = `${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
+    let y = dy + 86;
+    y += M._wrapText(ctx, locked ? 'Пройдите предыдущую главу, чтобы открыть эту.' : ch.blurb, dx + 18, y, dw - 36, 18);
+    if (locked) return;
+    const Lv = ch.level.campaign !== undefined ? CAMPAIGN[ch.level.campaign] : ch.level;
+    const boss = BOSS_TYPES[ch.level.campaign !== undefined ? Lv.boss : ch.level.boss];
+    y += 10;
+    ctx.fillStyle = '#05d9e8'; ctx.font = `bold ${Math.min(12, dw * 0.028)}px "Courier New", monospace`;
+    ctx.fillText('ЛОКАЦИЯ', dx + 18, y); ctx.fillStyle = '#ffffff'; ctx.fillText(Lv.name, dx + 110, y, dw - 128);
+    y += 20;
+    ctx.fillStyle = '#ff5a3a'; ctx.fillText('БОСС', dx + 18, y); ctx.fillStyle = '#ffffff'; ctx.fillText(boss ? `${boss.name} — ${boss.title}` : '—', dx + 110, y, dw - 128);
+    y += 20;
+    const who = [...new Set([...ch.intro, ...ch.outro].map(l => l[0]).filter(s => s && CAST[s] && !CAST[s].hero && !CAST[s].villain && !CAST[s].phone))];
+    if (who.length) {
+      ctx.fillStyle = '#ffd319'; ctx.fillText('В ГЛАВЕ', dx + 18, y);
+      ctx.fillStyle = '#c8c2e0'; ctx.font = `${Math.min(12, dw * 0.028)}px "Courier New", monospace`;
+      M._wrapText(ctx, who.map(s => CAST[s].name).join(', '), dx + 110, y, dw - 128, 16);
+    }
+  }
+
+  _drawTutorials(ctx, w, h, R) {
+    const M = this.game.menu, done = TutorialProgress.done();
+    R.forEach((r, i) => {
+      const t = TUTORIALS[i];
+      this._row(ctx, r, i === this.tsel, false, t.color, (done.includes(t.id) ? '✓ ' : '') + t.title, `${t.steps.filter(s => !s.say).length} заданий · инструктор Ереке`);
+      // портрет героя
+      const img = this.game.images[t.hero], s = r.h - 12;
+      if (img && img.complete && img.naturalWidth && r.w > 260) {
+        ctx.drawImage(img, r.x + r.w - s - 8, r.y + 6, s, s);
+        ctx.strokeStyle = t.color; ctx.strokeRect(r.x + r.w - s - 8.5, r.y + 5.5, s + 1, s + 1);
+      }
+    });
+    const t = TUTORIALS[this.tsel];
+    const { dx, dw, dy, dh } = this._detail(R, w);
+    if (dw <= 160) return;
+    M.panel(ctx, dx, dy, dw, Math.max(dh, 200), t.color, 0.85);
+    ctx.textAlign = 'left';
+    M.glowText(ctx, t.title, dx + 18, dy + 34, t.color, Math.min(18, dw * 0.045), 'left', 10);
+    ctx.font = `bold ${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#ffffff';
+    ctx.fillText('Полигон НВП · пять комнат · погибнуть нельзя', dx + 18, dy + 58, dw - 36);
+    ctx.font = `${Math.min(13, dw * 0.03)}px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
+    let y = dy + 86;
+    y += M._wrapText(ctx, 'Чему научит: ' + t.topics + '.', dx + 18, y, dw - 36, 18);
+    ctx.fillStyle = done.includes(t.id) ? '#3dff8a' : '#ffd319';
+    ctx.font = `bold ${Math.min(12, dw * 0.028)}px "Courier New", monospace`;
+    ctx.fillText(done.includes(t.id) ? 'ПРОЙДЕН — можно повторить' : 'ENTER — начать урок', dx + 18, y + 10, dw - 36);
   }
 }

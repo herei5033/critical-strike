@@ -7,6 +7,25 @@ const AudioSys = {
   musicEnabled: true,
 
   sounds: {},
+  musicCache: {},   // url → расшифрованная музыка (грузится при запуске игры)
+
+  // Один звук эффекта (перед уровнем)
+  async loadSound(name) {
+    if (!this.ctx) this.init();
+    if (!this.ctx || this.sounds[name]) return;
+    const r = await fetch(`/static/audio/${name}.mp3`);
+    if (!r.ok) return;
+    this.sounds[name] = await this.ctx.decodeAudioData(await r.arrayBuffer());
+  },
+
+  // Музыкальный трек целиком в память, чтобы включался без задержки
+  async cacheMusic(url) {
+    if (!this.ctx) this.init();
+    if (!this.ctx || this.musicCache[url]) return;
+    const r = await fetch(url);
+    if (!r.ok) return;
+    this.musicCache[url] = await this.ctx.decodeAudioData(await r.arrayBuffer());
+  },
 
   init() {
     if (this.ctx) return;
@@ -67,6 +86,17 @@ const AudioSys = {
     if (this.currentTrack === trackPath && this.musicSource) return;
 
     this.stopMusic();
+
+    const start = (decoded) => {
+      if (!this.musicEnabled || !decoded) return;
+      this.musicSource = this.ctx.createBufferSource();
+      this.musicSource.buffer = decoded;
+      this.musicSource.loop = true;
+      this.musicSource.connect(this.musicGain);
+      this.musicSource.start();
+      this.currentTrack = trackPath;
+    };
+    if (this.musicCache[trackPath]) { start(this.musicCache[trackPath]); return; }
 
     fetch(trackPath)
       .then(r => {

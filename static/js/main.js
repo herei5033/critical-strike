@@ -14,6 +14,7 @@ window.addEventListener('pointerdown', ensureAudio);
 window.addEventListener('keydown', ensureAudio);
 
 const game = new Game(canvas);
+window.game = game;
 
 // В полноэкранном режиме блокируем клавиатуру полностью (в т.ч. Ctrl+W), если браузер это умеет
 document.addEventListener('fullscreenchange', () => {

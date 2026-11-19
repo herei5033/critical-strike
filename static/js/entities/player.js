@@ -71,7 +71,7 @@ class Player {
   takeDamage(amount, cause) {
     if (this.dead || this.hurtCooldown > 0 || this.kickT > 0) return;
     this._lastCause = cause;
-    this.hurtCooldown = 0.6;
+    this.hurtCooldown = Input.isMobile ? 0.9 : 0.6;
     if (this.armor > 0) {
       const a = Math.min(this.armor, amount);
       this.armor -= a; amount -= a;
@@ -193,7 +193,7 @@ class Player {
     else { this._safeX = this.x; this._safeY = this.y; }
 
     // Заглядывание
-    this.isLooking = Input.isDown('ShiftLeft') || Input.isDown('ShiftRight');
+    this.isLooking = Input.isDown('ShiftLeft') || Input.isDown('ShiftRight') || (Input.touch.aimActive && Input.touch.aimMag > 0.95);
 
     // Движение
     let dx = 0, dy = 0;
@@ -279,7 +279,7 @@ class Player {
 
     // Прицеливание
     if (Input.touch.aimActive) {
-      this.angle = Math.atan2(Input.touch.aimY, Input.touch.aimX);
+      this.angle = this._aimAssist(Math.atan2(Input.touch.aimY, Input.touch.aimX), enemies, level);
       this.lastAimAngle = this.angle;
     } else if (Input.touch.aimX !== 0 || Input.touch.aimY !== 0) {
       this.angle = this.lastAimAngle;
@@ -328,6 +328,7 @@ class Player {
     if (!Input.isDown('KeyQ')) this._qLock = false;
 
     let shouldShoot = Input.mouse.down;
+    if (Input.touch.aimActive && Input.touch.aimMag > AIM_FIRE) shouldShoot = true;
     if (Input.touch.aimActive && !shouldShoot) {
       for (const e of enemies) {
         if (e.dead) continue;
@@ -414,6 +415,25 @@ class Player {
     const muz = (Sprites.WEAPON_META[w.id] || {}).muzzle || 16;
     if (!w.silent) Effects.muzzle(cx + Math.cos(a) * (muz + 6), cy + Math.sin(a) * (muz + 6), a, w.id === 'shotgun');
     return true;
+  }
+
+  // Телефон: ствол доводится до ближайшего видимого врага в секторе ±23°
+  _aimAssist(a, enemies, level) {
+    if (!Input.isMobile || !enemies) return a;
+    const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+    let best = null, bestScore = Infinity;
+    for (const e of enemies) {
+      if (e.dead) continue;
+      const d = Utils.dist(cx, cy, e.cx(), e.cy());
+      if (d > 440) continue;
+      let da = Math.atan2(e.cy() - cy, e.cx() - cx) - a;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      if (Math.abs(da) > 0.4) continue;
+      const score = Math.abs(da) * 300 + d;
+      if (score < bestScore && level.lineOfSight(cx, cy, e.cx(), e.cy())) { bestScore = score; best = a + da; }
+    }
+    return best === null ? a : best;
   }
 
   // Пинок задевает всех рядом: обычных врагов оглушает и отбрасывает, боссу — урон

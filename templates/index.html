@@ -21,29 +21,28 @@
   <!-- Кнопка фуллскрина -->
   <button id="fs-btn" title="Полный экран">⛶</button>
 
-  <!-- Мобильное управление (Игра) -->
+  <!-- Мобильное управление (Игра): плавающие стики + кнопки под героя -->
   <div id="mobile-game-controls" class="mobile-overlay">
-    <div id="joystick-move-base" class="joystick-base">
-      <div class="joystick-knob"></div>
+    <div id="zone-move" class="touch-zone"><span class="zone-hint">ДВИЖЕНИЕ</span></div>
+    <div id="zone-aim" class="touch-zone"><span class="zone-hint">ПРИЦЕЛ · ТЯНИТЕ ДАЛЬШЕ — ОГОНЬ</span></div>
+    <div id="stick-move" class="stick"><div class="stick-knob"></div></div>
+    <div id="stick-aim" class="stick aim"><div class="stick-knob"></div></div>
+    <div id="action-btns">
+      <button class="abtn hero-gal" id="btn-kick"><span>ПИНОК</span></button>
+      <button class="abtn hero-daur" id="btn-spread"><span>ВРАЗ<br>БРОС</span></button>
+      <button class="abtn" id="btn-grenade"><span>ГРАН</span><b>0</b></button>
+      <button class="abtn hero-armed" id="btn-throw"><span>БРОС</span></button>
     </div>
-    <div id="joystick-aim-base" class="joystick-base">
-      <div class="joystick-knob"></div>
-    </div>
-    <div id="mobile-buttons">
-      <button class="mbtn" id="btn-shoot">✶</button>
-      <button class="mbtn" id="btn-throw">Q</button>
-      <button class="mbtn" id="btn-grenade">G</button>
-      <button class="mbtn" id="btn-kick">F</button>
-      <button class="mbtn" id="btn-pause">II</button>
-    </div>
+    <button id="btn-pause" class="pbtn">II</button>
   </div>
 
   <!-- Мобильное управление (Меню) -->
   <div id="mobile-menu-controls" class="mobile-overlay">
-    <button class="nbtn nbtn-confirm" id="btn-enter">OK</button>
+    <button class="nbtn nbtn-back" id="btn-back">◀ НАЗАД</button>
     <div class="menu-nav-btns">
       <button class="nbtn" id="btn-up">▲</button>
       <button class="nbtn" id="btn-down">▼</button>
+      <button class="nbtn nbtn-confirm" id="btn-enter">OK</button>
     </div>
   </div>
 
@@ -58,6 +57,7 @@
   <script src="{{ url_for('static', filename='js/input.js') }}"></script>
   <script src="{{ url_for('static', filename='js/palette.js') }}"></script>
   <script src="{{ url_for('static', filename='js/audio.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/assets.js') }}"></script>
   <script src="{{ url_for('static', filename='js/camera.js') }}"></script>
   <script src="{{ url_for('static', filename='js/weapons.js') }}"></script>
   <script src="{{ url_for('static', filename='js/sprites.js') }}"></script>
@@ -73,6 +73,7 @@
   <script src="{{ url_for('static', filename='js/level.js') }}"></script>
   <script src="{{ url_for('static', filename='js/campaign.js') }}"></script>
   <script src="{{ url_for('static', filename='js/story.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/tutorial.js') }}"></script>
   <script src="{{ url_for('static', filename='js/p2p.js') }}"></script>
   <script src="{{ url_for('static', filename='js/coop.js') }}"></script>
   <script src="{{ url_for('static', filename='js/menu.js') }}"></script>

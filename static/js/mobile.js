@@ -1,87 +1,122 @@
+// =====================================================================
+// Мобильное управление (на ПК не используется).
+//  • левая половина экрана — «плавающий» стик движения: появляется там, где коснулся палец;
+//  • правая половина — стик прицела: тянете в сторону цели, оттянули сильнее — стрельба;
+//    помощь в прицеливании доводит ствол до ближайшего врага;
+//  • кнопки действий подстраиваются под героя: ПИНОК (Гала), ВРАЗБРОС (Даур), БРОСОК, ГРАНАТА;
+//  • в меню — ▲ ▼ OK и НАЗАД, плюс можно просто нажимать на пункты на экране.
+// =====================================================================
 (function () {
-  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-  if (!isTouch) return;
+  if (!Input.isMobile) return;
+  document.body.classList.add('is-mobile');
 
-  // Разблокировка звука на iOS при первом касании
+  // Первое касание: разблокировка звука, полный экран и альбомная ориентация
   window.addEventListener('touchstart', () => {
-    AudioSys.init();
-    AudioSys.resume();
-  }, { once: true });
+    AudioSys.init(); AudioSys.resume();
+    if (window.game) window.game._tapped = true;
+    const el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) {
+      el.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      }).catch(() => {});
+    }
+  }, { once: true, passive: true });
+  window.addEventListener('touchstart', () => { if (window.game) window.game._tapped = true; }, { passive: true });
 
-  // --- Стики ---
-  function setupStick(baseId, onMove) {
-    const base = document.getElementById(baseId);
-    const knob = base ? base.querySelector('.joystick-knob') : null;
-    if (!base || !knob) return;
-
-    const MAX_R = 36;
-    let activeId = null;
-    let centerX = 0, centerY = 0;
-
-    function setKnob(dx, dy) {
+  // ---------- плавающий стик ----------
+  function floatingStick(zoneId, stickId, R, onMove, onEnd) {
+    const zone = document.getElementById(zoneId), stick = document.getElementById(stickId);
+    if (!zone || !stick) return;
+    const knob = stick.querySelector('.stick-knob');
+    let id = null, cx = 0, cy = 0;
+    const show = (x, y) => { stick.style.left = x + 'px'; stick.style.top = y + 'px'; stick.classList.add('on'); };
+    const move = (x, y) => {
+      let dx = x - cx, dy = y - cy;
       const len = Math.hypot(dx, dy);
-      if (len > MAX_R) { dx = dx / len * MAX_R; dy = dy / len * MAX_R; }
-      knob.style.transform = `translate(${dx}px, ${dy}px)`;
-      onMove(dx / MAX_R, dy / MAX_R);
-    }
-
-    function resetKnob() {
-      knob.style.transform = 'translate(0, 0)';
-      onMove(0, 0);
-    }
-
-    base.addEventListener('touchstart', (e) => {
+      // палец ушёл далеко — стик «едет» за ним, чтобы не терять управление
+      if (len > R * 1.6) { cx += dx * (1 - R * 1.6 / len); cy += dy * (1 - R * 1.6 / len); stick.style.left = cx + 'px'; stick.style.top = cy + 'px'; dx = x - cx; dy = y - cy; }
+      const l2 = Math.hypot(dx, dy), k = l2 > R ? R / l2 : 1;
+      knob.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+      onMove(dx * k / R, dy * k / R, Math.min(1, l2 / R));
+    };
+    zone.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      if (id !== null) return;
       const t = e.changedTouches[0];
-      activeId = t.identifier;
-      const r = base.getBoundingClientRect();
-      centerX = r.left + r.width / 2;
-      centerY = r.top + r.height / 2;
-      setKnob(t.clientX - centerX, t.clientY - centerY);
+      id = t.identifier; cx = t.clientX; cy = t.clientY;
+      show(cx, cy);
+      knob.style.transform = 'translate(0,0)';
+      onMove(0, 0, 0);
     }, { passive: false });
-
-    base.addEventListener('touchmove', (e) => {
+    zone.addEventListener('touchmove', (e) => {
       e.preventDefault();
-      for (const t of e.changedTouches) {
-        if (t.identifier === activeId) setKnob(t.clientX - centerX, t.clientY - centerY);
-      }
+      for (const t of e.changedTouches) if (t.identifier === id) move(t.clientX, t.clientY);
     }, { passive: false });
-
-    function endStick(e) {
-      for (const t of e.changedTouches) {
-        if (t.identifier === activeId) { activeId = null; resetKnob(); }
+    const end = (e) => {
+      for (const t of e.changedTouches) if (t.identifier === id) {
+        id = null; stick.classList.remove('on'); knob.style.transform = 'translate(0,0)';
+        onEnd();
       }
-    }
-    base.addEventListener('touchend', endStick);
-    base.addEventListener('touchcancel', endStick);
+    };
+    zone.addEventListener('touchend', end);
+    zone.addEventListener('touchcancel', end);
   }
 
-  setupStick('joystick-move-base', (x, y) => Input.setMove(x, y));
-  setupStick('joystick-aim-base', (x, y) => Input.setAim(x, y));
+  floatingStick('zone-move', 'stick-move', 52,
+    (x, y, m) => Input.setMove(x * Math.min(1, m * 1.25), y * Math.min(1, m * 1.25)),
+    () => Input.setMove(0, 0));
+  floatingStick('zone-aim', 'stick-aim', 52,
+    (x, y, m) => { Input.setAim(x, y); Input.touch.aimMag = m; document.getElementById('stick-aim').classList.toggle('fire', m > AIM_FIRE); },
+    () => { Input.setAim(0, 0); Input.touch.aimMag = 0; document.getElementById('stick-aim').classList.remove('fire'); });
 
-  // --- Кнопки ---
-  function bindHold(btnId, onDown, onUp) {
-    const btn = document.getElementById(btnId);
-    if (!btn) return;
-    btn.addEventListener('touchstart', (e) => { e.preventDefault(); btn.classList.add('pressed'); onDown(); }, { passive: false });
-    btn.addEventListener('touchend', (e) => { e.preventDefault(); btn.classList.remove('pressed'); if (onUp) onUp(); }, { passive: false });
-    btn.addEventListener('touchcancel', () => { btn.classList.remove('pressed'); if (onUp) onUp(); });
+  // ---------- кнопки ----------
+  function tapBtn(id, onDown, onUp) {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); b.classList.add('pressed'); onDown(); }, { passive: false });
+    const up = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } b.classList.remove('pressed'); if (onUp) onUp(); };
+    b.addEventListener('touchend', up, { passive: false });
+    b.addEventListener('touchcancel', () => up());
   }
+  tapBtn('btn-throw', () => Input.setThrow(true), () => Input.setThrow(false));
+  tapBtn('btn-grenade', () => Input.simulatePress('KeyG'));
+  tapBtn('btn-kick', () => Input.simulatePress('KeyF'));
+  tapBtn('btn-spread', () => { Input.mobileSpread = !Input.mobileSpread; Input.mouse.right = Input.mobileSpread; });
+  tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
+  // меню
+  tapBtn('btn-up', () => Input.simulatePress('MobileUp'));
+  tapBtn('btn-down', () => Input.simulatePress('MobileDown'));
+  tapBtn('btn-enter', () => Input.simulatePress('MobileEnter'));
+  tapBtn('btn-back', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
 
-  bindHold('btn-shoot', () => Input.setShoot(true), () => Input.setShoot(false));
-  bindHold('btn-throw', () => Input.setThrow(true), () => Input.setThrow(false));
-  bindHold('btn-grenade', () => Input.simulatePress('KeyG'), () => {});
-  bindHold('btn-kick', () => Input.simulatePress('KeyF'), () => {});
-  bindHold('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 50); }, () => {});
-
-  // --- Кнопки МЕНЮ ---
-  const btnUp = document.getElementById('btn-up');
-  const btnDown = document.getElementById('btn-down');
-  const btnEnter = document.getElementById('btn-enter');
-
-  if (btnUp) btnUp.addEventListener('touchstart', (e) => { e.preventDefault(); Input.simulatePress('MobileUp'); }, { passive: false });
-  if (btnDown) btnDown.addEventListener('touchstart', (e) => { e.preventDefault(); Input.simulatePress('MobileDown'); }, { passive: false });
-  if (btnEnter) btnEnter.addEventListener('touchstart', (e) => { e.preventDefault(); Input.simulatePress('MobileEnter'); }, { passive: false });
+  // ---------- кнопки под героя и их состояние ----------
+  const $ = (id) => document.getElementById(id);
+  function sync() {
+    requestAnimationFrame(sync);
+    const g = window.game;
+    if (!g) return;
+    const playing = g.state === 'playing' || g.state === 'levelClear';
+    $('mobile-game-controls').classList.toggle('active', playing && !TextField.active);
+    $('mobile-menu-controls').classList.toggle('active', !playing && !TextField.active && g.state !== 'loading' && g.state !== 'levelLoad');
+    const p = g.player;
+    if (!playing || !p) return;
+    document.body.dataset.hero = p.charId;
+    // гранаты
+    const gb = $('btn-grenade');
+    gb.querySelector('b').textContent = p.grenades || 0;
+    gb.classList.toggle('off', !(p.grenades > 0));
+    // бросок — только если есть что бросать
+    $('btn-throw').classList.toggle('off', !(p.weapon || p.weapon2));
+    // пинок: перезарядка кольцом
+    const kb = $('btn-kick');
+    kb.style.setProperty('--cd', p.kickCd > 0 ? String(1 - p.kickCd / KICK_CD) : '1');
+    kb.classList.toggle('off', p.kickCd > 0);
+    // вразброс: включается только с двумя стволами
+    if (!p.weapon2 && Input.mobileSpread) { Input.mobileSpread = false; Input.mouse.right = false; }
+    $('btn-spread').classList.toggle('on', !!Input.mobileSpread);
+    $('btn-spread').classList.toggle('off', !p.weapon2);
+  }
+  requestAnimationFrame(sync);
 
   document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   document.addEventListener('gesturestart', (e) => e.preventDefault());

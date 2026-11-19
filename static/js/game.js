@@ -60,6 +60,7 @@ class Game {
     this.storyUI = new StoryUI(this);
     this.storyIdx = null;       // глава сюжета (когда soloMode === 'story')
     this.dialogue = null;
+    this.tutorial = null;       // урок обучения (полигон НВП)
     this._storySeen = new Set();
     this.soloMode = 0;          // номер уровня кампании, 'endless' или 'story'
     this.campaignIdx = null;
@@ -74,31 +75,32 @@ class Game {
     this._loadAssets();
   }
 
+  // Запуск игры: музыка и фото главных героев (остальное — перед уровнями)
   async _loadAssets() {
-    const imagePromises = [
-      new Promise(res => { this.images.dani.onload = res; this.images.dani.onerror = res; }),
-      new Promise(res => { this.images.gal.onload = res; this.images.gal.onerror = res; }),
-      new Promise(res => { this.images.daur.onload = res; this.images.daur.onerror = res; })
-    ];
-
-    this.images.dani.src = '/static/img/dani.png';
-    this.images.gal.src = '/static/img/gal.png';
-    this.images.daur.src = '/static/img/daur.png';
-
-    this.assetsToLoad = imagePromises.length + 1;
-
-    for (let p of imagePromises) {
-      await p;
-      this.assetsLoaded++;
-    }
-
-    if (typeof AudioSys !== 'undefined') {
-      AudioSys.init();
-      await AudioSys.preload();
-      this.assetsLoaded++;
-    }
-
+    AudioSys.init();
+    const list = Assets.bootList(this);
+    this.assetsToLoad = list.length;
+    this._bootT = 0;
+    await Assets.run(list, (n, total, it) => { this.assetsLoaded = n; this._bootLabel = LOAD_LABELS[it.type]; });
+    this.assetsLoaded = this.assetsToLoad;
     this.isReady = true;
+  }
+
+  // Перед уровнем: показать экран загрузки, пока не скачано всё нужное, затем продолжить
+  _loadThen(items, info, cont) {
+    const need = Assets.missing(items);
+    if (!need.length) { cont(); return; }
+    this._load = { info, done: 0, total: need.length, t: 0, ready: false, cont, label: '' };
+    this.state = 'levelLoad';
+    Assets.run(need, (n, total, it) => { if (this._load) { this._load.done = n; this._load.label = LOAD_LABELS[it.type]; } })
+      .then(() => { if (this._load) this._load.ready = true; });
+  }
+
+  _levelInfo() {
+    if (this.soloMode === 'story' && this.storyIdx !== null) { const c = STORY[this.storyIdx]; return { title: c.title, sub: c.place, color: c.color }; }
+    if (this.soloMode === 'tutorial') return { title: 'ПОЛИГОН НВП', sub: 'Обучение', color: '#a8c070' };
+    if (typeof this.soloMode === 'number') { const L = CAMPAIGN[this.soloMode]; return { title: L.name, sub: L.sub, color: L.color }; }
+    return { title: 'БЕСКОНЕЧНЫЙ ЗАБЕГ', sub: 'Случайные этажи и боссы по очкам', color: '#c060ff' };
   }
 
   // Все живые/раненые игроки: свой герой + напарники
@@ -109,6 +111,12 @@ class Game {
   }
 
   startRun() {
+    const story = this.soloMode === 'story' && this.storyIdx !== null;
+    const items = story ? Assets.storyList(this.storyIdx) : Assets.gameplayList();
+    this._loadThen(items, this._levelInfo(), () => this._startRunNow());
+  }
+
+  _startRunNow() {
     this.coop = null;
     const story = this.soloMode === 'story' && this.storyIdx !== null;
     if (!story) this.storyIdx = null;
@@ -129,6 +137,34 @@ class Game {
     this.player = null;   // новый забег — заряд способностей и счёт убийств с нуля
     if (story) { this._startStoryChapter(); return; }
     this.startLevel();
+  }
+
+  // ---------- обучение ----------
+  startTutorial(i) {
+    this.soloMode = 'tutorial';
+    this._loadThen(Assets.tutorialList(), this._levelInfo(), () => this._startTutorialNow(i));
+  }
+
+  _startTutorialNow(i) {
+    const def = TUTORIALS[i];
+    this.coop = null;
+    this.storyIdx = null;
+    this.soloMode = 'tutorial';
+    this.campaignIdx = null;
+    this.bossDirector = null;
+    this.score = 0; this.kills = 0;
+    this.nameSubmitted = true; this.runSubmitted = true;   // в таблицу лидеров обучение не пишем
+    this.selectedChar = Math.max(0, ['dani', 'gal', 'daur'].indexOf(def.hero));
+    this.player = null;
+    AudioSys.stopMusic();
+    AudioSys.playMusic('/static/audio/game_music.mp3');
+    Utils.withSeed(TUTORIAL_LAYOUT.seed, () => this._buildLevel(TUTORIAL_LAYOUT));
+    this.enemies = []; this.pickups = []; this.totalEnemies = 0;
+    this._spawnPlayer(0);
+    this._afterLevelStart();
+    this.levelBanner = { name: 'ПОЛИГОН НВП', sub: def.title, color: def.color, t: 2.5 };
+    this.tutorial = new Tutorial(this, def);
+    this.tutorial.protect(this.player);
   }
 
   // ---------- сюжет ----------
@@ -210,9 +246,11 @@ class Game {
     AudioSys.stopMusic();
     AudioSys.playMusic('/static/audio/game_music.mp3');
     AudioSys.play('game_start');
-    this.state = 'coopIntro';
-    this.introT = 0;
-    this.startCoopLevel(info.seed);
+    this._loadThen(Assets.gameplayList(), { title: 'КОРПОРАТИВ', sub: `комната ${info.code}`, color: '#ff2a6d' }, () => {
+      this.state = 'coopIntro';
+      this.introT = 0;
+      this.startCoopLevel(info.seed);
+    });
   }
 
   // Уровень корпоратива строится из общего seed — у всех одинаковый
@@ -383,6 +421,7 @@ class Game {
   toMenu() {
     TextField.close();
     this._exitAsk = null;
+    this.tutorial = null;
     if (this.coop) { this.coop.dispose(); this.coop = null; this.coopUI.leave(true); }
     this.state = 'menu';
     this.player = null;
@@ -398,7 +437,13 @@ class Game {
 
   update(dt) {
     if (this.state === 'loading') {
-      if (this.isReady) {
+      this._bootT = (this._bootT || 0) + dt;
+      this.menu.t += dt;
+      const go = Input.consumeClick() || Object.keys(Input._pressedThisFrame).some(k => Input._pressedThisFrame[k]) || this._tapped;
+      if (this.isReady && go) {
+        this._tapped = false;
+        AudioSys.init(); AudioSys.resume();
+        AudioSys.play('menu_select');
         this.state = 'menu';
         AudioSys.playMusic('/static/audio/menu_music.mp3');
       }
@@ -409,17 +454,7 @@ class Game {
     this.lightFlicker += dt * 15;
     this.chromaticOffset = Math.max(0, this.chromaticOffset - dt * 20);
 
-    const gameUI = document.getElementById('mobile-game-controls');
-    const menuUI = document.getElementById('mobile-menu-controls');
-    if (gameUI && menuUI) {
-      if (this.state === 'playing' || this.state === 'levelClear') {
-        gameUI.classList.add('active');
-        menuUI.classList.remove('active');
-      } else {
-        gameUI.classList.remove('active');
-        menuUI.classList.add('active');
-      }
-    }
+    // мобильные кнопки переключает mobile.js
 
     if (this.state === 'coop') { this.coopUI.update(dt); return; }
     if (this.state === 'levelSelect') { this.campaignUI.update(dt); return; }
@@ -439,6 +474,14 @@ class Game {
         this.coopUI.flash(reason);
         return;
       }
+    }
+
+    if (this.state === 'levelLoad') {
+      const L = this._load;
+      if (!L) { this.state = 'menu'; return; }
+      L.t += dt; this.menu.t += dt;
+      if (L.ready && L.t > 0.45) { this._load = null; L.cont(); }
+      return;
     }
 
     if (this.coop && this._updateExitAsk(dt)) return;
@@ -522,7 +565,7 @@ class Game {
       const story = this.storyIdx !== null;
       const last = story ? this.storyIdx >= STORY.length - 1 : this.campaignIdx >= CAMPAIGN.length - 1;
       const next = story
-        ? () => { this.storyIdx++; this._startStoryChapter(); }
+        ? () => { this.storyIdx++; this._loadThen(Assets.storyList(this.storyIdx), this._levelInfo(), () => this._startStoryChapter()); }
         : () => { this.campaignIdx++; this.soloMode = this.campaignIdx; this.startLevel(); };
       if (Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter')) { if (last) { this._submitRun(); this.toMenu(); } else next(); return; }
       if (Input.wasPressed('Escape')) { this._submitRun(); this.toMenu(); return; }
@@ -636,6 +679,7 @@ class Game {
         if (rm && rm !== this._lastRoom) { this._lastRoom = rm; if (rm.label) this._roomLabel = { text: rm.label, t: 2.2 }; }
         if (this._roomLabel) { this._roomLabel.t -= dt; if (this._roomLabel.t <= 0) this._roomLabel = null; }
         this._updatePacing(dt);
+        if (this.tutorial) this.tutorial.update(dt);
       }
 
       const pcx = this.player.x + this.player.w / 2;
@@ -744,7 +788,7 @@ class Game {
         this.state = 'dead'; this.shake = 1.0; this.deathT = 0;
         this._submitRun();
       }
-      if (!coopClient && this.state === 'playing' && this.enemies.every(e => e.dead)) {
+      if (!coopClient && !this.tutorial && this.state === 'playing' && this.enemies.every(e => e.dead)) {
         if (this.storyIdx !== null && !this.coop) {
           this._storyComplete();
         } else if (this.campaignIdx !== null && !this.coop) {
@@ -842,6 +886,7 @@ class Game {
 
   // Темп: последние враги сами идут на игроков, в бесконечном режиме и корпоративе — волны подкрепления
   _updatePacing(dt) {
+    if (this.tutorial) return;
     if (this.coop && !this.coop.isHost) return;
     if (!this.level || !this.level.rooms) return;
     const alive = this.enemies.filter(e => !e.dead && !e.isBoss);
@@ -1056,7 +1101,8 @@ class Game {
       let label, frac, c2;
       if (pl.charId === 'gal') {
         const ready = pl.kickCd <= 0;
-        label = ready ? 'ПИНОК [F] — ГОТОВ' : 'ПИНОК [F]'; frac = 1 - pl.kickCd / KICK_CD; c2 = ready ? '#3dff8a' : '#9a94b8';
+        const kf = Input.isMobile ? '' : ' [F]';
+        label = ready ? `ПИНОК${kf} — ГОТОВ` : `ПИНОК${kf}`; frac = 1 - pl.kickCd / KICK_CD; c2 = ready ? '#3dff8a' : '#9a94b8';
       } else {
         const on = pl.charId === 'daur' ? pl.rageT : pl.lottoT;
         const name = pl.charId === 'daur' ? 'ЯРОСТЬ' : 'ЛОТЕРЕЯ';
@@ -1104,7 +1150,7 @@ class Game {
         const ammoCol = empty ? '#ff2a6d' : frac < 0.25 ? '#ffb040' : '#05d9e8';
         ctx.font = font(9); ctx.textAlign = 'right'; ctx.fillStyle = ammoCol;
         const blink = empty && Math.sin(t * 7) > -0.3;
-        ctx.fillText(empty ? (blink ? 'ПУСТО·Q' : '') : `${w.ammo}/${w.maxAmmo}`, right, y + 10 * s);
+        ctx.fillText(empty ? (blink ? (Input.isMobile ? 'ПУСТО·БРОС' : 'ПУСТО·Q') : '') : `${w.ammo}/${w.maxAmmo}`, right, y + 10 * s);
         const bx = nx, by = y + 14 * s, bw = right - nx;
         if (w.maxAmmo <= 16) {
           const gap = 1.5 * s, pwid = (bw - gap * (w.maxAmmo - 1)) / w.maxAmmo;
@@ -1129,7 +1175,7 @@ class Game {
     if (pl.weapon2) {
       ctx.font = font(8); ctx.textAlign = 'left';
       ctx.fillStyle = pl.dualSpread ? '#ffd319' : '#6a6488';
-      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : 'ПКМ/CTRL — вразброс', x0 + 10 * s, y + 7 * s);
+      ctx.fillText(pl.dualSpread ? '◄ ► ВРАЗБРОС' : (Input.isMobile ? 'кнопка ВРАЗБРОС' : 'ПКМ/CTRL — вразброс'), x0 + 10 * s, y + 7 * s);
     }
     ctx.restore();
     this._hudBottom = y0 + ph;
@@ -1298,28 +1344,91 @@ class Game {
     }
   }
 
+  // Неоновая полоса загрузки, по которой бегут три героя
+  _drawLoadBar(ctx, x, y, w, frac, color, t) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x, y, w, 10);
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, '#05d9e8'); g.addColorStop(0.5, color); g.addColorStop(1, '#ff2a6d');
+    ctx.shadowColor = color; ctx.shadowBlur = 14;
+    ctx.fillStyle = g; ctx.fillRect(x, y, w * frac, 10);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let i = 0; i < 12; i++) { const sx = x + ((t * 160 + i * w / 12) % (w * frac || 1)); ctx.fillRect(sx, y + 2, 6, 2); }
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.strokeRect(x - 0.5, y - 0.5, w + 1, 11);
+    // герои бегут за краем заполненной полосы
+    const hx = x + w * frac;
+    ['daur', 'gal', 'dani'].forEach((id, i) => {
+      ctx.save();
+      ctx.translate(Math.max(x + 12, hx - 14 - i * 26), y - 16);
+      ctx.scale(1.3, 1.3);
+      Sprites.drawHuman(ctx, Sprites.HEROES[id], { t: t + i, walk: t * 14 + i * 2, move: 1, weaponId: [null, null, 'm4s'][i] });
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  _drawBootScreen(ctx) {
+    const W = this.W, H = this.H, M = this.menu, t = this._bootT || 0;
+    M.drawBackground(ctx, W, H, M.t, 0.25);
+    const ts = Math.min(64, W * 0.09);
+    M.drawLogo(ctx, W, H * 0.24 + ts * 0.6, ts);
+    ctx.textAlign = 'center';
+    ctx.font = `${Math.max(11, Math.min(15, W * 0.018))}px "Courier New", monospace`; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('— ПРЕПОДЫ. ПЕРЕЗАПУСК —', W / 2, H * 0.24 + ts * 2.05);
+    const frac = this.assetsToLoad ? this.assetsLoaded / this.assetsToLoad : 0;
+    const bw = Math.min(460, W * 0.6), bx = W / 2 - bw / 2, by = H * 0.68;
+    this._drawLoadBar(ctx, bx, by, bw, frac, '#ffd319', t);
+    ctx.font = `bold ${Math.min(14, W * 0.024)}px "Courier New", monospace`;
+    if (!this.isReady) {
+      ctx.fillStyle = '#c8c2e0';
+      ctx.fillText(`ЗАГРУЗКА: ${this._bootLabel || 'старт'} — ${Math.round(frac * 100)}%`, W / 2, by + 34);
+    } else {
+      const k = 0.55 + 0.45 * Math.sin(t * 5);
+      ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = '#ffd319'; ctx.shadowBlur = 14; ctx.fillStyle = '#ffd319';
+      ctx.font = `bold ${Math.min(20, W * 0.032)}px "Courier New", monospace`;
+      ctx.fillText(Input.isMobile ? 'КОСНИТЕСЬ ЭКРАНА, ЧТОБЫ НАЧАТЬ' : 'НАЖМИТЕ ЛЮБУЮ КЛАВИШУ', W / 2, by + 40);
+      ctx.restore();
+    }
+    const tips = this.menu.tips;
+    const tip = tips[Math.floor(t / 3.5) % tips.length];
+    ctx.font = `${Math.max(10, Math.min(13, W * 0.019))}px "Courier New", monospace`; ctx.fillStyle = '#05d9e8';
+    ctx.fillText('СОВЕТ: ' + tip, W / 2, H - (Input.isMobile ? 60 : 30), W - 24);
+  }
+
+  _drawLevelLoad(ctx) {
+    const W = this.W, H = this.H, M = this.menu, L = this._load;
+    if (!L) return;
+    const info = L.info || {}, col = info.color || '#ffd319';
+    M.drawBackground(ctx, W, H, M.t, 0.6);
+    ctx.fillStyle = 'rgba(4,2,10,0.55)'; ctx.fillRect(0, 0, W, H);
+    // портрет героя
+    const ids = ['dani', 'gal', 'daur'], img = this.images[ids[this.selectedChar] || 'dani'];
+    const ps = Math.min(150, H * 0.28), px = W / 2 - ps / 2, py = H * 0.16;
+    if (img && img.complete && img.naturalWidth) {
+      ctx.fillStyle = '#05030a'; ctx.fillRect(px - 4, py - 4, ps + 8, ps + 8);
+      ctx.drawImage(img, px, py, ps, ps);
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(px - 3, py - 3, ps + 6, ps + 6);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(px, py + ((L.t * 90) % ps), ps, 5);
+    }
+    M.glowText(ctx, info.title || 'ЗАГРУЗКА', W / 2, py + ps + 46, col, Math.min(30, W * 0.045), 'center', 16);
+    ctx.textAlign = 'center';
+    ctx.font = `${Math.min(14, W * 0.024)}px "Courier New", monospace`; ctx.fillStyle = '#c8c2e0';
+    ctx.fillText(info.sub || '', W / 2, py + ps + 72, W - 32);
+    const frac = L.total ? L.done / L.total : 1;
+    const bw = Math.min(460, W * 0.6), bx = W / 2 - bw / 2, by = H * 0.78;
+    this._drawLoadBar(ctx, bx, by, bw, frac, col, L.t);
+    ctx.font = `bold ${Math.min(13, W * 0.022)}px "Courier New", monospace`; ctx.fillStyle = '#9a94b8';
+    ctx.fillText(L.ready ? 'ГОТОВО' : `ЗАГРУЖАЕМ ${L.label || '…'} — ${Math.round(frac * 100)}%`, W / 2, by + 32);
+  }
+
   _renderInner() {
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    if (this.state === 'loading') {
-      ctx.fillStyle = P.bg;
-      ctx.fillRect(0, 0, this.W, this.H);
-      ctx.fillStyle = P.accent;
-      ctx.font = 'bold 30px "Courier New", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('ЗАГРУЗКА...', this.W / 2, this.H / 2 - 20);
-
-      const barW = 300;
-      const barH = 10;
-      const progress = this.assetsToLoad > 0 ? this.assetsLoaded / this.assetsToLoad : 1;
-      ctx.fillStyle = '#333';
-      ctx.fillRect(this.W / 2 - barW / 2, this.H / 2 + 20, barW, barH);
-      ctx.fillStyle = P.yellow;
-      ctx.fillRect(this.W / 2 - barW / 2, this.H / 2 + 20, barW * progress, barH);
-      return;
-    }
+    if (this.state === 'loading') { this._drawBootScreen(ctx); ctx.drawImage(this.scanlines, 0, 0); return; }
+    if (this.state === 'levelLoad') { this._drawLevelLoad(ctx); ctx.drawImage(this.scanlines, 0, 0); return; }
 
     if (this.state === 'menu') {
       this.menu.draw(ctx, this.W, this.H);
@@ -1420,6 +1529,11 @@ class Game {
       this.coop.drawWorldOverlay(b);
       b.restore();
     }
+    if (this.tutorial) {
+      b.save(); this.cam.apply(b); b.translate(shX, shY);
+      this.tutorial.drawWorld(b);
+      b.restore();
+    }
 
     // Эффект "хроматической аберрации" при тряске
     if (this.chromaticOffset > 0) {
@@ -1467,6 +1581,7 @@ class Game {
     const scale = Math.min(1, this.W / 960);
     const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
     this._drawHud(ctx, scale, rightMargin);
+    if (this.tutorial) this.tutorial.drawHud(ctx, this.W, this.H, scale);
 
     if (this.coop) {
       this.coop.drawPartyHud(ctx, this.W, scale);
@@ -1610,7 +1725,7 @@ class Game {
       ctx.fillText(`${this.campaignIdx + 1}. ${CAMPAIGN[this.campaignIdx].name}`, this.W / 2, 24 * scale);
       ctx.restore();
     }
-    if (this._roomLabel && this.state === 'playing' && !this.levelBanner) {
+    if (this._roomLabel && this.state === 'playing' && !this.levelBanner && !this.tutorial) {
       const r = this._roomLabel;
       ctx.save(); ctx.textAlign = 'center';
       ctx.globalAlpha = Math.min(1, r.t * 2, (2.2 - r.t) * 4);

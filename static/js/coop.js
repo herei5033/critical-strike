@@ -140,6 +140,7 @@ class CoopUI {
       this.players = [{ pid: 'host', name: Nick.get(), char: 'dani', slot: 0, host: true }];
       this.net = new P2PNet({ isHost: true, code: r.code, id: 'host', token: r.token, handlers: this._hostHandlers() });
       this.addChat('', `${Nick.get()} создал комнату ${r.code}`, true);
+      Assets.run(Assets.gameplayList());
       this.screen = 'lobby'; this.lobbySel = 0;
       AudioSys.play('menu_select');
     } catch (e) { this.flash(e.message); }
@@ -233,6 +234,7 @@ class CoopUI {
           this.reset();
           this.code = v; this.pid = r.id; this.isHost = false; this.connecting = true;
           this.net = new P2PNet({ isHost: false, code: v, id: r.id, handlers: this._clientHandlers() });
+          Assets.run(Assets.gameplayList());
           this.screen = 'lobby'; this.lobbySel = 0;
           AudioSys.play('menu_select');
         } catch (e) { this.flash(e.message); }

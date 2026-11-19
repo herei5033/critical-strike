@@ -6,6 +6,7 @@ class Bullet {
     this.sx = x; this.sy = y; // точка вылета — чтобы трассер не тянулся из-за ствола
     if (!isFinite(angle)) angle = 0;
     if (!isFinite(speed) || speed <= 0) speed = 600;
+    if (!isPlayer && Input.isMobile) speed *= 0.85;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.isPlayer = isPlayer;

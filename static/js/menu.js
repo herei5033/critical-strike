@@ -127,20 +127,18 @@ class Menu {
     this.tabs = ['УПРАВЛЕНИЕ', 'ПЕРСОНАЖИ', 'ВРАГИ', 'БОССЫ', 'ОРУЖИЕ'];
 
     this.enemyImages = { bandit: new Image(), tank: new Image(), hound: new Image(), sniper: new Image() };
-    this.enemyImages.bandit.src = '/static/img/enemy_bandit.png';
-    this.enemyImages.tank.src = '/static/img/enemy_tank.png';
-    this.enemyImages.hound.src = '/static/img/enemy_hound.png';
-    this.enemyImages.sniper.src = '/static/img/enemy_sniper.png';
+    // фото врагов нужны только справочнику — грузятся, когда его открыли
 
     this.controls = [
       ['W A S D', 'Движение'], ['МЫШЬ', 'Прицеливание'], ['ЛКМ', 'Стрельба / удар'],
       ['Q', 'Бросить оружие'], ['G', 'Бросить гранату'], ['F', 'Гала: пинок-вертушка'], ['ПКМ / CTRL', 'Даур: стволы в стороны'], ['SHIFT', 'Заглянуть вперёд'], ['T', 'Чат (корпоратив)'], ['ESC', 'Выход в меню'],
     ];
     this.mobileControls = [
-      ['Левый стик', 'Движение'], ['Правый стик', 'Прицел + авто-огонь'], ['✶', 'Выстрел / удар'], ['Q', 'Бросок'], ['G', 'Граната'], ['II', 'Пауза'],
+      ['Левая половина', 'Стик движения'], ['Правая половина', 'Прицел; дальше — огонь'], ['ПИНОК', 'Гала: вертушка'], ['ВРАЗБРОС', 'Даур: вкл/выкл'], ['БРОС / ГРАН', 'Бросок, граната'], ['II', 'Пауза'],
     ];
     this.tips = [
       'Сюжет «Преподы. Перезапуск»: семь глав о том, куда на самом деле уходит зарплата.',
+      'Новичок? В разделе СЮЖЕТ есть вкладка ОБУЧЕНИЕ — по уроку на каждого героя.',
       'Самса из столовой восстанавливает сердце. Главное — чтобы была горячая.',
       'Асеке видит всё по камерам. Кроме того, что внутри кабинетов.',
       'Толкайте двери — резко распахнутая дверь сбивает врага с ног.',
@@ -304,6 +302,7 @@ class Menu {
     } else if (item === 'КОРПОРАТИВ') {
       this.game.coopUI.open();
     } else if (item === 'СПРАВОЧНИК') {
+      for (const id of ['bandit', 'tank', 'hound', 'sniper']) if (!this.enemyImages[id].src) this.enemyImages[id].src = `/static/img/enemy_${id}.png`;
       this.showHelp = true;
       this.helpPage = 0;
       this.cardIndex = 0;
@@ -533,9 +532,10 @@ class Menu {
     ctx.font = `${hs}px "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#05d9e8';
-    ctx.fillText('СОВЕТ: ' + tip, w / 2, h - 46, w - 24);
+    // на телефоне внизу кнопки управления — совет показываем только на стартовом экране
+    if (!Input.isMobile) ctx.fillText('СОВЕТ: ' + tip, w / 2, h - 46, w - 24);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.fillText('W/S или мышь — выбор    ENTER / клик — подтвердить', w / 2, h - 22);
+    if (!Input.isMobile) ctx.fillText('W/S или мышь — выбор    ENTER / клик — подтвердить', w / 2, h - 22, w - 24);
   }
 
   _drawHeroPreview(ctx, x, y, s, id, weaponId, angle = 0) {

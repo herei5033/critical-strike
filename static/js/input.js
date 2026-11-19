@@ -1,11 +1,17 @@
+// Сильнее этого отклонения правого стика — стрельба
+const AIM_FIRE = 0.55;
+
 const Input = {
+  // телефон/планшет: сенсорный экран без точной мыши
+  isMobile: (('ontouchstart' in window) || navigator.maxTouchPoints > 0) && !(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches),
+  mobileSpread: false,
   keys: {},
   typing: false,
   mouse: { x: 0, y: 0, down: false, justDown: false, right: false },
   _pressedThisFrame: {},
   touch: { 
     moveX: 0, moveY: 0, moveActive: false,
-    aimX: 0, aimY: 0, aimActive: false 
+    aimX: 0, aimY: 0, aimActive: false, aimMag: 0
   },
   _touchShoot: false,
   _touchThrow: false,
