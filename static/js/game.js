@@ -1730,7 +1730,7 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Каб. 316. Бесшумная M4, берёт всё «в долг». Каждые 10 убийств — ЛОТЕРЕЯ', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Каб. 316. Бесшумная M4, одалживает оружие у боссов. Каждые 10 убийств — ЛОТЕРЕЯ', hp: 6, speed: 1, weapon: 'm4s' },
       { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Каб. 321. Кулаки на 50% быстрее, пинок-вертушка [F], +1 HP за 5-го убитого', hp: 7, speed: 1.2, weapon: null },
       { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, +30% патронов. Каждые 10 убийств — ЯРОСТЬ', hp: 6, speed: 1, weapon: 'uzi' },
     ];

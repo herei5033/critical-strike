@@ -5,7 +5,7 @@
 // =====================================================================
 const CAMPAIGN = [
   {
-    id: 'college', name: 'КОЛЛЕДЖ «БОЛАШАК»', sub: 'Узкие коридоры, дешёвые мышки и ночные гости', color: '#ffd319', seed: 110301,
+    id: 'college', name: 'КОЛЛЕДЖ № 7', sub: 'Узкие коридоры, дешёвые мышки и ночные гости', color: '#ffd319', seed: 110301,
     boss: 'watchman', density: 0.65, mix: { tank: 0, hound: 0.05, sniper: 0 },
     weapons: ['bat', 'pipe', 'knife', 'bat', 'glock'],
     start: 0, bossRoom: 8,
@@ -17,7 +17,7 @@ const CAMPAIGN = [
       { x: 3, y: 20, w: 54, h: 3, type: 'hall', name: 'Коридор третьего этажа' },
       { x: 3, y: 24, w: 8, h: 8, type: 'bathroom', name: 'Туалет (опять закрыт)' },
       { x: 3, y: 33, w: 8, h: 9, type: 'office', name: 'Кабинет 324 — Асеке и Сымбат' },
-      { x: 12, y: 24, w: 11, h: 18, type: 'classroom', name: 'Кабинет 316 — бардак Дани' },
+      { x: 12, y: 24, w: 11, h: 18, type: 'classroom', name: 'Кабинет 316 — Дани' },
       { x: 24, y: 24, w: 19, h: 18, type: 'gym', name: 'Спортзал (зимой холодно)' },
       { x: 44, y: 24, w: 13, h: 18, type: 'kitchen', name: 'Столовая: самса, пирожки, чай' },
     ],
@@ -25,7 +25,7 @@ const CAMPAIGN = [
             [4, 5, 'door'], [4, 7, 'door'], [4, 8, 'arch'], [4, 9, 'door'], [5, 6, 'door'], [6, 7, 'door'], [8, 9, 'door']],
   },
   {
-    id: 'office', name: 'МФО «ЗАЙМ ДО ЗП»', sub: '28 микрорайон. Здесь Дани должен всем', color: '#05d9e8', seed: 220402,
+    id: 'office', name: 'МФО «ЗАЙМ ДО ЗП»', sub: '28 микрорайон. Здесь знают, куда ушли зарплаты', color: '#05d9e8', seed: 220402,
     boss: 'director', density: 0.85, mix: { tank: 0.03, hound: 0.06, sniper: 0.05 },
     weapons: ['glock', 'uzi', 'bat', 'pipe', 'knife', 'm4'],
     start: 0, bossRoom: 11,

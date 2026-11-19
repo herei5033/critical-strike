@@ -3,7 +3,7 @@
 const BOSS_TYPES = {
   // --- боссы уровней одиночной кампании ---
   watchman: {
-    name: 'ФАЛЬШИВЫЙ ВАХТЁР', title: 'Человек Депозита в холле «Болашака»', hp: 12, speed: 100, weapon: 'nightstick', drop: 'nightstick', bonus: 1500, behavior: 'charger',
+    name: 'ФАЛЬШИВЫЙ ВАХТЁР', title: 'Человек Депозита в холле колледжа', hp: 12, speed: 100, weapon: 'nightstick', drop: 'nightstick', bonus: 1500, behavior: 'charger',
     look: { skin: '#c8a080', skinDk: '#906848', hair: '#3a3a40', hairStyle: 'cap', cap: '#1a2030', beard: '#4a4a50',
             jacket: '#262c3a', jacketDk: '#12161e', shirt: '#3a3a42', pants: '#1a1e28', shoes: '#060606', collar: 'jacket', bulk: 1.45, blood: true },
   },
