@@ -252,3 +252,18 @@ class CampaignUI {
     ctx.restore();
   }
 }
+
+// Все уровни крупнее: координаты стен умножаются на коэффициент, поэтому
+// соседние комнаты по-прежнему разделены ровно одной клеткой стены.
+const LEVEL_SCALE = 1.35;
+const _scaledLayouts = new Map();
+function scaledLayout(L, k = LEVEL_SCALE) {
+  if (_scaledLayouts.has(L)) return _scaledLayouts.get(L);
+  const g = v => Math.round(v * k);
+  const out = {
+    ...L,
+    rooms: L.rooms.map(r => ({ ...r, x: g(r.x - 1) + 1, y: g(r.y - 1) + 1, w: g(r.x + r.w) - g(r.x - 1) - 1, h: g(r.y + r.h) - g(r.y - 1) - 1 })),
+  };
+  _scaledLayouts.set(L, out);
+  return out;
+}

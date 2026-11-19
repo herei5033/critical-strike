@@ -35,14 +35,40 @@ const BOSS_TYPES = {
             glasses: 'shades', jacket: '#3a4a2a', jacketDk: '#1e2a16', shirt: '#2a3a22', pants: '#2a3020', shoes: '#0a0a0a',
             collar: 'armor', bulk: 1.45 },
   },
+  // --- сильные боссы: приходят после первых двух ---
+  minotaur: {
+    name: 'МИНОТАВР', title: 'Хозяин лабиринта', hp: 44, speed: 118, weapon: 'cleaver', drop: 'cleaver', bonus: 3500, behavior: 'charger',
+    charge: { speed: 580, windup: 0.55, time: 0.75, chain: 2, dmg: 2, daze: 1.3, cooldown: 2 },
+    look: { skin: '#5a3a26', skinDk: '#3a2416', hair: '#2a1a10', hairStyle: 'bald', horns: '#e8dcc0', beard: '#2a1a10', eyes: '#ff3020',
+            jacket: '#4a2e1c', jacketDk: '#2a1a0e', shirt: '#5a3a26', pants: '#2a1a10', shoes: '#140c06', collar: 'jacket', bulk: 1.95 },
+  },
+  bride: {
+    name: 'НЕВЕСТА', title: 'Месть подаётся холодной', hp: 38, speed: 150, weapon: 'sword', drop: 'sword', bonus: 3500, behavior: 'charger',
+    charge: { speed: 760, windup: 0.3, time: 0.26, chain: 3, dmg: 1, kind: 'blade', daze: 0.7, cooldown: 1.1, minDist: 34 },
+    look: { skin: '#f0c8a8', skinDk: '#c09878', hair: '#e8d070', hairHi: 'rgba(255,255,255,0.3)', hairStyle: 'long', veil: 'rgba(250,248,255,0.85)',
+            jacket: '#f4f2f0', jacketDk: '#c8c4c0', shirt: '#ffffff', pants: '#e8e4e0', shoes: '#d0ccc8', collar: 'suit', bulk: 1.2, blood: true },
+  },
+  devil: {
+    name: 'ДЬЯВОЛ', title: 'Сделка уже подписана', hp: 50, speed: 95, weapon: null, drop: 'flamer', bonus: 4000, behavior: 'caster',
+    look: { skin: '#b01818', skinDk: '#700808', hair: '#0a0406', hairStyle: 'slick', hairHi: 'rgba(255,80,80,0.3)', horns: '#1a0a0a', eyes: '#ffd040',
+            beard: '#0a0406', beardStyle: 'goatee', jacket: '#120608', jacketDk: '#060203', shirt: '#300808', tie: '#ff2020',
+            pants: '#0a0406', shoes: '#050202', collar: 'suit', bulk: 1.5 },
+  },
+  ancient: {
+    name: 'ДРЕВНИЙ', title: 'Каменный страж подземелья', hp: 64, speed: 72, weapon: null, drop: 'rpg', bonus: 5000, behavior: 'brute', revive: true,
+    look: { skin: '#6a7262', skinDk: '#454c40', hair: '#3a4a2a', hairStyle: 'bald', horns: '#8a8a7a', hornLen: 5, eyes: '#7aff60',
+            jacket: '#5a6052', jacketDk: '#3a3e34', shirt: '#4a5042', pants: '#3e4436', shoes: '#2a2e24', collar: 'armor', bulk: 2.3 },
+  },
 };
-const BOSS_ORDER = ['butcher', 'general'];
+const BOSS_ORDER = ['butcher', 'general', 'minotaur', 'bride', 'devil', 'ancient'];
+const SLAM_RADIUS = 110;   // удар Древнего о землю
 const BOSS_PHASES = ['hunt', 'windup', 'charge', 'dazed', 'spinup', 'fire'];
 
 class Boss extends Enemy {
   constructor(x, y, kind, playerCount = 1, hpMul = 1) {
     super(x, y, 'static', null, 'boss_' + kind);
     const def = BOSS_TYPES[kind] || BOSS_TYPES.butcher;
+    this.def = def;
     this.behavior = def.behavior;
     this.dropWeapon = def.drop;
     this.kind = kind;
@@ -55,7 +81,7 @@ class Boss extends Enemy {
     this.maxHp = Math.round((def.hp + def.hp * 0.5 * (playerCount - 1)) * hpMul);
     this.hp = this.maxHp;
     this.speed = def.speed;
-    this.weapon = makeWeapon(def.behavior === 'charger' ? 'knife' : 'm4');
+    this.weapon = makeWeapon(def.behavior === 'gunner' ? 'm4' : 'knife');
     this.visualWeapon = def.weapon;
     this.look = def.look;
     this.fovRange = 2000;
@@ -71,8 +97,17 @@ class Boss extends Enemy {
     this.state = 'chase';
   }
 
-  // Боссов не оглушить — только вздрагивают
+  // Обычным оглушением боссов не пронять — только вздрагивают
   stun() { this.hitFlash = 0.12; }
+
+  // Настоящее оглушение (каждый 5-й удар Галы): босс стоит со звёздочками
+  bossStun(t = 1.5) {
+    if (this.dead) return;
+    this.phase = 'dazed'; this.phaseT = Math.max(this.phaseT || 0, t);
+    this.swingTimer = 0;
+    AudioSys.play('stun');
+    Effects.ring(this.cx(), this.cy(), '255,230,120', 44);
+  }
 
   takeDamage(amount, pickups, cause) {
     if (this.dead) return;
@@ -81,6 +116,17 @@ class Boss extends Enemy {
     this.hitFlash = 0.1;
     AudioSys.play('tank_hit');
     Effects.burst(this.cx(), this.cy(), '255,120,120', 8, 160);
+    // Древний один раз встаёт снова с половиной здоровья
+    if (this.hp <= 0 && this.def.revive && !this._revived) {
+      this._revived = true;
+      this.hp = Math.round(this.maxHp * 0.5);
+      this.phase = 'dazed'; this.phaseT = 2;
+      Effects.screenFlash(0.4, '120,255,100');
+      Effects.ring(this.cx(), this.cy(), '120,255,100', 80);
+      Effects.popup(this.cx(), this.cy() - 40, 'ВТОРОЕ ДЫХАНИЕ!', '#7aff60', 15);
+      AudioSys.play('sniper_charge');
+      return;
+    }
     if (this.hp <= 0) this.die(pickups, cause);
   }
 
@@ -138,11 +184,20 @@ class Boss extends Enemy {
     const los = level.lineOfSight(this.cx(), this.cy(), pcx, pcy);
     const toP = Math.atan2(pcy - this.cy(), pcx - this.cx());
 
+    // оглушение общее для всех боссов
+    if (this.phase === 'dazed') {
+      this.phaseT -= dt;
+      if (this.phaseT <= 0) { this.phase = 'hunt'; this.cooldown = 1.6; }
+      return;
+    }
     if (this.behavior === 'charger') this._updateButcher(dt, level, player, dist, los, toP);
+    else if (this.behavior === 'caster') this._updateDevil(dt, level, player, bullets, enemies, dist, los, toP);
+    else if (this.behavior === 'brute') this._updateAncient(dt, level, player, dist, los, toP);
     else this._updateGeneral(dt, level, player, bullets, enemies, dist, los, toP);
   }
 
   _updateButcher(dt, level, player, dist, los, toP) {
+    const C = this.def.charge || {};
     if (this.phase === 'hunt') {
       this.angle = toP;
       // вне поля зрения игроков спешит к ним быстрее
@@ -153,8 +208,9 @@ class Boss extends Enemy {
         AudioSys.play('melee_swing');
         player.takeDamage(1, { kind: 'blade', angle: this.angle });
       }
-      if (los && dist < 300 && dist > 70 && this.cooldown <= 0) {
-        this.phase = 'windup'; this.phaseT = 0.7;
+      if (los && dist < 320 && dist > (C.minDist || 70) && this.cooldown <= 0) {
+        this.phase = 'windup'; this.phaseT = C.windup || 0.7;
+        this._chainLeft = (C.chain || 1) - 1;
         AudioSys.play('hound_bark');
       }
     } else if (this.phase === 'windup') {
@@ -162,15 +218,15 @@ class Boss extends Enemy {
       this.phaseT -= dt;
       if (this.phaseT > 0.2) this.angle = toP;
       this.chargeAngle = this.angle;
-      if (this.phaseT <= 0) { this.phase = 'charge'; this.phaseT = 0.6; this._chargeHit.clear(); }
+      if (this.phaseT <= 0) { this.phase = 'charge'; this.phaseT = C.time || 0.6; this._chargeHit.clear(); }
     } else if (this.phase === 'charge') {
       this.phaseT -= dt;
-      const sp = 470 * dt;
+      const sp = (C.speed || 470) * dt;
       const nx = this.x + Math.cos(this.chargeAngle) * sp, ny = this.y + Math.sin(this.chargeAngle) * sp;
       if (level.collides(nx, ny, this.w, this.h)) {
         // врезался в стену — оглушён и уязвим
         for (const d of level.doors) if (d.blocks(nx, ny, this.w, this.h)) d.push(null, this.cx(), this.cy(), Math.cos(this.chargeAngle) * 600, Math.sin(this.chargeAngle) * 600, false);
-        this.phase = 'dazed'; this.phaseT = 1.5;
+        this.phase = 'dazed'; this.phaseT = C.daze || 1.5;
         AudioSys.play('tank_hit');
         Effects.ring(this.cx(), this.cy(), '255,255,255', 40);
         Effects.burst(this.cx(), this.cy(), '220,220,220', 18, 220);
@@ -184,11 +240,15 @@ class Boss extends Enemy {
         if (!p || p.dead || this._chargeHit.has(p)) continue;
         if (Utils.dist(this.cx(), this.cy(), p.x + p.w / 2, p.y + p.h / 2) < 24) {
           this._chargeHit.add(p);
-          p.takeDamage(2, { kind: 'crush', angle: this.chargeAngle });
+          p.takeDamage(C.dmg || 2, { kind: C.kind || 'crush', angle: this.chargeAngle });
           Effects.ring(p.x + p.w / 2, p.y + p.h / 2, '255,60,60', 30);
         }
       }
-      if (this.phaseT <= 0 && this.phase === 'charge') { this.phase = 'hunt'; this.cooldown = 2.2; }
+      if (this.phaseT <= 0 && this.phase === 'charge') {
+        // серия рывков подряд (Минотавр — 2, Невеста — 3)
+        if (this._chainLeft > 0) { this._chainLeft--; this.phase = 'windup'; this.phaseT = Math.min(0.3, C.windup || 0.3); }
+        else { this.phase = 'hunt'; this.cooldown = C.cooldown || 2.2; }
+      }
     } else if (this.phase === 'dazed') {
       this.phaseT -= dt;
       if (this.phaseT <= 0) { this.phase = 'hunt'; this.cooldown = 1.8; }
@@ -240,15 +300,112 @@ class Boss extends Enemy {
     }
   }
 
-  _callReinforcements(level, enemies) {
+  // Дьявол: держит дистанцию, кольца огня и прицельные залпы, призывает бесов
+  _updateDevil(dt, level, player, bullets, enemies, dist, los, toP) {
+    const frac = this.hp / this.maxHp;
+    const want = frac <= 0.33 ? 2 : frac <= 0.66 ? 1 : 0;
+    if (want > this._reinforced) {
+      this._reinforced = want;
+      this._callReinforcements(level, enemies, 3, ['knife', 'knife', 'bat']);
+      // и телепортируется в другую комнату
+      const room = Utils.choice(level.rooms.filter(r => !r.hall));
+      const pt = room && level.randomFreePoint(room);
+      if (pt) {
+        Effects.ring(this.cx(), this.cy(), '255,60,20', 50); Effects.smoke(this.cx(), this.cy(), 0, 10);
+        this.x = pt.x - this.w / 2; this.y = pt.y - this.h / 2; this._px = this.x; this._py = this.y;
+        Effects.ring(this.cx(), this.cy(), '255,60,20', 50);
+      }
+    }
+    const fire = (a, sp, col) => {
+      bullets.push(new Bullet(this.cx() + Math.cos(a) * 16, this.cy() + Math.sin(a) * 16, a, sp, false, col));
+      this._shots = (this._shots || 0) + 1;
+    };
+    if (this.phase === 'hunt') {
+      this.angle = toP;
+      if (!los || dist > 320) this._navigate(player.x + 9, player.y + 9, this.speed * (los ? 1 : 1.6), dt, level);
+      else if (dist < 190) this._moveToward(this.cx() - Math.cos(toP) * 40, this.cy() - Math.sin(toP) * 40, this.speed, dt, level);
+      if (los && dist < 480 && this.cooldown <= 0) {
+        this._alt = !this._alt;
+        this.phase = this._alt ? 'spinup' : 'windup'; this.phaseT = this._alt ? 0.8 : 0.45;
+        AudioSys.play('sniper_charge');
+      }
+    } else if (this.phase === 'spinup') {
+      // три кольца огня во все стороны
+      this.phaseT -= dt;
+      if (this.phaseT <= 0) { this.phase = 'fire'; this.phaseT = 0.75; this._fireT = 0; this._ring = 0; }
+    } else if (this.phase === 'windup') {
+      this.phaseT -= dt; this.angle = toP;
+      if (this.phaseT <= 0) { this.phase = 'fire'; this.phaseT = 1.1; this._fireT = 0; this._ring = -1; }
+    } else if (this.phase === 'fire') {
+      this.phaseT -= dt; this._fireT -= dt;
+      if (this._ring >= 0) {
+        if (this._fireT <= 0 && this._ring < 3) {
+          this._fireT = 0.25;
+          const off = this._ring * 0.17;
+          for (let i = 0; i < 18; i++) fire(off + i / 18 * Math.PI * 2, 230, '#ff5020');
+          this._ring++;
+          this.flashTimer = 0.1;
+          AudioSys.play('shoot_shotgun');
+          Effects.ring(this.cx(), this.cy(), '255,90,30', 30);
+        }
+      } else {
+        let da = toP - this.angle;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        this.angle += Utils.clamp(da, -dt * 2.4, dt * 2.4);
+        if (this._fireT <= 0) {
+          this._fireT = 0.16;
+          for (const s of [-0.12, 0, 0.12]) fire(this.angle + s, 400, '#ffb040');
+          this.flashTimer = 0.05;
+          AudioSys.play('shoot_uzi');
+        }
+      }
+      level.addNoise(this.cx(), this.cy(), 500);
+      if (this.phaseT <= 0) { this.phase = 'hunt'; this.cooldown = 1.8; }
+    }
+  }
+
+  // Древний: медленный гигант, бьёт по земле — волна ранит всех вокруг
+  _updateAncient(dt, level, player, dist, los, toP) {
+    if (this.phase === 'hunt') {
+      this.angle = toP;
+      if (dist > 60) this._navigate(player.x + 9, player.y + 9, this.speed * (los ? 1 : 1.8), dt, level);
+      if (dist < 100 && los && this.cooldown <= 0) {
+        this.phase = 'windup'; this.phaseT = 0.85;
+        AudioSys.play('hound_bark');
+      }
+    } else if (this.phase === 'windup') {
+      this.phaseT -= dt;
+      if (this.phaseT <= 0) {
+        // удар: всем в радиусе — урон, мебель вокруг разлетается
+        AudioSys.play('tank_hit'); AudioSys.play('shoot_shotgun');
+        Effects.ring(this.cx(), this.cy(), '200,255,160', SLAM_RADIUS);
+        Effects.ring(this.cx(), this.cy(), '255,255,255', SLAM_RADIUS * 0.6);
+        Effects.dust(this.cx(), this.cy(), 14);
+        Effects.hitstop = Math.max(Effects.hitstop, 0.08);
+        Effects.screenFlash(0.18, '180,255,140');
+        for (const p of (this.targets || [player])) {
+          if (!p || p.dead) continue;
+          const d = Utils.dist(this.cx(), this.cy(), p.x + p.w / 2, p.y + p.h / 2);
+          if (d < SLAM_RADIUS && level.lineOfSight(this.cx(), this.cy(), p.x + 9, p.y + 9)) p.takeDamage(d < SLAM_RADIUS * 0.5 ? 3 : 2, { kind: 'crush', angle: Math.atan2(p.y + 9 - this.cy(), p.x + 9 - this.cx()) });
+        }
+        if (level.furniture) level.furniture.forEach((f, i) => { if (!f.destroyed && f.hp > 0 && Utils.dist(this.cx(), this.cy(), f.x, f.y) < SLAM_RADIUS) level.damageFurniture(i, 3, f.x, f.y); });
+        level.addNoise(this.cx(), this.cy(), 700);
+        this.phase = 'dazed'; this.phaseT = 0.9;   // после удара тяжело выпрямляется — окно для атаки
+        this.cooldown = 1.4;
+      }
+    }
+  }
+
+  _callReinforcements(level, enemies, n = 2, pool = ['ak47', 'uzi', 'bat', 'pipe']) {
     const room = level.getRoomAt(this.cx(), this.cy());
     AudioSys.play('hound_bark');
     Effects.popup(this.cx(), this.cy() - 30, 'ПОДКРЕПЛЕНИЕ!', '#ff3a3a', 13);
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < n; i++) {
       const p = room ? level.randomFreePoint(room) : null;
       if (!p) continue;
       const e = new Enemy(p.x - 9, p.y - 9, 'static', null, 'normal');
-      e.weapon = makeWeapon(Utils.choice(['ak47', 'uzi', 'bat', 'pipe']));
+      e.weapon = makeWeapon(Utils.choice(pool));
       e.state = 'chase';
       enemies.push(e);
       Effects.ring(p.x, p.y, '255,60,60', 26);
@@ -274,7 +431,13 @@ class Boss extends Enemy {
       ctx.globalCompositeOperation = 'lighter';
       ctx.strokeStyle = `rgba(255,40,40,${0.35 + 0.4 * k})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(cx, cy, 26 + k * 4, 0, Math.PI * 2); ctx.stroke();
-      if (this.phase === 'windup') {
+      if (this.phase === 'windup' && this.behavior === 'brute') {
+        const p = 1 - Utils.clamp(this.phaseT / 0.85, 0, 1);
+        ctx.fillStyle = `rgba(255,40,40,${0.08 + 0.12 * k})`;
+        ctx.beginPath(); ctx.arc(cx, cy, SLAM_RADIUS, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,60,60,0.6)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, SLAM_RADIUS * p, 0, Math.PI * 2); ctx.stroke();
+      } else if (this.phase === 'windup' && this.behavior === 'charger') {
         ctx.strokeStyle = 'rgba(255,40,40,0.35)'; ctx.lineWidth = 18;
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(this.angle) * 260, cy + Math.sin(this.angle) * 260); ctx.stroke();
       }
@@ -298,7 +461,8 @@ class Boss extends Enemy {
     ctx.rotate(this.angle);
     const shake = this.phase === 'spinup' || this.phase === 'windup' ? (Math.random() - 0.5) * 1.5 : 0;
     ctx.translate(shake, shake);
-    ctx.scale(1.5, 1.5);
+    const bs = this.behavior === 'brute' ? 1.75 : 1.5;
+    ctx.scale(bs, bs);
     const st = { t, walk: this.walkPhase, move: this.phase === 'charge' ? 1 : this.moveAmt, weaponId: this.visualWeapon,
                  recoil: this.recoil, flash: this.flashTimer > 0, hurt: this.hitFlash > 0 };
     if (this.swingTimer > 0) st.swing = { p: 1 - this.swingTimer / this.swingDur, side: this.swingSide };

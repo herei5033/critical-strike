@@ -204,6 +204,35 @@ const Sprites = (() => {
       ell(ctx, hx + 4.7, 0, 0.9, 1.3, 0, L.skinDk);
     }
     if (L.scar) line(ctx, hx + 1, -3.6, hx + 3.6, -1.6, 0.6, '#7a2a24');
+    // фата: полупрозрачная ткань, спадающая с затылка
+    if (L.veil) {
+      ctx.save(); ctx.globalAlpha = 0.8;
+      ctx.fillStyle = L.veil;
+      ctx.beginPath(); ctx.moveTo(hx + 1, -5); ctx.quadraticCurveTo(hx - 9, -8, hx - 13, -3);
+      ctx.lineTo(hx - 13, 3); ctx.quadraticCurveTo(hx - 9, 8, hx + 1, 5); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 0.5;
+      for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(hx - 1, i * 1.6); ctx.lineTo(hx - 12, i * 2.2); ctx.stroke(); }
+      circ(ctx, hx - 1, 0, 1.3, '#f4e8ff');
+      ctx.restore();
+    }
+    // рога (дьявол, минотавр, каменный страж)
+    if (L.horns) {
+      const len = L.hornLen || 7.5;
+      for (const sg of [-1, 1]) {
+        ctx.fillStyle = '#050407';
+        ctx.beginPath(); ctx.moveTo(hx - 1.6, sg * 2.6); ctx.quadraticCurveTo(hx + 0.4, sg * (len + 1.6), hx + 5.4, sg * (len + 0.4));
+        ctx.quadraticCurveTo(hx + 1.4, sg * (len - 1.6), hx + 1.4, sg * 2.2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = L.horns;
+        ctx.beginPath(); ctx.moveTo(hx - 1, sg * 2.8); ctx.quadraticCurveTo(hx + 0.6, sg * (len + 0.8), hx + 4.6, sg * (len + 0.2));
+        ctx.quadraticCurveTo(hx + 1.4, sg * (len - 1.2), hx + 0.9, sg * 2.6); ctx.closePath(); ctx.fill();
+      }
+    }
+    // светящиеся глаза
+    if (L.eyes) {
+      ctx.save(); ctx.shadowColor = L.eyes; ctx.shadowBlur = 4;
+      circ(ctx, hx + 3.9, -1.7, 0.75, L.eyes); circ(ctx, hx + 3.9, 1.7, 0.75, L.eyes);
+      ctx.restore();
+    }
 
     // очки
     if (L.glasses === 'thin' || L.glasses === 'thick' || L.glasses === 'rect') {
@@ -688,6 +717,21 @@ const Sprites = (() => {
     R(ctx, -8.4, -1, 1.4, 2, '#8a8a94'); R(ctx, 7, -1, 1.4, 2, '#8a8a94');  // защёлки
   }
 
+  // Бронежилет: синий кевлар с пластинами
+  function drawVest(ctx) {
+    ctx.fillStyle = '#050407';
+    ctx.beginPath(); ctx.moveTo(-8, -9); ctx.lineTo(-3, -9); ctx.lineTo(0, -6); ctx.lineTo(3, -9); ctx.lineTo(8, -9);
+    ctx.lineTo(9.5, 8); ctx.lineTo(-9.5, 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2a5a9a';
+    ctx.beginPath(); ctx.moveTo(-7.2, -8.2); ctx.lineTo(-3.2, -8.2); ctx.lineTo(0, -5); ctx.lineTo(3.2, -8.2); ctx.lineTo(7.2, -8.2);
+    ctx.lineTo(8.6, 7.2); ctx.lineTo(-8.6, 7.2); ctx.closePath(); ctx.fill();
+    R(ctx, -6, -2, 12, 7.5, '#1c3e6e');
+    R(ctx, -5.4, -1.4, 4.8, 6.2, '#3a76c0'); R(ctx, 0.6, -1.4, 4.8, 6.2, '#3a76c0');
+    R(ctx, -5.4, -1.4, 4.8, 1, '#7ab4ff'); R(ctx, 0.6, -1.4, 4.8, 1, '#7ab4ff');
+    R(ctx, -8.6, 5.6, 17.2, 1.6, '#16305a');
+    R(ctx, -1, 6, 2, 1.6, '#c8d2e2');
+  }
+
   // ---------- позы рук для разных видов оружия ----------
   // Возвращает угол (относительно направления взгляда) руки с холодным оружием
   function meleeAngle(swing) {
@@ -1016,5 +1060,5 @@ const Sprites = (() => {
     }
   }
 
-  return { WEAPON_SIDE, drawGrenade, drawRocket, HEROES, enemyLook, drawHuman, drawHumanDown, drawDog, drawDogDown, drawWeapon, drawMedkit, WEAPON_META, muzzleFlash, star, rng };
+  return { WEAPON_SIDE, drawGrenade, drawRocket, drawVest, HEROES, enemyLook, drawHuman, drawHumanDown, drawDog, drawDogDown, drawWeapon, drawMedkit, WEAPON_META, muzzleFlash, star, rng };
 })();

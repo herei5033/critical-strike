@@ -6,7 +6,7 @@ class Game {
     this.H = canvas.height;
     this.state = 'loading';
     this.menu = new Menu(this);
-    this.zoom = 1.45;
+    this.zoom = 1.45 / 1.3;   // камера отдалена на 30%
 
     this.assetsToLoad = 0;
     this.assetsLoaded = 0;
@@ -186,9 +186,11 @@ class Game {
 
   // Уровень, враги и предметы. Использует только Math.random — поэтому детерминирован при withSeed
   _buildLevel(layout) {
-    const worldW = TILE * 60;
-    const worldH = TILE * 45;
-    try { this.level = new Level(worldW, worldH, layout ? { layout } : {}); }
+    // уровни крупнее: случайные — больше площадь, статичные — растянутая планировка
+    const worldW = TILE * Math.ceil(60 * LEVEL_SCALE + 2);
+    const worldH = TILE * Math.ceil(45 * LEVEL_SCALE + 2);
+    const L = layout ? scaledLayout(layout) : null;
+    try { this.level = new Level(worldW, worldH, L ? { layout: L } : {}); }
     catch (e) { console.error('Level gen failed:', e); this.level = null; }
 
     if (!this.level) {
@@ -224,27 +226,31 @@ class Game {
     this.kills = 0;
 
     const weaponPool = ['m4', 'ak47', 'uzi', 'bat', 'pipe', 'knife', 'sword'];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 9; i++) {
       const r = Utils.choice(this.level.rooms);
       if (r === this.level.playerRoom) continue;
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
     }
-    for (let i = 0; i < 2 + (this.coop ? this.coop.players.length - 1 : 0); i++) {
+    for (let i = 0; i < 4 + (this.coop ? this.coop.players.length - 1 : 0); i++) {
       const r = Utils.choice(this.level.rooms);
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
     }
     // гранаты и редкие РПГ/огнемёт (врагам они не достаются)
-    const extra = [['grenade', 2 + (this.coop ? this.coop.players.length - 1 : 0)], ['rpg', Math.random() < 0.35 ? 1 : 0], ['flamer', Math.random() < 0.35 ? 1 : 0]];
+    // гранаты, редкие РПГ/огнемёт (врагам они не достаются) и ровно 3 бронежилета на уровень
+    const extra = [['grenade', 3 + (this.coop ? this.coop.players.length - 1 : 0)], ['rpg', Math.random() < 0.35 ? 1 : 0], ['flamer', Math.random() < 0.35 ? 1 : 0], ['armor', 3]];
     for (const [kind, n] of extra) {
-      for (let i = 0; i < n; i++) {
+      for (let i = 0, tries = 0; i < n && tries < 40; tries++) {
         const r = Utils.choice(this.level.rooms);
+        if (kind === 'armor' && (r === this.level.playerRoom || r.hall)) continue;
         const p = this.level.randomFreePoint(r);
         if (!p) continue;
-        const pk = new Pickup(p.x, p.y, kind === 'grenade' ? null : makeWeapon(kind));
+        const pk = new Pickup(p.x, p.y, kind === 'grenade' || kind === 'armor' ? null : makeWeapon(kind));
         if (kind === 'grenade') pk.isGrenade = true;
+        if (kind === 'armor') pk.isArmor = true;
         this.pickups.push(pk);
+        i++;
       }
     }
   }
@@ -368,6 +374,7 @@ class Game {
     }
 
     if (this.coop && this._updateExitAsk(dt)) return;
+    if (this.player && this.player.rageT > 0 && !this.player.dead) this.shake = Math.max(this.shake || 0, 0.22);
 
     if (this.state === 'coopIntro') {
       this.introT += dt;
@@ -551,6 +558,8 @@ class Game {
         }
         this.totalEnemies = this.enemies.length;
         if (this.bossDirector) this.bossDirector.update(dt, this);
+        this._updateLottery(dt);
+        this._unstickEnemies(dt);
       }
 
       const pcx = this.player.x + this.player.w / 2;
@@ -602,11 +611,12 @@ class Game {
         const dist = Utils.dist(p.x, p.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2);
         if (dist < 24 && !this.player.dead) {
           const pl = this.player;
-          const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
+          const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
           if (slot) {
             p.pickedUp = true;
             if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); }
             else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
+            else if (slot === 'armor') { pl.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+БРОНЯ', '#5aa8ff', 12); Effects.ring(pl.x + 9, pl.y + 9, '90,170,255', 28); }
             else if (slot === 'w1') { pl.weapon = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); }
             else { pl.weapon2 = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
           }
@@ -687,18 +697,120 @@ class Game {
     } catch (e) {}
   }
 
-  // Личный счёт убийств героя. Гала за каждого 5-го лично убитого врага получает +1 HP.
+  // Личный счёт убийств героя: Гала лечится за каждого 3-го,
+  // у Даура и Дани каждый 13-й включает особый режим.
   _creditKill(e) {
     if (!e.killedBy) return;
     const pl = this.allPlayers().find(p => p && p.charId === e.killedBy);
     if (!pl) return;
     pl.kills = (pl.kills || 0) + 1;
-    if (pl.charId !== 'gal' || pl.kills % 5 !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
+    if (pl !== this.player && this.coop) this.coop.sendTo(pl.pid, { t: 'kc', n: pl.kills });
+    if ((pl.charId === 'daur' || pl.charId === 'dani') && pl.kills % MODE_KILLS === 0 && !pl.dead) this._triggerMode(pl, pl.charId === 'daur' ? 'rage' : 'lotto');
+    if (pl.charId !== 'gal' || pl.kills % 3 !== 0 || pl.dead || pl.hp >= pl.maxHp) return;
     pl.hp++;
     Effects.popup(pl.x + 9, pl.y - 10, '+1 HP', '#3dff8a', 13);
     Effects.ring(pl.x + 9, pl.y + 9, '60,255,140', 26);
     if (pl === this.player) AudioSys.play('pickup_health');
     else if (this.coop) this.coop.sendTo(pl.pid, { t: 'heal' });
+  }
+
+  // Ярость Даура / лотерея Дани (на хосте — и для напарников)
+  _triggerMode(pl, m) {
+    if (m === 'rage') pl.rageT = MODE_TIME; else { pl.lottoT = MODE_TIME; pl._lottoId = Math.random(); }
+    if (pl === this.player) announceMode(pl, m);
+    else if (this.coop) this.coop.sendTo(pl.pid, { t: 'mode', m });
+  }
+
+  // Лотерея: враги вокруг Дани могут лопнуть, холодное оружие на полу — стать аптечкой
+  _updateLottery(dt) {
+    if (this.coop && !this.coop.isHost) return;
+    for (const pl of this.allPlayers()) {
+      if (!pl || pl.dead || !(pl.lottoT > 0)) continue;
+      if (pl !== this.player) pl.lottoT = Math.max(0, pl.lottoT - dt);
+      const cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
+      for (const e of this.enemies) {
+        if (e.dead || e.isBoss || e._lotto === pl._lottoId) continue;
+        if (Utils.dist(cx, cy, e.cx(), e.cy()) > LOTTO_RADIUS) continue;
+        e._lotto = pl._lottoId;
+        if (Math.random() < 0.25) { e._popAt = Utils.rand(0.1, 0.7); e._popBy = pl.charId; }
+      }
+      for (const p of this.pickups) {
+        if (p._lotto === pl._lottoId || p.pickedUp || p.thrown || !p.weapon || p.weapon.type !== 'melee') continue;
+        if (Utils.dist(cx, cy, p.x, p.y) > LOTTO_RADIUS) continue;
+        p._lotto = pl._lottoId;
+        if (Math.random() < 0.35) {
+          p.weapon = null; p.isHealth = true;
+          Effects.burst(p.x, p.y, '255,210,60', 16, 160);
+          Effects.popup(p.x, p.y - 12, 'АПТЕЧКА!', '#ffd319', 11);
+        }
+      }
+    }
+    for (const e of this.enemies) {
+      if (e._popAt === undefined || e.dead) continue;
+      e._popAt -= dt;
+      if (e._popAt > 0) continue;
+      delete e._popAt;
+      for (const c of ['255,210,60', '255,80,180', '80,220,255', '120,255,120']) Effects.burst(e.cx(), e.cy(), c, 8, 260);
+      Effects.ring(e.cx(), e.cy(), '255,210,60', 34);
+      Effects.popup(e.cx(), e.cy() - 26, 'ПОП!', '#ffd319', 14);
+      AudioSys.playAt('punch', e.cx(), e.cy());
+      e.die(this.pickups, { kind: 'explosion', angle: Math.random() * Math.PI * 2, by: e._popBy });
+    }
+  }
+
+  // Враг дольше полсекунды внутри стены/двери — переносим на ближайшее свободное место
+  _unstickEnemies(dt) {
+    if (this.coop && !this.coop.isHost) return;
+    const lv = this.level;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      if (!lv.collides(e.x, e.y, e.w, e.h)) { e._inWallT = 0; continue; }
+      e._inWallT = (e._inWallT || 0) + dt;
+      if (e._inWallT < 0.5) continue;
+      e._inWallT = 0;
+      search: for (let r = 6; r <= 120; r += 6) {
+        for (let i = 0; i < 12; i++) {
+          const a = i / 12 * Math.PI * 2;
+          const x = e.x + Math.cos(a) * r, y = e.y + Math.sin(a) * r;
+          if (!lv.collides(x, y, e.w, e.h)) { e.x = x; e.y = y; e._px = x; e._py = y; e._path = null; break search; }
+        }
+      }
+    }
+  }
+
+  // Красный фильтр безумия (ярость) и золотое сияние (лотерея) поверх мира
+  _drawModeFx(ctx) {
+    const pl = this.player;
+    if (!pl || pl.dead) return;
+    const W = this.W, H = this.H, t = performance.now() / 1000;
+    if (pl.rageT > 0) {
+      const k = Math.min(1, pl.rageT / 0.6, (MODE_TIME - pl.rageT) / 0.25 + 0.3);
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgba(255,${70 + 30 * Math.sin(t * 11)},70,${0.85 * k})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      const rg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, Math.max(W, H) * 0.7);
+      rg.addColorStop(0, 'rgba(255,0,20,0)'); rg.addColorStop(1, `rgba(255,0,20,${0.45 * k})`);
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+      // мерцание окружения
+      const r = Math.random();
+      if (r < 0.12) { ctx.fillStyle = `rgba(0,0,0,${0.35 * k})`; ctx.fillRect(0, 0, W, H); }
+      else if (r < 0.2) { ctx.fillStyle = `rgba(255,30,40,${0.18 * k})`; ctx.fillRect(0, 0, W, H); }
+      ctx.restore();
+    }
+    if (pl.lottoT > 0) {
+      const k = Math.min(1, pl.lottoT / 0.6);
+      ctx.save();
+      const rg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
+      rg.addColorStop(0, 'rgba(255,210,60,0)'); rg.addColorStop(1, `rgba(255,190,40,${0.3 * k})`);
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 10; i++) {
+        const x = (Math.sin(i * 91.7 + t * 0.7) * 0.5 + 0.5) * W, y = ((i * 0.137 + t * 0.25) % 1) * H;
+        Sprites.star(ctx, x, y, 3 + (i % 3), ['#ffd319', '#ff5ac8', '#5ae0ff'][i % 3]);
+      }
+      ctx.restore();
+    }
   }
 
   // ---------- HUD ----------
@@ -735,14 +847,14 @@ class Game {
     if (this._hudHp === undefined || pl.hp > this._hudHp) this._hudHp = pl.hp;
     if (pl.hp < this._hudHp) { this._hudHp = pl.hp; this._hudHurtAt = t; }
     const hurt = Utils.clamp(1 - (t - (this._hudHurtAt || -9)) / 0.6, 0, 1);
-    const low = pl.hp <= 1 && !pl.dead;
+    const low = pl.hp <= 2 && !pl.dead;
 
     ctx.save();
     ctx.translate(hurt > 0 ? Utils.rand(-2, 2) * hurt * s : 0, 0);
 
     const ws = pl.weapon2 ? [pl.weapon, pl.weapon2] : [pl.weapon];
     const x0 = 10 * s, y0 = 10 * s, pw = 210 * s;
-    const headH = 40 * s, rowH = 24 * s;
+    const headH = 50 * s, rowH = 24 * s;
     const ph = headH + ws.length * rowH + (pl.weapon2 ? 12 * s : 0) + 4 * s;
     this._hudPanel(ctx, x0, y0, pw, ph, col, s);
 
@@ -777,31 +889,52 @@ class Game {
     ctx.font = font(8); ctx.fillStyle = col;
     ctx.fillText(perk, tx + nw + 5 * s, y0 + 15 * s);
 
-    // сердца
-    for (let i = 0; i < pl.maxHp; i++) {
-      const filled = i < pl.hp;
-      const hx = tx + 6 * s + i * 15 * s, hy = y0 + 22 * s;
-      const beat = filled && low ? 1 + 0.12 * Math.max(0, Math.sin(t * 9)) : 1;
+    // сердца (красные) и броня (синие)
+    const armor = pl.armor || 0;
+    for (let i = 0; i < pl.maxHp + armor; i++) {
+      const isArmor = i >= pl.maxHp;
+      const filled = isArmor || i < pl.hp;
+      const hx = tx + 5 * s + i * 13 * s, hy = y0 + 21 * s;
+      const beat = filled && low && !isArmor ? 1 + 0.12 * Math.max(0, Math.sin(t * 9)) : 1;
+      const c = isArmor ? ['#3a9cff', '#a8d4ff', '#3a9cff'] : filled ? ['#ff2a6d', '#ff9ac0', '#ff2a6d'] : ['#2a1a2e', '#4a3450', null];
       ctx.save();
-      ctx.translate(hx, hy); ctx.scale(s * 0.6 * beat, s * 0.6 * beat);
+      ctx.translate(hx, hy); ctx.scale(s * 0.52 * beat, s * 0.52 * beat);
       ctx.beginPath();
       ctx.moveTo(0, 4);
       ctx.bezierCurveTo(-10, -6, -16, 6, 0, 16);
       ctx.bezierCurveTo(16, 6, 10, -6, 0, 4);
       ctx.closePath();
-      if (filled) { ctx.shadowColor = '#ff2a6d'; ctx.shadowBlur = 6; }
-      ctx.fillStyle = filled ? '#ff2a6d' : '#2a1a2e';
+      if (c[2]) { ctx.shadowColor = c[2]; ctx.shadowBlur = 6; }
+      ctx.fillStyle = c[0];
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = filled ? '#ff9ac0' : '#4a3450'; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.strokeStyle = c[1]; ctx.lineWidth = 1.8; ctx.stroke();
       ctx.restore();
     }
-    // гранаты
+    // гранаты — справа на строке имени
     for (let i = 0; i < pl.grenades; i++) {
       ctx.save();
-      ctx.translate(x0 + pw - 12 * s - i * 12 * s, y0 + 28 * s); ctx.scale(1.15 * s, 1.15 * s);
+      ctx.translate(x0 + pw - 12 * s - i * 11 * s, y0 + 12 * s); ctx.scale(1.05 * s, 1.05 * s);
       Sprites.drawGrenade(ctx, 0, false);
       ctx.restore();
+    }
+    // способность: пинок Галы / прогресс до режима Даура и Дани
+    {
+      const ay = y0 + 40 * s, ax = tx, aw = x0 + pw - 10 * s - ax;
+      let label, frac, c2;
+      if (pl.charId === 'gal') {
+        const ready = pl.kickCd <= 0;
+        label = ready ? 'ПИНОК [F] — ГОТОВ' : 'ПИНОК [F]'; frac = 1 - pl.kickCd / KICK_CD; c2 = ready ? '#3dff8a' : '#9a94b8';
+      } else {
+        const on = pl.charId === 'daur' ? pl.rageT : pl.lottoT;
+        const name = pl.charId === 'daur' ? 'ЯРОСТЬ' : 'ЛОТЕРЕЯ';
+        if (on > 0) { label = `${name}! ${on.toFixed(1)} С`; frac = on / MODE_TIME; c2 = pl.charId === 'daur' ? '#ff2a40' : '#ffd319'; }
+        else { const n = (pl.kills || 0) % MODE_KILLS; label = `${name} ${n}/${MODE_KILLS}`; frac = n / MODE_KILLS; c2 = '#9a94b8'; }
+      }
+      ctx.font = font(8); ctx.textAlign = 'left'; ctx.fillStyle = c2;
+      ctx.fillText(label, ax, ay - 1 * s);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(ax, ay + 2 * s, aw, 3 * s);
+      ctx.fillStyle = c2; ctx.fillRect(ax, ay + 2 * s, aw * Utils.clamp(frac, 0, 1), 3 * s);
     }
 
     // ===== оружие — строки под героем =====
@@ -1191,6 +1324,7 @@ class Game {
       ctx.fillRect(0, 0, this.W, this.H);
     }
 
+    this._drawModeFx(ctx);
     const scale = Math.min(1, this.W / 960);
     const rightMargin = (window.innerWidth < 800 ? 100 : 20) * scale;
     this._drawHud(ctx, scale, rightMargin);
@@ -1445,9 +1579,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Начинает с бесшумной M4. Враги замечают его позже. Берёт снайперку и оружие боссов, +10% урона по боссам', hp: 3, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Только кулаки, зато убивает с одного удара и сбивает бандитов на бегу. +1 HP за каждого 5-го убитого', hp: 5, speed: 1.2, weapon: null },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Начинает с двумя Uzi. +30% патронов в любом огнестреле. ПКМ/CTRL — стрельба в стороны', hp: 3, speed: 1, weapon: 'uzi' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Трофейщик', desc: 'Бесшумная M4, оружие боссов. Каждые 13 убийств — ЛОТЕРЕЯ: враги вокруг лопаются', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Таран', desc: 'Кулаки на 50% быстрее, пинок-вертушка [F]. +1 HP за каждого 3-го убитого', hp: 7, speed: 1.2, weapon: null },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Два Uzi, +30% патронов. Каждые 13 убийств — ЯРОСТЬ: патроны бесконечны', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;
@@ -1563,5 +1697,23 @@ class Game {
       }
     }
     ctx.fillText(line, x, y + offsetY);
+  }
+}
+
+const MODE_KILLS = 13;   // убийств до ярости Даура / лотереи Дани
+
+// Надпись и эффекты при включении режима
+function announceMode(pl, m) {
+  const cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
+  if (m === 'rage') {
+    Effects.popup(cx, cy - 30, 'ЯРОСТЬ!', '#ff2a40', 18);
+    Effects.ring(cx, cy, '255,30,40', 60);
+    Effects.screenFlash(0.35, '255,20,30');
+    AudioSys.play('sniper_charge');
+  } else {
+    Effects.popup(cx, cy - 30, 'ЛОТЕРЕЯ!', '#ffd319', 18);
+    Effects.ring(cx, cy, '255,210,60', LOTTO_RADIUS);
+    Effects.screenFlash(0.3, '255,220,80');
+    AudioSys.play('pickup_weapon');
   }
 }

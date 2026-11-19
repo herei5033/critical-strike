@@ -50,6 +50,7 @@ function canWield(charId, w) {
 function pickupSlot(d, p) {
   if (p.isHealth) return d.hp < d.maxHp ? 'health' : null;
   if (p.isGrenade) return (d.grenades || 0) < 5 ? 'grenade' : null;
+  if (p.isArmor) return (d.armor || 0) < 2 ? 'armor' : null;
   const w = p.weapon;
   if (d.charId === 'gal') return null;   // Гала дерётся только кулаками
   if (!w || !canWield(d.charId, w)) return null;

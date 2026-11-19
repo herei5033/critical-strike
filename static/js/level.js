@@ -327,14 +327,14 @@ class Level {
       const free = this._freeTiles(r, true);
       if (!free.length) continue;
       let n;
-      if (r.hall) n = Math.random() < 0.6 * density ? 1 : 0;
-      else n = Utils.clamp(Math.round((free.length / 30 + Utils.randInt(0, 1)) * density), 1, 6);
+      if (r.hall) n = Math.random() < 0.7 * density ? 1 + Math.round(free.length / 45 * density) : 0;
+      else n = Utils.clamp(Math.round((free.length / 13 + Utils.randInt(0, 1)) * density), 1, 14);
       if (nearPlayer.has(r)) n = Math.min(n, 2);
       if (r === o.bossRoom) {
         // босс в последней комнате уровня, рядом с ним пара охранников
         const bt = this._nearestFree(r, r.cx, r.cy);
         this.spawnPoints.push({ x: bt.x * TILE + 5, y: bt.y * TILE + 5, boss: o.boss });
-        n = Math.min(n, 2);
+        n = Math.min(n, 4);
       }
       for (let i = 0; i < n && free.length; i++) {
         const t = free.splice(Math.floor(Math.random() * free.length), 1)[0];

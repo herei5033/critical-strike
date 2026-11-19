@@ -1,17 +1,33 @@
 // Длительность анимации удара для каждого вида холодного оружия (сек)
 const MELEE_SWING = { bat: 0.34, pipe: 0.3, sword: 0.3, knife: 0.2 };
+const KICK_DUR = 0.42;      // пинок-вертушка Галы: длительность прыжка
+const KICK_CD = 1.0;        // перезарядка пинка
+const MODE_TIME = 6;        // ярость Даура / лотерея Дани
+// Ценность огнестрела: Даур первым выбрасывает самое бесполезное
+const WEAPON_VALUE = { glock: 1, uzi: 1.3, m4: 2, ak47: 2, shotgun: 1.8, m4s: 2.6, goldenUzi: 2.3, minigun: 3, sniper: 2.6, rpg: 3, flamer: 2.6 };
+function weaponValue(w) {
+  if (!w) return -1;
+  if (w.type !== 'ranged') return 0.5;
+  const fill = w.maxAmmo ? w.ammo / w.maxAmmo : 1;
+  return (WEAPON_VALUE[w.id] || 1.5) * (0.15 + 0.85 * fill);
+}
 
 class Player {
   constructor(x, y, charId = 'dani') {
     this.x = x; this.y = y;
     this.w = 18; this.h = 18;
     this.speed = 220;
-    this.maxHp = 3;
-    this.hp = 3;
+    this.maxHp = 6;
+    this.hp = 6;
+    this.armor = 0;             // синие сердца бронежилета (сгорают первыми)
     this.charId = charId;
 
-    // Гала: 5 HP и +20% к скорости (оружие не берёт)
-    if (charId === 'gal') { this.maxHp = 5; this.hp = 5; this.speed *= 1.2; }
+    // Гала: 7 HP и +20% к скорости (оружие не берёт)
+    if (charId === 'gal') { this.maxHp = 7; this.hp = 7; this.speed *= 1.2; }
+    this.kickT = 0; this.kickCd = 0; this._kickHit = null; this._kickDir = 0;
+    this.rageT = 0; this.lottoT = 0;   // режимы Даура и Дани
+    this._bossHits = 0;
+    this._safeX = x; this._safeY = y;
     this.kills = 0;             // лично убитые враги (Гала лечится за каждого 5-го)
 
     this.look = Sprites.HEROES[charId] || Sprites.HEROES.dani;
@@ -53,9 +69,18 @@ class Player {
   }
 
   takeDamage(amount, cause) {
-    if (this.dead || this.hurtCooldown > 0) return;
+    if (this.dead || this.hurtCooldown > 0 || this.kickT > 0) return;
     this._lastCause = cause;
     this.hurtCooldown = 0.6;
+    if (this.armor > 0) {
+      const a = Math.min(this.armor, amount);
+      this.armor -= a; amount -= a;
+      if (amount <= 0) {
+        AudioSys.play('tank_hit');
+        if (typeof Effects !== 'undefined') { Effects.screenFlash(0.22, '60,140,255'); Effects.ring(this.x + 9, this.y + 9, '90,170,255', 24); }
+        return;
+      }
+    }
     this.hp -= amount;
     AudioSys.play('player_hurt');
     if (typeof Effects !== 'undefined') Effects.screenFlash(0.28, '255,30,60');
@@ -114,6 +139,10 @@ class Player {
         if (this.charId === 'gal' && !e.stunned) {
           // Гала вырубает насмерть одним ударом (танку и боссу — урон)
           if (e.isBoss || e.type === 'tank') e.takeDamage(e.isBoss ? 1 : 2, pickups, { kind: 'fist', angle: this.angle, by: this.charId });
+          if (e.isBoss && !e.dead) {
+            this._bossHits++;
+            if (this._bossHits % 5 === 0 && e.bossStun) { e.bossStun(1.6); Effects.popup(e.cx(), e.cy() - 30, 'ОГЛУШЁН!', '#ffd319', 13); }
+          }
           else e.die(pickups, { kind: 'fist', angle: this.angle, by: this.charId });
           this.particles.push(...Utils.spawnBloodParticles(e.cx(), e.cy(), 20, this.angle));
           Effects.ring(e.cx(), e.cy(), '255,200,120', 26);
@@ -152,6 +181,12 @@ class Player {
     if (!isFinite(dt) || dt <= 0) dt = 0.016;
     this._level = level;
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
+    this.kickCd = Math.max(0, this.kickCd - dt);
+    this.rageT = Math.max(0, this.rageT - dt);
+    this.lottoT = Math.max(0, this.lottoT - dt);
+    // застряли в стене или двери (толчок, прыжок, рывок босса) — возвращаемся на свободное место
+    if (level.collides(this.x, this.y, this.w, this.h)) this._unstick(level);
+    else { this._safeX = this.x; this._safeY = this.y; }
 
     // Заглядывание
     this.isLooking = Input.isDown('ShiftLeft') || Input.isDown('ShiftRight');
@@ -171,9 +206,29 @@ class Player {
     const len = Math.hypot(dx, dy);
     if (len > 0 && len > 1) { dx /= len; dy /= len; }
 
+    // Гала: пинок-вертушка (F) — прыжок вперёд, оглушает всех вокруг, в прыжке неуязвим
+    if (this.charId === 'gal' && this.kickT <= 0 && this.kickCd <= 0 && (Input.wasPressed('KeyF') || Input.wasPressed('MobileKick'))) {
+      this.kickT = KICK_DUR; this.kickCd = KICK_CD;
+      this._kickDir = len > 0.2 ? Math.atan2(dy, dx) : this.angle;
+      this._kickHit = new Set();
+      AudioSys.play('melee_swing');
+      Effects.dust(this.x + 9, this.y + 13, 4);
+    }
+    const kicking = this.kickT > 0;
+    if (kicking) {
+      // в прыжке летим по направлению пинка, управление не действует
+      const p = 1 - this.kickT / KICK_DUR;
+      const v = 270 * (1 - p * 0.55);
+      dx = Math.cos(this._kickDir) * v / this.speed; dy = Math.sin(this._kickDir) * v / this.speed;
+      this.kickT = Math.max(0, this.kickT - dt);
+      this._kickHits(enemies, pickups);
+      if (this.kickT <= 0) { Effects.dust(this.x + 9, this.y + 13, 6); Effects.ring(this.x + 9, this.y + 9, '255,230,150', 30); }
+    }
+
     const ox = this.x, oy = this.y;
-    const nx = this.x + dx * this.speed * dt;
-    const ny = this.y + dy * this.speed * dt;
+    const spd = this.speed * (this.rageT > 0 ? 1.3 : 1);
+    const nx = this.x + dx * spd * dt;
+    const ny = this.y + dy * spd * dt;
 
     // Упёрлись в створку — толкаем её: дверь открывается настолько, насколько давим
     const pushDoors = (tx, ty) => {
@@ -258,11 +313,13 @@ class Player {
 
     if (Input.isDown('KeyQ') && !this._qLock && (this.weapon || this.weapon2)) {
       this._qLock = true;
-      const w = this.weapon2 || this.weapon;
+      // два ствола — первым летит тот, что ценится меньше (пустой, слабый)
+      const second = !!this.weapon2 && (!this.weapon || weaponValue(this.weapon2) <= weaponValue(this.weapon));
+      const w = second ? this.weapon2 : this.weapon;
       const p = new Pickup(this.x + this.w / 2, this.y + this.h / 2, w);
       p.throwAt(this.angle, 1200);
       this._thrownPickup = p;
-      if (this.weapon2) this.weapon2 = null; else this.weapon = null;
+      if (second) this.weapon2 = null; else { this.weapon = this.weapon2; this.weapon2 = null; }
     }
     if (!Input.isDown('KeyQ')) this._qLock = false;
 
@@ -291,7 +348,8 @@ class Player {
         const a = this.dualSpread ? this.angle + side * Math.PI / 2 : this.angle;
         const hx = cx + Math.cos(this.angle + Math.PI / 2) * side * (this.dualSpread ? 14 : 4.5);
         const hy = cy + Math.sin(this.angle + Math.PI / 2) * side * (this.dualSpread ? 14 : 4.5);
-        if (side > 0) this.attackTimer = w.cooldown; else this.attackTimer2 = w.cooldown;
+        const cdr = this.rageT > 0 ? 1 / 1.35 : 1;
+        if (side > 0) this.attackTimer = w.cooldown * cdr; else this.attackTimer2 = w.cooldown * cdr;
         if (this._fireGun(w, a, hx, hy, bullets, level)) {
           if (side > 0) { this.flashTimer = 0.06; this.recoil = 1; } else { this.flash2 = 0.06; this.recoil2 = 1; }
         }
@@ -299,7 +357,7 @@ class Player {
     } else if (shouldShoot && this.attackTimer <= 0) {
       const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
       if (this.weapon) {
-        this.attackTimer = this.weapon.cooldown;
+        this.attackTimer = this.weapon.cooldown * (this.rageT > 0 && this.weapon.type === 'ranged' ? 1 / 1.35 : 1);
         if (this.weapon.type === 'ranged') {
           if (this._fireGun(this.weapon, this.angle, cx, cy, bullets, level)) { this.flashTimer = 0.06; this.recoil = 1; }
         } else {
@@ -313,8 +371,9 @@ class Player {
         }
       } else {
         // Кулаки: удары левой и правой по очереди
-        this.attackTimer = 0.32;
-        this.swingDur = 0.22;
+        const fast = this.charId === 'gal';
+        this.attackTimer = fast ? 0.32 / 1.5 : 0.32;
+        this.swingDur = fast ? 0.16 : 0.22;
         this.swingTimer = this.swingDur;
         this.punchSide = -this.punchSide;
         AudioSys.play('punch');
@@ -325,8 +384,9 @@ class Player {
 
   // Один выстрел из оружия w под углом a из точки (cx,cy). Возвращает true, если выстрел был.
   _fireGun(w, a, cx, cy, bullets, level) {
-    if (w.ammo <= 0) { AudioSys.play('empty_click'); return false; }
-    w.ammo--;
+    const rage = this.rageT > 0;
+    if (w.ammo <= 0 && !rage) { AudioSys.play('empty_click'); return false; }
+    if (!rage) w.ammo--;
     const bx = cx + Math.cos(a) * 16, by = cy + Math.sin(a) * 16;
     if (w.projectile === 'flame') {
       // огнемёт: шум и звук реже, гильз нет
@@ -350,6 +410,40 @@ class Player {
     const muz = (Sprites.WEAPON_META[w.id] || {}).muzzle || 16;
     if (!w.silent) Effects.muzzle(cx + Math.cos(a) * (muz + 6), cy + Math.sin(a) * (muz + 6), a, w.id === 'shotgun');
     return true;
+  }
+
+  // Пинок задевает всех рядом: обычных врагов оглушает и отбрасывает, боссу — урон
+  _kickHits(enemies, pickups) {
+    const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+    for (const e of enemies) {
+      if (e.dead || this._kickHit.has(e)) continue;
+      if (Utils.dist(cx, cy, e.cx(), e.cy()) > (e.isBoss ? 40 : 36)) continue;
+      this._kickHit.add(e);
+      const a = Math.atan2(e.cy() - cy, e.cx() - cx);
+      if (e.isBoss) e.takeDamage(1, pickups, { kind: 'fist', angle: a, by: this.charId });
+      else {
+        e.stun();
+        const lv = this._level;
+        const nx = e.x + Math.cos(a) * 14, ny = e.y + Math.sin(a) * 14;
+        if (lv && !lv.collides(nx, ny, e.w, e.h)) { e.x = nx; e.y = ny; }
+      }
+      AudioSys.play('punch');
+      Effects.ring(e.cx(), e.cy(), '255,230,150', 24);
+      Effects.burst(e.cx(), e.cy(), '255,255,255', 8, 160);
+      Effects.hitstop = Math.max(Effects.hitstop, 0.03);
+    }
+  }
+
+  // Выход из стены: сначала последнее свободное место, потом поиск по спирали
+  _unstick(level) {
+    if (!level.collides(this._safeX, this._safeY, this.w, this.h)) { this.x = this._safeX; this.y = this._safeY; return; }
+    for (let r = 4; r <= 96; r += 4) {
+      for (let i = 0; i < 16; i++) {
+        const a = i / 16 * Math.PI * 2;
+        const x = this.x + Math.cos(a) * r, y = this.y + Math.sin(a) * r;
+        if (!level.collides(x, y, this.w, this.h)) { this.x = x; this.y = y; this._safeX = x; this._safeY = y; return; }
+      }
+    }
   }
 
   // Поднять раненого напарника в корпоративе
@@ -432,10 +526,27 @@ class Player {
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
 
+    drawModeAura(ctx, cx, cy, this.rageT > 0 ? 1 : this.lottoT > 0 ? 2 : 0, this.animT);
     if (this.hurtCooldown > 0 && Math.floor(this.hurtCooldown * 20) % 2 === 0) ctx.globalAlpha = 0.55;
 
     ctx.save();
     ctx.translate(cx, cy);
+    if (this.kickT > 0) {
+      // вертушка: два оборота в прыжке, герой «подлетает» над тенью
+      const p = 1 - this.kickT / KICK_DUR;
+      const lift = Math.sin(p * Math.PI);
+      ctx.translate(0, -lift * 6);
+      ctx.rotate(this._kickDir + p * Math.PI * 4);
+      ctx.scale(1.15 + lift * 0.2, 1.15 + lift * 0.2);
+      Sprites.drawHuman(ctx, this.look, { ...this._animState(), punch: { p: 0.5, side: 1 } });
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(255,230,150,${0.5 * lift})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cx, cy - lift * 6, 26, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
     ctx.rotate(this.angle);
     ctx.scale(1.15, 1.15);
     Sprites.drawHuman(ctx, this.look, this._animState());
@@ -443,3 +554,25 @@ class Player {
     ctx.globalAlpha = 1;
   }
 }
+
+// Свечение вокруг героя в режиме: 1 — ярость (красное), 2 — лотерея (золотое), 3 — пинок
+function drawModeAura(ctx, cx, cy, mode, t) {
+  if (!mode || mode === 3) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const col = mode === 1 ? '255,30,40' : '255,210,60';
+  const pulse = 0.5 + 0.5 * Math.sin(t * (mode === 1 ? 14 : 6));
+  const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 30 + pulse * 6);
+  g.addColorStop(0, `rgba(${col},0.45)`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2); ctx.fill();
+  if (mode === 2) {
+    // радиус лотереи
+    ctx.strokeStyle = `rgba(255,210,60,${0.18 + 0.12 * pulse})`; ctx.lineWidth = 2;
+    ctx.setLineDash([8, 10]); ctx.lineDashOffset = -t * 30;
+    ctx.beginPath(); ctx.arc(cx, cy, LOTTO_RADIUS, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+const LOTTO_RADIUS = 230;

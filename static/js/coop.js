@@ -629,6 +629,7 @@ class RemotePlayer {
     this.hp = s.hp; this.maxHp = s.mhp;
     this.weaponId = s.w || null; this.ammo = s.am || 0;
     this.weapon2Id = s.w2 || null; this.spread = !!s.sp; this.ff = !!s.ff; this.grenades = s.gr || 0;
+    this.armor = s.ar || 0; this.mode = s.md || 0;
     this.moveAmt = s.mv || 0;
     this.flash = !!s.fl; this.hurt = !!s.hc;
     if (s.sw) {
@@ -708,11 +709,12 @@ class RemotePlayer {
     }
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath(); ctx.ellipse(cx + 2, cy + 4, 13, 9, this.angle, 0, Math.PI * 2); ctx.fill();
+    drawModeAura(ctx, cx, cy, this.mode, this.animT);
     // цветной круг под напарником, чтобы отличать от врагов
     ctx.strokeStyle = SLOT_COLORS[this.slot % 3]; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(cx, cy + 2, 15, 11, 0, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.save();
-    ctx.translate(cx, cy); ctx.rotate(this.angle); ctx.scale(1.15, 1.15);
+    ctx.translate(cx, cy); ctx.rotate(this.mode === 3 ? this.animT * 28 : this.angle); ctx.scale(1.15, 1.15);
     const st = { t: this.animT, walk: this.walkPhase, move: this.moveAmt, weaponId: this.weaponId, recoil: this.recoil, flash: this.flash, hurt: this.hurt };
     if (this.swing && this.weaponId && WEAPONS[this.weaponId] && WEAPONS[this.weaponId].type === 'melee') st.swing = this.swing;
     if (this.weapon2Id && this.weaponId) st.dual = { a: this.weaponId, b: this.weapon2Id, spread: this.spread, f1: this.flash, f2: this.flash, r1: this.recoil, r2: this.recoil };
@@ -823,6 +825,7 @@ class CoopSession {
     const cz = c => c ? { c: DEATH_KINDS.indexOf(c.kind), g: +(c.angle || 0).toFixed(2), b: c.by || '' } : {};
     e.takeDamage = (a, pickups, cause) => this.event({ t: 'hit', e: e._idx, k: 'dmg', a: a || 1, ...cz(cause) });
     e.stun = () => { if (!e.stunned && !e.dead) this.event({ t: 'hit', e: e._idx, k: 'stun' }); };
+    e.bossStun = () => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'bstun' }); };
     e.die = (pickups, cause) => { if (!e.dead) this.event({ t: 'hit', e: e._idx, k: 'kill', ...cz(cause) }); };
   }
 
@@ -864,6 +867,7 @@ class CoopSession {
       sh: p._netShots || 0,
       w2: p.weapon2 ? p.weapon2.id : '', am2: p.weapon2 ? p.weapon2.ammo : 0, sp: p.dualSpread ? 1 : 0,
       ff: (p._ffT || 0) > 0 ? 1 : 0, gr: p.grenades || 0,
+      ar: p.armor || 0, md: p.kickT > 0 ? 3 : p.rageT > 0 ? 1 : p.lottoT > 0 ? 2 : 0,
       bl: this.recentBullets.map(b => b.d),
     };
   }
@@ -891,7 +895,7 @@ class CoopSession {
       dr: g.level.doors.map(d => d.broken ? 9 : Math.round(d.angle * 100) / 100),
       fd: g.level.destroyed || [],
       wb: g.level.brokenWindows || [],
-      pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : p.isGrenade ? 2 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
+      pk: g.pickups.filter(p => !p.pickedUp).map(p => [p.netId, Math.round(p.x), Math.round(p.y), p.isHealth ? 1 : p.isGrenade ? 2 : p.isArmor ? 3 : 0, p.weapon ? p.weapon.id : '', p.thrown ? 1 : 0]),
       pj: g.projectiles.map(pr => { if (!pr.netId) pr.netId = this.netId++; return [pr.netId, pr.kind === 'rocket' ? 0 : 1, Math.round(pr.x), Math.round(pr.y), +(pr.a || pr.rot || 0).toFixed(2), Math.round(pr.z || 0)]; }),
       ex: (g.explosions || []).filter(x => performance.now() - x.t < 1500).map(x => [x.id, x.x, x.y, x.r]),
       bu: g.bullets.filter(b => !b.isPlayer && !b.dead).map(b => [b.netId, Math.round(b.x), Math.round(b.y), Math.round(b.vx), Math.round(b.vy), b.color]),
@@ -982,6 +986,7 @@ class CoopSession {
         en.takeDamage(e.a || 1, g.pickups, cause);
         en.particles.push(...Utils.spawnBloodParticles(en.cx(), en.cy(), 10));
       } else if (e.k === 'stun') en.stun();
+      else if (e.k === 'bstun') { if (en.bossStun) en.bossStun(1.6); }
       else if (e.k === 'kill') en.die(g.pickups, cause);
     } else if (e.t === 'door') {
       const d = g.level.doors[e.d];
@@ -989,11 +994,12 @@ class CoopSession {
     } else if (e.t === 'take') {
       const p = g.pickups.find(q => q.netId === e.p && !q.pickedUp);
       if (!p || !rp || rp.dead) return;
-      const slot = pickupSlot({ hp: rp.hp, maxHp: rp.maxHp, charId: rp.charId, grenades: rp.grenades, w1: rp.weaponId, w2: rp.weapon2Id }, p);
+      const slot = pickupSlot({ hp: rp.hp, maxHp: rp.maxHp, armor: rp.armor, charId: rp.charId, grenades: rp.grenades, w1: rp.weaponId, w2: rp.weapon2Id }, p);
       if (!slot) return;
       p.pickedUp = true;
       if (slot === 'health') { this.sendTo(pid, { t: 'heal' }); rp.hp++; }
       else if (slot === 'grenade') { this.sendTo(pid, { t: 'gren+' }); rp.grenades = (rp.grenades || 0) + 1; }
+      else if (slot === 'armor') { this.sendTo(pid, { t: 'armor+' }); rp.armor = 2; }
       else {
         if (slot === 'w1') rp.weaponId = p.weapon.id; else rp.weapon2Id = p.weapon.id;
         this.sendTo(pid, { t: 'give', w: p.weapon.id, am: p.weapon.ammo, s: slot });
@@ -1024,6 +1030,12 @@ class CoopSession {
       AudioSys.play('pickup_weapon');
     }
     else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_weapon'); }
+    else if (e.t === 'armor+') { p.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(p.x + 9, p.y - 8, '+БРОНЯ', '#5aa8ff', 12); }
+    else if (e.t === 'kc') { p.kills = e.n; }
+    else if (e.t === 'mode') {
+      if (e.m === 'rage') p.rageT = MODE_TIME; else p.lottoT = MODE_TIME;
+      announceMode(p, e.m);
+    }
     else if (e.t === 'revive') { p.revive(); }
   }
 
@@ -1070,9 +1082,11 @@ class CoopSession {
     const next = [];
     for (const a of s.pk) {
       let p = byId.get(a[0]);
+      if (p && (!!p.isHealth !== (a[3] === 1) || (p.weapon ? p.weapon.id : '') !== (a[4] || ''))) p = null;
       if (!p) {
         p = new Pickup(a[1], a[2], a[4] ? makeWeapon(a[4]) : null, a[3] === 1);
         if (a[3] === 2) p.isGrenade = true;
+        if (a[3] === 3) p.isArmor = true;
         p.netId = a[0];
       }
       p.x = a[1]; p.y = a[2]; p.thrown = !!a[5];
@@ -1219,7 +1233,7 @@ class CoopSession {
     for (const p of g.pickups) {
       if (p.thrown) continue;
       if (Utils.dist(p.x, p.y, pl.x + 9, pl.y + 9) > 24) continue;
-      const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
+      const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
       if (!slot) continue;
       if (p._reqT && performance.now() - p._reqT < 600) continue;
       if (slot.startsWith('w') && this._takeCd > 0) continue;
@@ -1288,9 +1302,10 @@ class CoopSession {
       ctx.strokeText(name, cx, cy - 22);
       ctx.fillStyle = SLOT_COLORS[slot % 3];
       ctx.fillText(name, cx, cy - 22);
-      for (let i = 0; i < P.maxHp; i++) {
-        ctx.fillStyle = i < P.hp ? '#ff2a6d' : 'rgba(255,255,255,0.2)';
-        ctx.fillRect(cx - P.maxHp * 4 + i * 8 + 1, cy - 18, 6, 4);
+      const cells = P.maxHp + (P.armor || 0);
+      for (let i = 0; i < cells; i++) {
+        ctx.fillStyle = i >= P.maxHp ? '#3a9cff' : i < P.hp ? '#ff2a6d' : 'rgba(255,255,255,0.2)';
+        ctx.fillRect(cx - cells * 3 + i * 6 + 1, cy - 18, 5, 4);
       }
       if (P.dead) { ctx.fillStyle = '#ff4060'; ctx.fillText('РАНЕН', cx, cy + 32); }
       ctx.restore();
@@ -1314,12 +1329,13 @@ class CoopSession {
         const prog = this.revive[rp.pid] || 0;
         ctx.fillStyle = '#ff4060'; ctx.fillText(prog > 0 ? `ПОДНИМАЮТ ${Math.round(prog * 100)}%` : 'РАНЕН — ПОДНИМИТЕ!', x + 36 * scale, y + 26 * scale);
       } else {
-        for (let i = 0; i < rp.maxHp; i++) {
-          ctx.fillStyle = i < rp.hp ? '#ff2a6d' : '#3a2a3a';
-          ctx.fillRect(x + 36 * scale + i * 14 * scale, y + 18 * scale, 11 * scale, 7 * scale);
+        const cells = rp.maxHp + (rp.armor || 0);
+        for (let i = 0; i < cells; i++) {
+          ctx.fillStyle = i >= rp.maxHp ? '#3a9cff' : i < rp.hp ? '#ff2a6d' : '#3a2a3a';
+          ctx.fillRect(x + 36 * scale + i * 10 * scale, y + 18 * scale, 8 * scale, 7 * scale);
         }
         ctx.fillStyle = '#9a94b8'; ctx.font = `${10 * scale}px "Courier New", monospace`;
-        ctx.fillText(rp.weaponId ? WEAPONS[rp.weaponId].name : 'кулаки', x + 36 * scale + rp.maxHp * 14 * scale + 6, y + 25 * scale);
+        ctx.fillText(rp.weaponId ? WEAPONS[rp.weaponId].name : 'кулаки', x + 36 * scale + cells * 10 * scale + 6, y + 25 * scale, 200 * scale - (36 + cells * 10 + 10) * scale);
       }
       y += 34 * scale;
     }
