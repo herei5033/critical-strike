@@ -19,7 +19,7 @@ const GYM_LAYOUT = {
 
 const GYM_BALL_R = 5.5;
 const GYM_KICK_MIN = 320, GYM_KICK_MAX = 1150, GYM_CHARGE = 0.9;
-const GYM_AI_SPEED = 205;
+const GYM_AI_SPEED = 168;      // ИИ медленнее игроков (герой бежит 220–290)
 const GYM_TEAM_COL = ['#2a7aff', '#ff3a3a'];
 
 // Коллеги у поля: внешность для спрайта и что они говорят
@@ -58,6 +58,7 @@ class GymBreak {
     this.ball = { x: this.cx, y: this.cy, vx: 0, vy: 0, rot: 0 };
     this.score = [0, 0]; this.ready = new Set(); this.lastTouch = null; this.resetT = 0;
     this.kickCd = 0; this.t = 0; this.msg = null; this.charge = 0;
+    this.cup = !!(game.coop && game.coop.cup);
     // две пары ворот: слева наши, справа соперника
     const gh = 150;
     this.goals = [
@@ -189,7 +190,10 @@ class GymBreak {
     // хост: все готовы — следующий этаж
     if (this.isHost() && C) {
       const all = C.players.length;
-      if (this.ready.size >= all && all > 0 && !this._leaving) {
+      if (this.ready.size >= all && all > 0 && this.cup) {
+        this.ready.clear(); this.score = [0, 0]; this.resetT = 0.01;
+        this._showMsg('НОВЫЙ МАТЧ!', '#ffd319');
+      } else if (this.ready.size >= all && all > 0 && !this._leaving) {
         this._leaving = true;
         C.levelNo++;
         C.seed = (Math.random() * 2e9) | 0;
@@ -235,28 +239,37 @@ class GymBreak {
       if (this.resetT > 0) { const h = this._home(a.team, a.role, a.slot); tx = h.x; ty = h.y; }
       else if (a.role === 'gk') {
         tx = ownX + (a.team ? -36 : 36);
-        ty = Utils.clamp(b.y, this.cy - 62, this.cy + 62);
+        a.gy = (a.gy === undefined ? this.cy : a.gy) + (b.y - (a.gy === undefined ? this.cy : a.gy)) * Math.min(1, dt * 2.2);   // реагирует с запозданием
+        ty = Utils.clamp(a.gy, this.cy - 46, this.cy + 46);
+        sp *= 0.75;
         const near = Utils.dist(a.x, a.y, b.x, b.y);
-        if (near < 90 && Math.abs(b.x - ownX) < 160) { tx = b.x; ty = b.y; sp *= 1.1; }
-        if (near < GYM_BALL_R + 22 && a.kickCd <= 0) {
+        if (near < 60 && Math.abs(b.x - ownX) < 110) { tx = b.x; ty = b.y; }
+        if (near < GYM_BALL_R + 20 && a.kickCd <= 0) {
           // вынос мяча подальше от ворот
           const ang = Math.atan2(this.cy + Utils.rand(-160, 160) - b.y, (a.team ? this.cx - 200 : this.cx + 200) - b.x);
-          this._kick(a, ang, 900, a.x, a.y, 30); a.kickCd = 0.6;
+          this._kick(a, ang, 760, a.x, a.y, 26); a.kickCd = 1.0;
         }
       } else if (chaser[a.team] && chaser[a.team].ai === a) {
         // отбирать / вести мяч к чужим воротам
         const dGoal = Utils.dist(b.x, b.y, goalX, this.cy);
         const toGoal = Math.atan2(this.cy - b.y, goalX - b.x);
-        const own = Utils.dist(a.x, a.y, b.x, b.y) < GYM_BALL_R + 18;
-        if (!own) { tx = b.x - Math.cos(toGoal) * 12; ty = b.y - Math.sin(toGoal) * 12; sp *= 1.1; }
+        // мяч «наш», только если стоим за ним (между мячом и своими воротами)
+        const behind = (a.x - b.x) * Math.cos(toGoal) + (a.y - b.y) * Math.sin(toGoal) < -3;
+        const own = Utils.dist(a.x, a.y, b.x, b.y) < GYM_BALL_R + 18 && behind;
+        if (!own) {
+          // заходим за мяч по дуге, а не упираемся в него лбом
+          const side = (a.y < b.y ? -1 : 1) * 16;
+          tx = b.x - Math.cos(toGoal) * 16 + (behind ? 0 : -Math.sin(toGoal) * side);
+          ty = b.y - Math.sin(toGoal) * 16 + (behind ? 0 : Math.cos(toGoal) * side);
+        }
         else {
           tx = b.x + Math.cos(toGoal) * 30; ty = b.y + Math.sin(toGoal) * 30;
           if (a.kickCd <= 0) {
             const opp = bodies.filter(q => q.team !== a.team);
             const pressed = opp.some(q => Utils.dist(q.x, q.y, a.x, a.y) < 70);
-            if (dGoal < 380) {
-              this._kick(a, toGoal + Utils.rand(-0.12, 0.12), Utils.rand(850, 1080), a.x, a.y); a.kickCd = 0.6;
-            } else if (pressed) {
+            if (dGoal < 300 && Math.random() < 0.6) {
+              this._kick(a, toGoal + Utils.rand(-0.3, 0.3), Utils.rand(620, 880), a.x, a.y); a.kickCd = 1.1;
+            } else if (pressed && Math.random() < 0.5) {
               // пас партнёру, который ближе к чужим воротам и не закрыт
               const mates = bodies.filter(q => q.team === a.team && q.ai !== a && !(q.ai && q.ai.role === 'gk'));
               let best = null, bs = -Infinity;
@@ -268,8 +281,8 @@ class GymBreak {
               }
               if (best) {
                 const d = Utils.dist(a.x, a.y, best.x, best.y);
-                this._kick(a, Math.atan2(best.y - b.y, best.x - b.x), Utils.clamp(260 + d * 1.3, 380, 900), a.x, a.y);
-                a.kickCd = 0.5;
+                this._kick(a, Math.atan2(best.y - b.y, best.x - b.x) + Utils.rand(-0.15, 0.15), Utils.clamp(240 + d * 1.2, 360, 820), a.x, a.y);
+                a.kickCd = 0.9;
               }
             }
           }
@@ -279,12 +292,12 @@ class GymBreak {
         tx = h.x; ty = h.y; sp *= 0.8;
         // второй по близости игрок подстраховывает
         const d = Utils.dist(a.x, a.y, b.x, b.y);
-        if (d < 120 && ballTeam === 1 - a.team) { tx = b.x; ty = b.y; sp *= 1.1; }
+        if (d < 70 && ballTeam === 1 - a.team) { tx = b.x; ty = b.y; sp *= 0.9; }
       }
       const dx = tx - a.x, dy = ty - a.y, dl = Math.hypot(dx, dy);
       const want = dl > 4 ? Math.min(sp, dl * 6) : 0;
       const nvx = dl > 0 ? dx / dl * want : 0, nvy = dl > 0 ? dy / dl * want : 0;
-      a.vx += (nvx - a.vx) * Math.min(1, dt * 8); a.vy += (nvy - a.vy) * Math.min(1, dt * 8);
+      a.vx += (nvx - a.vx) * Math.min(1, dt * 4); a.vy += (nvy - a.vy) * Math.min(1, dt * 4);   // разгон плавнее — можно обыграть
       a.x = Utils.clamp(a.x + a.vx * dt, this.fx0 + 8, this.fx1 - 8);
       a.y = Utils.clamp(a.y + a.vy * dt, this.fy0 + 8, this.fy1 - 8);
       a.move = Math.min(1, Math.hypot(a.vx, a.vy) / GYM_AI_SPEED);
@@ -317,7 +330,7 @@ class GymBreak {
         const rel = b.vx * nx + b.vy * ny;
         if (rel < sp) { b.vx += nx * (sp * 1.05 - rel); b.vy += ny * (sp * 1.05 - rel); }
         this.lastTouch = body.id;
-      } else if (d < minD + 12 && sp > 40) {
+      } else if (d < minD + 12 && sp > 40 && (!body.ai || Math.random() < 0.6)) {
         const mx = body.vx / sp, my = body.vy / sp;
         if (dx * mx + dy * my > 0) {
           const tx = body.x + mx * (minD + 2), ty = body.y + my * (minD + 2);
@@ -507,7 +520,7 @@ class GymBreak {
     ctx.strokeStyle = '#3fff7f'; ctx.lineWidth = 2; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
     ctx.textAlign = 'center';
     ctx.font = `bold ${Math.round(10 * s + 1)}px "Courier New", monospace`; ctx.fillStyle = '#3fff7f';
-    ctx.fillText(`СПОРТЗАЛ · 5 на 5 · дальше этаж ${C ? C.levelNo + 1 : ''}`, W / 2, by + 13 * s);
+    ctx.fillText(this.cup ? 'GORILLA CUP · 5 на 5 · G — новый матч' : `СПОРТЗАЛ · 5 на 5 · дальше этаж ${C ? C.levelNo + 1 : ''}`, W / 2, by + 13 * s);
     ctx.font = `bold ${Math.round(18 * s + 2)}px "Courier New", monospace`;
     ctx.fillStyle = GYM_TEAM_COL[0]; ctx.textAlign = 'right'; ctx.fillText(`НАШИ ${this.score[0]}`, W / 2 - 10, by + 34 * s);
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.fillText(':', W / 2, by + 34 * s);
@@ -518,7 +531,7 @@ class GymBreak {
     ctx.fillText(`готовы ${this.ready.size}/${Math.max(1, ps.length)}: ${rd}`, W / 2, by + 48 * s, bw - 12);
     ctx.font = `${Math.round(11 * s + 1)}px "Courier New", monospace`; ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.fillText(Input.isMobile ? 'УДАР: тап — пас, удержание — мощный удар · БЕГ · ГОТОВ — дальше'
-      : 'ПРОБЕЛ — пас (держите — мощный удар) в сторону прицела · SHIFT — бег · G — готов · E — поговорить', W / 2, H - 14, W - 20);
+      : `ПРОБЕЛ — пас (держите — мощный удар) в сторону прицела · SHIFT — бег · G — ${this.cup ? 'новый матч' : 'готов'} · E — поговорить`, W / 2, H - 14, W - 20);
     if (this.msg) {
       const k = Math.min(1, this.msg.t * 6, (2 - this.msg.t) * 3);
       ctx.globalAlpha = Math.max(0, k);

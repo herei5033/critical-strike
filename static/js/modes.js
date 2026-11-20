@@ -6,7 +6,7 @@
 const GAME_MODES = [
   { id: 'story', name: 'СЮЖЕТ', sub: 'Девять глав «Преподы. Перезапуск» и обучение за каждого героя', color: '#ff2a6d' },
   { id: 'solo', name: 'СОЛО ЗАБЕГ', sub: 'Шесть уровней кампании и бесконечный режим с боссами', color: '#ffd319' },
-  { id: 'coop', name: 'КОРПОРАТИВ', sub: 'До трёх игроков по сети: этажи, спортзал между ними, SAMSA KOMBAT вдвоём', color: '#05d9e8' },
+  { id: 'coop', name: 'КОРПОРАТИВ', sub: 'До трёх игроков по сети: этажи и спортзал; в лобби — GORILLA CUP и SAMSA KOMBAT', color: '#05d9e8' },
   { id: 'kombat', name: 'SAMSA KOMBAT', sub: 'Файтинг 1 на 1: шесть бойцов, четыре арены и фаталити', color: '#ff5a1a', isNew: true },
 ];
 

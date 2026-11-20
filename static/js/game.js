@@ -256,7 +256,9 @@ class Game {
     AudioSys.stopMusic();
     AudioSys.playMusic('/static/audio/game_music.mp3');
     AudioSys.play('game_start');
-    this._loadThen(Assets.gameplayList(), { title: 'КОРПОРАТИВ', sub: `комната ${info.code}`, color: '#ff2a6d' }, () => {
+    const cup = !!info.cup;
+    this._loadThen(Assets.gameplayList(), cup ? { title: 'GORILLA CUP', sub: 'футбол 5 на 5', color: '#3fff7f' } : { title: 'КОРПОРАТИВ', sub: `комната ${info.code}`, color: '#ff2a6d' }, () => {
+      if (cup) { this.state = 'playing'; this.startGym(); return; }
       this.state = 'coopIntro';
       this.introT = 0;
       this.startCoopLevel(info.seed);
@@ -302,7 +304,9 @@ class Game {
     this._afterLevelStart();
     this.gym = new GymBreak(this);
     this.cam.zoom = this.zoom * 0.85;          // в зале камера дальше на 15%
-    this.levelBanner = { name: 'СПОРТЗАЛ', sub: 'передышка: мяч, ворота, коллеги. G — готов', color: '#3fff7f', t: 3 };
+    this.levelBanner = this.coop && this.coop.cup
+      ? { name: 'GORILLA CUP', sub: 'футбол 5 на 5 · G — новый матч', color: '#3fff7f', t: 3 }
+      : { name: 'СПОРТЗАЛ', sub: 'передышка: мяч, ворота, коллеги. G — готов', color: '#3fff7f', t: 3 };
     if (intro) this.state = 'coopIntro';
   }
 

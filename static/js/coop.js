@@ -108,7 +108,7 @@ class CoopUI {
 
   lobbyButtons() {
     const b = [];
-    if (this.isHost) b.push('НАЧАТЬ КОРПОРАТИВ', 'SAMSA KOMBAT');
+    if (this.isHost) b.push('НАЧАТЬ КОРПОРАТИВ', 'GORILLA CUP', 'SAMSA KOMBAT');
     b.push('НАПИСАТЬ В ЧАТ', 'ВЫЙТИ ИЗ КОМНАТЫ');
     return b;
   }
@@ -268,7 +268,7 @@ class CoopUI {
     else if (m.t === 'start') {
       this.inMatch = true;
       this.players = m.players || this.players;
-      g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed, lvl: m.lvl }, this.net);
+      g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed, lvl: m.lvl, cup: !!m.cup }, this.net);
     }
     else if (m.t === 'toLobby') { if (g.coop) g.leaveMatch(); }
     else if (m.t === 'Kstart') { this.inMatch = true; g.kombat.openNet('client', 'host', m.names); }
@@ -305,25 +305,26 @@ class CoopUI {
   }
 
   // ---------- хост: старт матча и возврат в лобби ----------
-  _start(lvl = 1) {
+  _start(lvl = 1, cup = false) {
     if (!this.isHost || this.inMatch) return;
     if (this.players.some(p => !p.char)) { this.flash('Не все выбрали персонажа'); return; }
     const seed = (Math.random() * 2e9) | 0;
     this.inMatch = true;
     const players = this.players.map(p => ({ ...p }));
-    this.net.broadcast({ t: 'start', seed, players, lvl });
-    this.addChat('', 'Корпоратив начинается!', true);
-    this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed, lvl }, this.net);
+    this.net.broadcast({ t: 'start', seed, players, lvl, cup: cup ? 1 : 0 });
+    this.addChat('', cup ? 'GORILLA CUP: футбол 5 на 5!' : 'Корпоратив начинается!', true);
+    this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed, lvl, cup }, this.net);
   }
 
   // Хост: начать корпоратив заново с теми же игроками (все проходят через лобби и сразу стартуют)
   restart() {
     if (!this.isHost) return;
     const lvl = this.game.coop ? this.game.coop.levelNo : 1;     // этаж сохраняется
+    const cup = !!(this.game.coop && this.game.coop.cup);
     if (this.net) this.net.broadcast({ t: 'toLobby' });
     this.game.leaveMatch();
-    this.addChat('', `Хост перезапустил этаж ${lvl}`, true);
-    this._start(lvl);
+    this.addChat('', cup ? 'Хост начал GORILLA CUP заново' : `Хост перезапустил этаж ${lvl}`, true);
+    this._start(lvl, cup);
   }
 
   // Хост: файтинг один на один с напарником по той же P2P-связи
@@ -412,6 +413,7 @@ class CoopUI {
       AudioSys.play('menu_select');
       if (name === 'НАЧАТЬ КОРПОРАТИВ') this._start();
       else if (name === 'SAMSA KOMBAT') this._startKombat();
+      else if (name === 'GORILLA CUP') this._start(1, true);
       else if (name === 'НАПИСАТЬ В ЧАТ') this._openChat();
       else this.leave();
     }
@@ -800,6 +802,7 @@ class CoopSession {
 
     this.seed = info.seed;
     this.levelNo = info.lvl || 1;
+    this.cup = !!info.cup;          // GORILLA CUP — только спортзал
     this.chatLines = [];
     this.events = [];      // клиент → хост
     this.out = {};         // хост → клиенты
