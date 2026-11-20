@@ -1,13 +1,15 @@
 // =====================================================================
 // Клоны Дани.
-//  • теневые (навык F, перезарядка 10 с): трое, держатся вокруг, 2 HP, пистолет, живут 5 секунд;
-//  • идеальный (каждые 10 убийств): 6 HP, M4 с глушителем, ходит рядом, пока не погибнет,
+//  • теневые (навык F, перезарядка 10 с): трое, держатся вокруг, 1 HP, Glock, живут 5 секунд;
+//  • идеальный (каждые 10 убийств): 3 HP, M4 с глушителем, живёт 12 секунд,
 //    при неполном здоровье сам бежит к ближайшей самсе.
+// Враги охотятся на клонов так же, как на героев.
 // Пули клонов — «пули Дани»: убийства засчитываются ему.
 // =====================================================================
 
 const SHADOW_LIFE = 5;
-const PERFECT_HP = 6;
+const PERFECT_LIFE = 12;
+const PERFECT_HP = 3;
 
 class Ally {
   constructor(owner, x, y, kind, slot = 0) {
@@ -15,8 +17,8 @@ class Ally {
     this.kind = kind;                 // 'shadow' | 'perfect'
     this.slot = slot;
     this.x = x; this.y = y; this.w = 16; this.h = 16;
-    this.maxHp = this.hp = kind === 'perfect' ? PERFECT_HP : 2;
-    this.life = kind === 'shadow' ? SHADOW_LIFE : Infinity;
+    this.maxHp = this.hp = kind === 'perfect' ? PERFECT_HP : 1;
+    this.life = kind === 'shadow' ? SHADOW_LIFE : PERFECT_LIFE;
     this.weapon = prepWeapon('dani', makeWeapon(kind === 'perfect' ? 'm4s' : 'glock'));
     this.angle = owner.angle; this.walk = 0; this.move = 0; this.t = Math.random() * 10;
     this.cd = 0.3; this.hurtT = 0; this.flash = 0;
@@ -28,6 +30,9 @@ class Ally {
 
   cx() { return this.x + this.w / 2; }
   cy() { return this.y + this.h / 2; }
+
+  // враги бьют клона так же, как героя
+  takeDamage(amount) { this.hit(amount || 1); }
 
   hit(amount) {
     if (this.dead || this.hurtT > 0) return;
@@ -167,6 +172,10 @@ class Ally {
     } else {
       ctx.fillStyle = 'rgba(180,140,255,0.8)';
       ctx.fillRect(cx - 8, cy - 18, 16 * Math.max(0, this.life / SHADOW_LIFE), 2);
+    }
+    if (this.kind === 'perfect') {
+      ctx.fillStyle = 'rgba(255,215,80,0.6)';
+      ctx.fillRect(cx - 10, cy - 15, 20 * Math.max(0, this.life / PERFECT_LIFE), 2);
     }
   }
 

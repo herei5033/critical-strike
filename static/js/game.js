@@ -280,7 +280,33 @@ class Game {
     if (intro) this.state = 'coopIntro';
   }
 
+  // Оружие на полу: пустой огнестрел пропадает сразу, выброшенное холодное (кроме боссовского) — через 5 с.
+  // Предметы, разложенные на уровне при старте, не трогаем.
+  _groundWeapons(dt) {
+    for (const p of this.pickups) {
+      if (p.pickedUp || !p.weapon || p._levelItem) continue;
+      const w = p.weapon;
+      const gone = (w.type === 'ranged' && w.ammo <= 0) || (w.type === 'melee' && !w.boss && !p.thrown && (p._age = (p._age || 0) + dt) > 5);
+      if (gone) { p.pickedUp = true; Effects.dust(p.x, p.y, 4); }
+    }
+  }
+
+  // Хост: клоны напарников — тоже цели для врагов (урон уходит владельцу)
+  _remoteAllyTargets() {
+    if (!this.coop || !this.coop.isHost) return [];
+    const out = [];
+    for (const [pid, rp] of this.coop.remotes) {
+      if (!rp.hasState || rp.dead) continue;
+      (rp.allies || []).forEach(([x, y], i) => out.push({
+        x, y, w: 16, h: 16, dead: false, isAlly: true,
+        takeDamage: () => { this.coop.sendTo(pid, { t: 'adm', i }); },
+      }));
+    }
+    return out;
+  }
+
   _afterLevelStart() {
+    for (const p of this.pickups) p._levelItem = true;
     this._waves = 0; this._waveT = undefined; this._huntT = 0;
     if (this.thoughts) { this.thoughts.cur = null; setTimeout(() => { if (this.state === 'playing') this.thoughts.event('level'); }, 3200); }
     this.projectiles = [];
@@ -567,6 +593,10 @@ class Game {
       if (!this.coop && this.state === 'playing' && this._escPressed()) { this._openPause(); AudioSys.play('menu_move'); return; }
       if (!this.coop && this.state === 'dead' && Input.wasPressed('Escape') && this.nameSubmitted) { this.toMenu(); return; }
     }
+    // Карта уровня (M)
+    if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyM') && !TextField.active) {
+      this.coop.showMap = !this.coop.showMap; AudioSys.play('menu_move');
+    }
     // Чат корпоратива
     if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
       TextField.open({ placeholder: 'Сообщение команде (Enter — отправить, Esc — отмена)', maxLength: 120, onSubmit: (v) => this.coop && this.coop.sendChat(v) });
@@ -707,7 +737,7 @@ class Game {
         }
       } else {
         // каждый враг охотится на ближайшего живого игрока
-        const targets = this.allPlayers().filter(p => !p.dead);
+        const targets = [...this.allPlayers().filter(p => !p.dead), ...this.allies.filter(a => !a.dead), ...this._remoteAllyTargets()];
         for (const e of this.enemies) {
           let target = this.player;
           let best = Infinity;
@@ -822,7 +852,7 @@ class Game {
         this.shake = Math.max(this.shake, 0.35);
       }
 
-      if (!coopClient) this.pickups = this.pickups.filter(p => !p.pickedUp);
+      if (!coopClient) { this._groundWeapons(dt); this.pickups = this.pickups.filter(p => !p.pickedUp); }
       this.bullets = this.bullets.filter(b => !b.dead);
       if (this.bullets.length > 300) this.bullets = this.bullets.slice(-300);
 
@@ -1626,6 +1656,9 @@ class Game {
       ctx.restore();
       if (this._exitAsk) this._drawExitAsk(ctx);
     }
+    if (this.coop && this.coop.showMap && (this.state === 'playing' || this.state === 'levelClear')) {
+      this.ctx.save(); this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.coop.drawMap(this.ctx, this.W, this.H); this.ctx.restore();
+    }
     if (this.paused && !this._exitAsk) this._drawPauseMenu(this.ctx);
   }
 
@@ -1889,6 +1922,9 @@ class Game {
 
     if (this.coop) {
       this.coop.drawPartyHud(ctx, this.W, scale);
+      if (this.state === 'playing' || this.state === 'levelClear') {
+        this.coop.drawTeamArrows(ctx, this.W, this.H, scale);
+      }
       this.coop.drawChat(ctx, this.W, this.H);
       if (this.player.dead && this.state === 'playing') {
         ctx.save();
@@ -2264,7 +2300,7 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон на 12 с за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
       { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, огненный РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
       { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 10 убийств', hp: 6, speed: 1, weapon: 'uzi' },
     ];

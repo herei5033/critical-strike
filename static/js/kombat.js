@@ -7,7 +7,7 @@
 // Мир: x — по горизонтали (единицы ≈ пиксели при высоте экрана 540), y — высота над полом.
 // =====================================================================
 
-const K_GRAV = 2100, K_JUMP = 760, K_ROUND_TIME = 60, K_WINS = 2;
+const K_GRAV = 3400, K_JUMP = 1060, K_ROUND_TIME = 60, K_WINS = 2;
 
 const K_KEYS = {
   p1: { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], punch: ['KeyJ'], kick: ['KeyK'], block: ['KeyL'], special: ['KeyI'], fatal: ['KeyF'] },
@@ -35,6 +35,14 @@ const KMOVES = {
   szap: { pose: 'throw', dur: 0.62, zap: 0.2, special: true },
   stele: { pose: 'cross', dur: 0.78, tele: 0.24, a0: 0.34, a1: 0.46, dmg: 9, reach: 84, zone: 'mid', kb: 300, stun: 0.45, heavy: true, special: true, unblock: true, y: 140 },
 };
+// всё резче, как в Tekken / Mortal Kombat: обычные удары на 28% быстрее, приёмы — на 15%
+for (const m of Object.values(KMOVES)) {
+  const k = m.special ? 0.85 : 0.72;
+  for (const key of ['dur', 'a0', 'a1', 'tele', 'zap']) if (m[key] !== undefined) m[key] *= k;
+  if (m.shoot) m.shoot = m.shoot.map(v => v * k);
+}
+const K_SPEED = 1.45;     // скорость ходьбы от характеристики бойца
+
 const K_SPECIAL = { asik: 'sdash', gal: 'sfire', daur: 'suzi', dani: 'stele', aseke: 'szap', ulzhan: 'sfolder' };
 const K_PUNCH_CHAIN = ['jab', 'cross', 'hook', 'upper'];
 
@@ -74,16 +82,151 @@ class SamsaKombat {
   // ---------- вход / выход ----------
   open() {
     const g = this.game;
-    g._loadThen(Assets.gameplayList(), { title: 'SAMSA KOMBAT', sub: 'разминаем кулаки…', color: '#ff5a1a' }, () => {
+    const items = [...Assets.gameplayList(), ...['asik', 'aseke', 'ulzhan'].map(name => ({ type: 'portrait', name }))];
+    g._loadThen(items, { title: 'SAMSA KOMBAT', sub: 'разминаем кулаки…', color: '#ff5a1a' }, () => {
       g.state = 'kombat';
       this.screen = 'select';
-      this.locked = [false, false];
+      if (!this.net) this.locked = [false, false];    // в сети выбор соперника мог прийти, пока шла загрузка
       this.paused = false;
       if (Input.isMobile) this.twoP = false;
     });
   }
 
-  exit() { this.game.toMenu(); this.game.modesUI.open(); }
+  exit() { if (this.net) { this._netQuit(); return; } this.game.toMenu(); this.game.modesUI.open(); }
+
+  // фото бойца: герои — из static/img, остальные — из static/img/story; нет фото — рисуем сами
+  _face(ctx, id, x, y, w, h, t, flip = false) {
+    const img = typeof StoryAssets !== 'undefined' ? StoryAssets.portrait(this.game, id) : null;
+    if (img) {
+      const s = Math.max(w / img.naturalWidth, h / img.naturalHeight), iw = img.naturalWidth * s, ih = img.naturalHeight * s;
+      ctx.save();
+      if (flip) { ctx.translate(x + w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(x + w / 2), 0); }
+      ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    if (flip) { ctx.translate(x + w / 2, 0); ctx.scale(-1, 1); ctx.translate(-(x + w / 2), 0); }
+    KArt.portrait(ctx, id, x + w / 2, y + h * 0.5, w * 0.62, t);
+    ctx.restore();
+  }
+
+  // ===== сеть: хост считает бой, клиент присылает ввод и рисует снимки =====
+  openNet(role, pid, names) {
+    const C = this.game.coopUI;
+    this.net = { role, send: (m, fast) => C.net && C.net.send(role === 'host' ? pid : 'host', m, fast) };
+    this._li = role === 'host' ? 0 : 1;
+    this._rin = { h: [0, 0, 0, 0], p: [0, 0, 0, 0, 0] };
+    this._evOut = []; this._snap = null; this.netNames = names || ['ХОСТ', 'ГОСТЬ'];
+    this.twoP = false; this.pick = [0, 1]; this.stageSel = 0; this.locked = [false, false];
+    this.open();
+  }
+
+  _emit(ev) {
+    if (!this.net || this.net.role !== 'host' || this.screen !== 'battle' || this.phase === 'fatality' || this._replay) return;
+    if (ev[0] === 'sp' && (this._spEm = (this._spEm || 0) + 1) > 30) return;
+    this._evOut.push(ev);
+  }
+
+  _snd(name, vol) { AudioSys.play(name, vol); this._emit(['s', name, vol === undefined ? 1 : vol]); }
+
+  _sendSnap() {
+    const F = (f) => [Math.round(f.x), Math.round(f.z), f.dir, +f.hp.toFixed(1), f.state, f.act ? f.act.name : '', f.act ? +f.act.t.toFixed(3) : 0,
+      f.crouch ? 1 : 0, f.blocking ? 1 : 0, +f.cd.toFixed(2), f.wins, +f.alpha.toFixed(2), f.burnT > 0 ? 1 : 0, +f.zapT.toFixed(2), f.koed ? 1 : 0, f.dashDir || 0];
+    this.net.send({
+      t: 'Ks', ph: this.phase, pt: +this.pt.toFixed(2), tm: +this.timer.toFixed(2), rd: this.round, sh: +this.shake.toFixed(1),
+      fw: this.finishW ? this.finishW.side : -1, f: this.f.map(F),
+      pr: this.proj.map(q => [q.kind, Math.round(q.x), Math.round(q.y), +(q.spin || 0).toFixed(2), q.owner.side]),
+    }, true);
+    if (this._evOut.length) { this.net.send({ t: 'Ke', e: this._evOut }); this._evOut = []; }
+    this._spEm = 0;
+  }
+
+  _applySnap(sn) {
+    this.round = sn.rd; this.timer = sn.tm; this.shake = Math.max(this.shake, sn.sh);
+    if (this.fatal) return;                      // фаталити клиент проигрывает сам
+    if (sn.ph === 'fatality' && sn.fw >= 0) { this._startFatality(this.f[sn.fw], this.f[1 - sn.fw]); return; }
+    this.phase = sn.ph; this.pt = sn.pt; this.finishW = sn.fw >= 0 ? this.f[sn.fw] : null;
+    if (sn.ph === 'over' && !this.winner) this.winner = this.f[0].wins >= this.f[1].wins ? this.f[0] : this.f[1];
+    sn.f.forEach((a, i) => {
+      const f = this.f[i], ox = f.x;
+      f.x = a[0]; f.z = a[1]; f.dir = a[2]; f.hp = a[3]; f.state = a[4];
+      if (a[5]) { if (!f.act || f.act.name !== a[5]) f.act = { name: a[5], m: KMOVES[a[5]], t: a[6], hit: true, shots: 99, zapped: true, teled: true }; else f.act.t = a[6]; }
+      else f.act = null;
+      f.crouch = !!a[7]; f.blocking = !!a[8]; f.cd = a[9]; f.wins = a[10]; f.alpha = a[11]; f.burnT = a[12] ? 1 : 0; f.zapT = a[13]; f.koed = !!a[14]; f.dashDir = a[15];
+      f._dx = f.x - ox;
+    });
+    this.proj = sn.pr.map(q => ({ kind: q[0], x: q[1], y: q[2], spin: q[3], owner: this.f[q[4]] }));
+  }
+
+  _applyEv(e) {
+    this._replay = true;
+    const [k, ...a] = e;
+    if (k === 'b') this._bleed(...a);
+    else if (k === 'g') this._gib(...a);
+    else if (k === 'p') this._pop(...a);
+    else if (k === 'n') this._banner(...a);
+    else if (k === 's') AudioSys.play(a[0], a[1]);
+    else if (k === 'sp') this._spark(...a);
+    else if (k === 'z') this.zapFx = { x0: a[0], y0: a[1], x1: a[2], y1: a[3], t: 0.28 };
+    this._replay = false;
+  }
+
+  onNet(m) {
+    const o = 1 - this._li;
+    if (m.t === 'Kpick') { this.pick[o] = m.i; if (m.l && !this.locked[o]) this._lock(o); this.locked[o] = !!m.l; }
+    else if (m.t === 'Kin') { this._rin.h = m.h; m.p.forEach((v, i) => { if (v) this._rin.p[i] = 1; }); }
+    else if (m.t === 'Ks') { if (this.screen === 'battle') this._snap = m; }
+    else if (m.t === 'Ke') { if (this.screen === 'battle' && this.f) for (const e of m.e) this._applyEv(e); }
+    else if (m.t === 'Kgo') { this.stageSel = m.st; this.pick = m.pk.slice(); this.locked = [true, true]; this.screen = 'vs'; this.t = 0; this.paused = false; }
+    else if (m.t === 'Ksel') { this.screen = 'select'; this.locked = [false, false]; this.paused = false; AudioSys.stopMusic(); AudioSys.playMusic('/static/audio/menu_music.mp3'); }
+    else if (m.t === 'Kquit') { this.net.send({ t: 'Kend' }); this._backToLobby('Соперник вышел в лобби'); }
+    else if (m.t === 'Kend') this._backToLobby('Хост вернул всех в лобби');
+  }
+
+  _netQuit() {
+    if (!this.net) return;
+    this.net.send({ t: this.net.role === 'host' ? 'Kend' : 'Kquit' });
+    this._backToLobby();
+  }
+
+  _backToLobby(msg) {
+    if (!this.net) return;
+    this.net = null; this.screen = 'select'; this.paused = false; this.locked = [false, false];
+    const C = this.game.coopUI;
+    C.inMatch = false;
+    C.open(); C.screen = 'lobby';
+    if (msg) C.flash(msg);
+    if (C.isHost) C.broadcastLobby();
+    AudioSys.stopMusic(); AudioSys.playMusic('/static/audio/menu_music.mp3');
+  }
+
+  _updateSelectNet(dt) {
+    const li = this._li, n = KF_IDS.length, P = this._keys(K_KEYS.solo);
+    if (this._esc()) { this._netQuit(); return; }
+    let changed = false;
+    if (!this.locked[li]) {
+      const mv = (d) => { this.pick[li] = (this.pick[li] + d + n) % n; changed = true; this._snd('menu_move'); };
+      if (P.pr('left') || Input.wasPressed('MobileUp')) mv(-1);
+      if (P.pr('right') || Input.wasPressed('MobileDown')) mv(1);
+      let ok = P.pr('punch') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter');
+      if (Input.consumeClick()) {
+        const mx = Input.mouse.x, my = Input.mouse.y;
+        this._tiles(this.game.W, this.game.H).forEach((r, i) => {
+          if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { if (this.pick[li] === i) ok = true; else { this.pick[li] = i; changed = true; } }
+        });
+      }
+      if (ok) { this._lock(li); changed = true; }
+    }
+    this._pickHb = (this._pickHb || 0) + dt;
+    if (changed || this._pickHb > 0.5) { this._pickHb = 0; this.net.send({ t: 'Kpick', i: this.pick[li], l: this.locked[li] ? 1 : 0 }); }
+    if (this.locked[0] && this.locked[1] && this.net.role === 'host') { this.screen = 'stage'; this.t = 0; }
+  }
+
+  _overLabels() {
+    if (this.net) return this.net.role === 'host' ? ['РЕВАНШ', 'ДРУГИЕ БОЙЦЫ', 'В ЛОББИ'] : ['В ЛОББИ'];
+    return ['РЕВАНШ', 'ДРУГИЕ БОЙЦЫ', 'В МЕНЮ'];
+  }
 
   // ---------- ввод ----------
   _keys(set) {
@@ -94,9 +237,15 @@ class SamsaKombat {
   }
 
   _readHuman(idx) {
-    const set = this.twoP ? (idx === 0 ? K_KEYS.p1 : K_KEYS.p2) : K_KEYS.solo;
+    if (this.net && this.net.role === 'host' && idx === 1) {
+      const r = this._rin, o = { left: !!r.h[0], right: !!r.h[1], down: !!r.h[2], block: !!r.h[3], up: !!r.p[0], punch: !!r.p[1], kick: !!r.p[2], special: !!r.p[3], fatal: !!r.p[4] };
+      r.p = [0, 0, 0, 0, 0];
+      return o;
+    }
+    if (this.net && this.paused) return {};
+    const set = this.net ? K_KEYS.solo : this.twoP ? (idx === 0 ? K_KEYS.p1 : K_KEYS.p2) : K_KEYS.solo;
     const k = this._keys(set);
-    const tm = Input.touch, mob = idx === 0 && Input.isMobile;
+    const tm = Input.touch, mob = (this.net ? idx === this._li : idx === 0) && Input.isMobile;
     const inp = {
       left: k.down('left') || (mob && tm.moveActive && tm.moveX < -0.35),
       right: k.down('right') || (mob && tm.moveActive && tm.moveX > 0.35),
@@ -118,17 +267,18 @@ class SamsaKombat {
   }
 
   _updateSelect(dt) {
+    if (this.net) return this._updateSelectNet(dt);
     const n = KF_IDS.length;
     const who = this.locked[0] ? 1 : 0;
     if (this._esc()) {
-      if (this.locked[0]) { this.locked[0] = false; AudioSys.play('menu_move'); }
+      if (this.locked[0]) { this.locked[0] = false; this._snd('menu_move'); }
       else { this.exit(); }
       return;
     }
-    if (!Input.isMobile && Input.wasPressed('Tab') && !this.locked[0]) { this.twoP = !this.twoP; AudioSys.play('menu_move'); }
+    if (!Input.isMobile && Input.wasPressed('Tab') && !this.locked[0]) { this.twoP = !this.twoP; this._snd('menu_move'); }
     const P1 = this._keys(this.twoP ? K_KEYS.p1 : K_KEYS.solo), P2 = this._keys(K_KEYS.p2);
     const ctl = who === 0 || !this.twoP ? P1 : P2;
-    const move = (d) => { this.pick[who] = (this.pick[who] + d + n) % n; AudioSys.play('menu_move'); };
+    const move = (d) => { this.pick[who] = (this.pick[who] + d + n) % n; this._snd('menu_move'); };
     if (who === 0 || this.twoP) {
       if (ctl.pr('left') || Input.wasPressed('MobileUp')) move(-1);
       if (ctl.pr('right') || Input.wasPressed('MobileDown')) move(1);
@@ -139,15 +289,15 @@ class SamsaKombat {
     const click = Input.consumeClick(), mx = Input.mouse.x, my = Input.mouse.y;
     if (click) {
       this._tiles(this.game.W, this.game.H).forEach((r, i) => {
-        if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { if (this.pick[who] === i) this._lock(who); else { this.pick[who] = i; AudioSys.play('menu_move'); } }
+        if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { if (this.pick[who] === i) this._lock(who); else { this.pick[who] = i; this._snd('menu_move'); } }
       });
       const mr = this._modeRect(this.game.W, this.game.H);
-      if (!Input.isMobile && mx > mr.x && mx < mr.x + mr.w && my > mr.y && my < mr.y + mr.h && !this.locked[0]) { this.twoP = !this.twoP; AudioSys.play('menu_move'); }
+      if (!Input.isMobile && mx > mr.x && mx < mr.x + mr.w && my > mr.y && my < mr.y + mr.h && !this.locked[0]) { this.twoP = !this.twoP; this._snd('menu_move'); }
     }
     // компьютер выбирает «рулеткой»
     if (this.locked[0] && !this.twoP && !this.locked[1]) {
       this._roul = (this._roul || 0) + dt;
-      if (Math.floor(this._roul * 14) !== this._roulStep) { this._roulStep = Math.floor(this._roul * 14); this.pick[1] = Math.floor(Math.random() * n); AudioSys.play('menu_move', 0.4); }
+      if (Math.floor(this._roul * 14) !== this._roulStep) { this._roulStep = Math.floor(this._roul * 14); this.pick[1] = Math.floor(Math.random() * n); this._snd('menu_move', 0.4); }
       if (this._roul > 0.9) { if (this.pick[1] === this.pick[0] && Math.random() < 0.7) this.pick[1] = (this.pick[0] + 1 + Math.floor(Math.random() * (n - 1))) % n; this._lock(1); }
     }
     if (this.locked[0] && this.locked[1]) { this.screen = 'stage'; this.t = 0; }
@@ -155,7 +305,7 @@ class SamsaKombat {
 
   _lock(who) {
     this.locked[who] = true; this._roul = 0;
-    AudioSys.play('char_select');
+    this._snd('char_select');
     const f = KF[KF_IDS[this.pick[who]]];
     this._shout = { text: f.name, t: 0, col: f.color };
   }
@@ -211,7 +361,7 @@ class SamsaKombat {
       const bg = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
       bg.addColorStop(0, KF[fid].color + '55'); bg.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = bg; ctx.fillRect(r.x, r.y, r.w, r.h);
-      KArt.portrait(ctx, fid, r.x + r.w / 2, r.y + r.h * 0.5, r.w * 0.62, t);
+      this._face(ctx, fid, r.x, r.y, r.w, r.h, t);
       ctx.restore();
       ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
       ctx.font = `bold ${Math.max(9, Math.round(r.w / 8))}px "Courier New", monospace`; ctx.textAlign = 'center';
@@ -278,8 +428,8 @@ class SamsaKombat {
 
   _idlePose(t) {
     const P = { ...KPOSE.stance };
-    const b = Math.sin(t * 4.5);
-    P.fk -= 0.06 * b; P.bk -= 0.04 * b; P.fe += 0.06 * b; P.be += 0.05 * b; P.lean += 0.03 * b;
+    const b = Math.sin(t * 6.5);
+    P.fk -= 0.12 * b; P.bk -= 0.08 * b; P.fe += 0.1 * b; P.be += 0.08 * b; P.lean += 0.05 * b; P.fs += 0.05 * b;
     return P;
   }
 
@@ -293,17 +443,20 @@ class SamsaKombat {
 
   _updateStage(dt) {
     const n = KSTAGES.length, P1 = this._keys(this.twoP ? K_KEYS.p1 : K_KEYS.solo);
-    if (this._esc()) { this.screen = 'select'; this.locked = [false, false]; AudioSys.play('menu_move'); return; }
-    if (P1.pr('left') || Input.wasPressed('MobileUp')) { this.stageSel = (this.stageSel + n - 1) % n; AudioSys.play('menu_move'); }
-    if (P1.pr('right') || Input.wasPressed('MobileDown')) { this.stageSel = (this.stageSel + 1) % n; AudioSys.play('menu_move'); }
+    if (this._esc()) { this.screen = 'select'; this.locked = [false, false]; this._snd('menu_move'); if (this.net) this.net.send({ t: 'Ksel' }); return; }
+    if (P1.pr('left') || Input.wasPressed('MobileUp')) { this.stageSel = (this.stageSel + n - 1) % n; this._snd('menu_move'); }
+    if (P1.pr('right') || Input.wasPressed('MobileDown')) { this.stageSel = (this.stageSel + 1) % n; this._snd('menu_move'); }
     let go = P1.pr('punch') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter');
     if (Input.consumeClick()) {
       const mx = Input.mouse.x, my = Input.mouse.y;
       this._stageRects(this.game.W, this.game.H).forEach((r, i) => {
-        if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { if (this.stageSel === i) go = true; else { this.stageSel = i; AudioSys.play('menu_move'); } }
+        if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { if (this.stageSel === i) go = true; else { this.stageSel = i; this._snd('menu_move'); } }
       });
     }
-    if (go && this.t > 0.15) { AudioSys.play('menu_select'); this.screen = 'vs'; this.t = 0; }
+    if (go && this.t > 0.15) {
+      this._snd('menu_select'); this.screen = 'vs'; this.t = 0;
+      if (this.net) this.net.send({ t: 'Kgo', st: this.stageSel, pk: this.pick });
+    }
   }
 
   _drawStage(ctx, w, h) {
@@ -345,7 +498,10 @@ class SamsaKombat {
       ctx.translate(x, h * 0.45);
       if (s === 1) ctx.scale(-1, 1);
       ctx.fillStyle = F.color + '33'; ctx.beginPath(); ctx.arc(0, 0, ps * 0.6, 0, Math.PI * 2); ctx.fill();
-      KArt.portrait(ctx, id, 0, 0, ps * 0.9, t);
+      ctx.save(); ctx.beginPath(); ctx.arc(0, 0, ps * 0.55, 0, Math.PI * 2); ctx.clip();
+      this._face(ctx, id, -ps * 0.55, -ps * 0.55, ps * 1.1, ps * 1.1, t);
+      ctx.restore();
+      ctx.strokeStyle = F.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, ps * 0.55, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
       ctx.textAlign = 'center';
       this.game.menu.glowText(ctx, F.name, x, h * 0.45 + ps * 0.62, F.color, Math.min(34, w * 0.045), 'center', 16);
@@ -380,7 +536,7 @@ class SamsaKombat {
     this.proj = []; this.ghosts = [];
     this.phase = 'intro'; this.pt = 0; this.timer = K_ROUND_TIME;
     this.hitstop = 0; this.shake = 0; this.slow = 1; this.slowT = 0;
-    this.banner = null; this.fatal = null; this.result = null;
+    this.banner = null; this.fatal = null; this.result = null; this.winner = null;
     this.paused = false;
     this._banner(`РАУНД ${this.round}`, this.round === 1 ? `${this.f[0].def.name} против ${this.f[1].def.name}` : '', '#ffd319', 1.15);
   }
@@ -389,14 +545,44 @@ class SamsaKombat {
   k() { return this.game.H / 540 * 1.22; }   // бойцы крупнее: ~40% высоты экрана
   gy() { return this.game.H * 0.86; }
 
-  _isHuman(i) { return i === 0 || this.twoP; }
+  _isHuman(i) { return i === 0 || this.twoP || !!this.net; }
 
   update(dt) {
     this.t += dt;
     if (this.screen === 'select') return this._updateSelect(dt);
     if (this.screen === 'stage') return this._updateStage(dt);
     if (this.screen === 'vs') return this._updateVs(dt);
+    if (this.net && this.net.role === 'client') return this._updateBattleClient(dt);
     this._updateBattle(dt);
+    if (this.net && this.screen === 'battle') this._sendSnap();
+  }
+
+  _updateBattleClient(dt) {
+    if (this.paused) this._updatePause();
+    else if (this._esc() && this.phase !== 'over') { this.paused = true; this.pauseSel = 0; }
+    const inp = this.paused ? {} : this._readHuman(1);
+    const h = [inp.left ? 1 : 0, inp.right ? 1 : 0, inp.down ? 1 : 0, inp.block ? 1 : 0];
+    const pz = [inp.up ? 1 : 0, inp.punch ? 1 : 0, inp.kick ? 1 : 0, inp.special ? 1 : 0, inp.fatal ? 1 : 0];
+    const key = h.join('') + pz.join('');
+    this._hb = (this._hb || 0) + 1;
+    if (key !== this._lastKey || pz.some(v => v) || this._hb > 15) { this.net.send({ t: 'Kin', h, p: pz }); this._lastKey = key; this._hb = 0; }
+    if (this._snap) { this._applySnap(this._snap); this._snap = null; }
+    this.shake = Math.max(0, this.shake - dt * 40);
+    for (let i = 0; i < 2; i++) {
+      const f = this.f[i];
+      if (f.state === 'fatal') { this._updateFighter(f, this.f[1 - i], {}, dt); continue; }
+      const sp = Math.abs(f._dx || 0) / Math.max(dt, 0.001);
+      if (f.state === 'idle' && sp > 30) { f.walk = Math.min(1, f.walk + dt * 8); f.walkPh += dt * 17 * Math.sign((f._dx || 0) * f.dir); }
+      else f.walk = Math.max(0, f.walk - dt * 8);
+      f._dx = 0;
+      f.t += dt;
+      this._poseFor(f, dt);
+    }
+    if (this.phase === 'fatality') { this.pt += dt; this._updateFatality(dt); }
+    for (const q of this.proj) if (q.kind === 'fire' && Math.random() < 0.6) this._spark(q.x, q.y + Utils.rand(-6, 6), 0, Utils.rand(-20, 40), 0.3, 'fire');
+    this._updateParticles(dt);
+    if (this.phase === 'over') this._updateOver();
+    if (this.banner) { this.banner.t += dt; if (this.banner.t > this.banner.dur) this.banner = null; }
   }
 
   draw(ctx, w, h) {
@@ -410,8 +596,8 @@ class SamsaKombat {
 
   _updateBattle(rdt) {
     // пауза
-    if (this.paused) { this._updatePause(); return; }
-    if (this._esc() && this.phase !== 'over') { this.paused = true; this.pauseSel = 0; AudioSys.play('menu_move'); return; }
+    if (this.paused) { this._updatePause(); if (!this.net) return; }
+    else if (this._esc() && this.phase !== 'over') { this.paused = true; this.pauseSel = 0; AudioSys.play('menu_move'); if (!this.net) return; }
     if (this.hitstop > 0) { this.hitstop -= rdt; this._updateParticles(rdt * 0.15); return; }
     if (this.slowT > 0) { this.slowT -= rdt; if (this.slowT <= 0) this.slow = 1; }
     const dt = rdt * this.slow;
@@ -423,7 +609,7 @@ class SamsaKombat {
     const inp = [0, 1].map(i => this._isHuman(i) ? this._readHuman(i) : this._ai(this.f[i], this.f[1 - i], dt));
     const control = this.phase === 'fight' || this.phase === 'finish';
     if (this.phase === 'intro') {
-      if (this.pt > 1.2 && this.pt - dt <= 1.2) { this._banner('БОЙ!', '', '#ff2a40', 0.8, true); AudioSys.play('game_start'); }
+      if (this.pt > 1.2 && this.pt - dt <= 1.2) { this._banner('БОЙ!', '', '#ff2a40', 0.8, true); this._snd('game_start'); }
       if (this.pt > 1.6) { this.phase = 'fight'; this.pt = 0; }
     }
     if (this.phase === 'fight') {
@@ -477,19 +663,31 @@ class SamsaKombat {
       f.crouch = !!inp.down;
       f.blocking = !!inp.block;
       const mv = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+      // двойное нажатие в сторону — рывок вперёд или отскок назад
+      if (mv && f.prevMv !== mv) {
+        if (f.tapDir === mv && f.t - f.tapT < 0.26 && !f.crouch && !f.blocking) { f.prevMv = mv; f.tapDir = 0; this._dash(f, mv); return this._afterFighter(f, dt); }
+        f.tapDir = mv; f.tapT = f.t;
+      }
+      f.prevMv = mv;
+      const spd = f.def.speed * K_SPEED;
       if (!f.crouch && !f.blocking && mv) {
         const back = mv !== f.dir;
-        f.vx = mv * f.def.speed * (back ? 0.78 : 1);
-        f.walkPh += dt * 11 * (back ? -1 : 1);
+        f.vx = mv * spd * (back ? 0.8 : 1);
+        f.walkPh += dt * 17 * (back ? -1 : 1);
         f.walk = Math.min(1, f.walk + dt * 8);
       } else { f.vx *= 0.7; f.walk = Math.max(0, f.walk - dt * 8); }
       if (inp.up && !f.crouch && !f.blocking) {
-        f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * f.def.speed * 1.1; f.crouch = false;
-        AudioSys.play('melee_swing', 0.4);
+        f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * spd * 0.95; f.crouch = false;
+        this._snd('melee_swing', 0.4);
       } else if (inp.special && f.cd <= 0) {
         this._doMove(f, K_SPECIAL[f.id]); f.cd = f.def.cd;
       } else if (inp.punch) this._doMove(f, f.crouch ? 'upper' : 'jab');
       else if (inp.kick) this._doMove(f, f.crouch ? 'sweep' : 'kick');
+    } else if (st === 'dash') {
+      f.dashT -= dt; f.vx *= Math.exp(-dt * 4);
+      if (Math.random() < 0.5) this._spark(f.x - f.vx * 0.02, 6, -f.vx * 0.1, Utils.rand(10, 50), 0.35, 'dust');
+      if (f.dashDir === f.dir && (inp.punch || inp.kick)) this._doMove(f, inp.punch ? 'jab' : 'kick');
+      else if (f.dashT <= 0) f.state = 'idle';
     } else if (st === 'jump') {
       f.crouch = false; f.blocking = false;
       if (!f.act && inp.punch) this._doMove(f, 'jpunch', true);
@@ -504,7 +702,7 @@ class SamsaKombat {
       if (f.stun <= 0) f.state = 'idle';
     } else if (st === 'air') {
       if (f.grounded && f.vz <= 0) {
-        this._dust(f.x); this.shake = Math.max(this.shake, 5); AudioSys.play('tank_hit', 0.5);
+        this._dust(f.x); this.shake = Math.max(this.shake, 5); this._snd('tank_hit', 0.5);
         f.vx *= 0.3;
         if (f.koed) { f.state = 'ko'; } else { f.state = 'down'; f.downT = 0.75; }
       }
@@ -520,8 +718,22 @@ class SamsaKombat {
     } else if (st === 'win') {
       f.vx *= 0.8;
     }
+    this._afterFighter(f, dt);
+  }
+
+  _afterFighter(f, dt) {
     this._physics(f, dt);
     this._poseFor(f, dt);
+  }
+
+  _dash(f, mv) {
+    const fwd = mv === f.dir;
+    f.state = 'dash'; f.dashDir = mv; f.dashT = fwd ? 0.2 : 0.22;
+    f.vx = mv * (fwd ? 780 : 660);
+    if (!fwd) f.inv = 0.14;
+    this.ghosts.push({ id: f.id, P: { ...f.pose }, x: f.x, z: f.z, dir: f.dir, a: 0.45 });
+    this._dust(f.x);
+    this._snd('melee_swing', 0.4);
   }
 
   _physics(f, dt) {
@@ -550,9 +762,9 @@ class SamsaKombat {
     f.chain = K_PUNCH_CHAIN.indexOf(name);
     f.queued = null;
     if (m.special && name !== 'supper') this._pop(KF[f.id].special, f.x, 200 + f.z, KF[f.id].color, 13);
-    if (!m.shoot && !m.zap) AudioSys.play('melee_swing', 0.6);
+    if (!m.shoot && !m.zap) this._snd('melee_swing', 0.6);
     if (m.dash) f.vx = f.dir * m.dash;
-    if (name === 'sfolder' || name === 'sfire') AudioSys.play('throw');
+    if (name === 'sfolder' || name === 'sfire') this._snd('throw');
   }
 
   _stepMove(f, o, dt, inp) {
@@ -564,6 +776,7 @@ class SamsaKombat {
     if (inp.kick && a.name === 'kick' && a.t > m.a0) f.queued = 'kick2';
     // попадание
     if (m.dmg && !a.hit && a.t >= m.a0 && a.t <= m.a1) this._checkHit(f, o, a);
+    if (inp.special && a.hit && !m.special && f.cd <= 0 && f.state === 'attack') { f.act = null; this._doMove(f, K_SPECIAL[f.id]); f.cd = f.def.cd; return; }
     // выстрелы / броски
     if (m.shoot) while (a.shots < m.shoot.length && a.t >= m.shoot[a.shots]) { this._shoot(f, a.name); a.shots++; }
     if (m.zap !== undefined && !a.zapped && a.t >= m.zap) { a.zapped = true; this._zap(f, o); }
@@ -605,7 +818,7 @@ class SamsaKombat {
       o.hp = Math.max(1, o.hp - h.dmg * 0.12);
       o.vx = att.dir * (h.kb || 150) * 0.7;
       for (let i = 0; i < 8; i++) this._spark(hx, hy, att.dir * Utils.rand(40, 200), Utils.rand(-80, 180), 0.25, 'spark');
-      AudioSys.play('tank_hit', 0.4);
+      this._snd('tank_hit', 0.4);
       this.hitstop = 0.03;
       return 'block';
     }
@@ -617,10 +830,10 @@ class SamsaKombat {
     // кровь — много
     const power = 0.6 + dmg / 10;
     this._bleed(hx, hy, Math.round(10 + dmg * 5), att.dir, power);
-    this.hitstop = 0.045 + dmg * 0.006;
+    this.hitstop = 0.035 + dmg * 0.0045;
     this.shake = Math.max(this.shake, 3 + dmg * 0.7);
-    AudioSys.play(dmg >= 9 ? 'tank_hit' : 'punch');
-    if (Math.random() < 0.4) AudioSys.play('player_hurt', 0.5);
+    this._snd(dmg >= 9 ? 'tank_hit' : 'punch');
+    if (Math.random() < 0.4) this._snd('player_hurt', 0.5);
     if (h.burn) { o.burnT = 1.6; o.burnTick = 0.3; }
     if (h.zap) o.zapT = 0.9;
     if (o.hp <= 0) { this._ko(att, o); return 'ko'; }
@@ -643,12 +856,12 @@ class SamsaKombat {
     }
     att.wins++;
     this.proj = [];
-    AudioSys.play('enemy_death');
+    this._snd('enemy_death');
     if (att.wins >= K_WINS) {
       o.state = 'dizzy'; o.z = 0; o.vz = 0; o.vx = att.dir * 120; o.hp = 0;
       this.phase = 'finish'; this.pt = 0; this.finishW = att;
       this._cpuNoFatal = Math.random() < 0.12;
-      this._banner(o.def.pron === 'ЕЁ' ? 'ДОБЕЙ ЕЁ!' : 'ДОБЕЙ ЕГО!', this._isHuman(att.side) ? (Input.isMobile ? 'кнопка ФАТАЛИТИ' : `нажмите ${att.side === 0 || !this.twoP ? 'F' : '« \' » или NUM0'}`) : '', '#ff2a40', 6, true);
+      this._banner(o.def.pron === 'ЕЁ' ? 'ДОБЕЙ ЕЁ!' : 'ДОБЕЙ ЕГО!', this._isHuman(att.side) ? (Input.isMobile ? 'кнопка ФАТАЛИТИ' : `нажмите ${this.net || att.side === 0 || !this.twoP ? 'F' : '« \' » или NUM0'}`) : '', '#ff2a40', 6, true);
       this.slow = 0.35; this.slowT = 0.6;
     } else {
       o.state = 'air'; o.vz = 560; o.vx = att.dir * 300; o.koed = true;
@@ -678,7 +891,7 @@ class SamsaKombat {
   _shoot(f, name) {
     const h = this._handPos(f);
     if (name === 'sfire') this.proj.push({ kind: 'fire', owner: f, x: h.x, y: h.y, vx: f.dir * 520, vy: 0, g: 0, dmg: 10, burn: true, life: 3 });
-    else if (name === 'suzi') { this.proj.push({ kind: 'bullet', owner: f, x: h.x + f.dir * 12, y: h.y + 2, vx: f.dir * 1100, vy: 0, g: 0, dmg: 3, life: 2 }); AudioSys.play('shoot_uzi', 0.6); this._spark(h.x + f.dir * 16, h.y, f.dir * 100, 0, 0.08, 'flash'); }
+    else if (name === 'suzi') { this.proj.push({ kind: 'bullet', owner: f, x: h.x + f.dir * 12, y: h.y + 2, vx: f.dir * 1100, vy: 0, g: 0, dmg: 3, life: 2 }); this._snd('shoot_uzi', 0.6); this._spark(h.x + f.dir * 16, h.y, f.dir * 100, 0, 0.08, 'flash'); }
     else if (name === 'sfolder') this.proj.push({ kind: 'folder', owner: f, x: h.x, y: h.y + 10, vx: f.dir * 470, vy: 150, g: 700, dmg: 9, life: 3, spin: 0 });
   }
 
@@ -689,7 +902,8 @@ class SamsaKombat {
     const hit = dx > 0 && dx < reach && !['down', 'getup', 'ko', 'fatal'].includes(o.state) && o.inv <= 0 && !(o.z > 120);
     const tx = hit ? o.x : f.x + f.dir * reach, ty = hit ? Math.min(o.height() * 0.65 + o.z, 130) : h.y;
     this.zapFx = { x0: h.x, y0: h.y, x1: tx, y1: ty, t: 0.28 };
-    AudioSys.play('stun');
+    this._emit(['z', Math.round(h.x), Math.round(h.y), Math.round(tx), Math.round(ty)]);
+    this._snd('stun');
     if (hit) this._resolveHit(f, o, { dmg: 8, zone: 'mid', kb: 90, stun: 0.95, zap: true, y: ty });
   }
 
@@ -733,6 +947,7 @@ class SamsaKombat {
 
   // ---------- кровь, искры, ошмётки ----------
   _bleed(x, y, n, dir, power = 1) {
+    this._emit(['b', Math.round(x), Math.round(y), n, dir, +power.toFixed(2)]);
     for (let i = 0; i < n; i++) {
       this.blood.push({
         x: x + Utils.rand(-4, 4), y: y + Utils.rand(-6, 6),
@@ -750,6 +965,7 @@ class SamsaKombat {
   }
 
   _spark(x, y, vx, vy, life, kind) {
+    this._emit(['sp', Math.round(x), Math.round(y), Math.round(vx), Math.round(vy), life, kind]);
     this.sparks.push({ x, y, vx, vy, life, max: life, kind, s: Utils.rand(2, 5), r: Math.random() * 6 });
     if (this.sparks.length > 900) this.sparks.splice(0, this.sparks.length - 900);
   }
@@ -757,12 +973,13 @@ class SamsaKombat {
   _dust(x) { for (let i = 0; i < 8; i++) this._spark(x + Utils.rand(-20, 20), 4, Utils.rand(-90, 90), Utils.rand(10, 60), 0.5, 'dust'); }
 
   _gib(x, y, vx, vy, kind, color, size = 8, id = null) {
+    this._emit(['g', Math.round(x), Math.round(y), Math.round(vx), Math.round(vy), kind, color, size, id]);
     this.gibs.push({ x, y, vx, vy, rot: 0, vr: Utils.rand(-12, 12), kind, color, size, id, rest: false });
   }
 
-  _pop(text, x, y, col, size = 14) { this.pops.push({ text, x, y, col, size, t: 0 }); }
+  _pop(text, x, y, col, size = 14) { this._emit(['p', text, Math.round(x), Math.round(y), col, size]); this.pops.push({ text, x, y, col, size, t: 0 }); }
 
-  _banner(text, sub, col, dur, big = false) { this.banner = { text, sub, col, dur, t: 0, big }; }
+  _banner(text, sub, col, dur, big = false) { this._emit(['n', text, sub, col, dur, big]); this.banner = { text, sub, col, dur, t: 0, big }; }
 
   _updateParticles(dt) {
     for (const b of this.blood) {
@@ -799,9 +1016,9 @@ class SamsaKombat {
 
   // ---------- позы ----------
   _poseFor(f, dt) {
-    let T, k = 22, rot = 0;
+    let T, k = 42, rot = 0;
     const st = f.state, t = f.t;
-    if (f.fpose) { T = typeof f.fpose === 'string' ? KPOSE[f.fpose] : f.fpose; k = 30; rot = f.frot || 0; }
+    if (f.fpose) { T = typeof f.fpose === 'string' ? KPOSE[f.fpose] : f.fpose; k = 40; rot = f.frot || 0; }
     else if (f.act) {
       const m = f.act.m, P = KPOSE[m.pose] || KPOSE.stance, base = f.grounded ? KPOSE.stance : KPOSE.jump;
       const a0 = m.a0 !== undefined ? m.a0 : (m.shoot ? m.shoot[0] : (m.zap || 0.15));
@@ -809,9 +1026,10 @@ class SamsaKombat {
       const p = f.act.t;
       T = p < a0 ? kLerpPose(base, P, Math.min(1, p / Math.max(0.01, a0))) : p <= a1 ? P : kLerpPose(P, base, Math.min(1, (p - a1) / Math.max(0.05, m.dur - a1)));
       if (m.gun) T = { ...T, fs: 1.6, fe: 0.06 };
-      k = 40;
+      k = 80;
     } else if (st === 'jump') T = KPOSE.jump;
-    else if (st === 'hit') { T = KPOSE.hit; k = 30; }
+    else if (st === 'hit') { T = KPOSE.hit; k = 60; }
+    else if (st === 'dash') { T = f.dashDir === f.dir ? { ...KPOSE.stance, lean: 0.45, fh: 0.9, fk: -0.9, bh: -0.7, bk: -0.5, fs: 0.9, fe: 1.9 } : { ...KPOSE.stance, lean: -0.3, fh: 0.6, fk: -0.6, bh: -0.1, bk: -0.6 }; k = 50; }
     else if (st === 'air') { T = KPOSE.air; rot = -0.5; }
     else if (st === 'down' || st === 'ko') { T = KPOSE.dizzy; rot = -1.5; }
     else if (st === 'getup') { T = KPOSE.crouch; rot = -1.5 * Math.max(0, f.downT / 0.32); }
@@ -824,7 +1042,7 @@ class SamsaKombat {
       T = this._idlePose(t);
       if (f.walk > 0.05) {
         const ph = f.walkPh, s = Math.sin(ph);
-        T = { ...T, fh: 0.08 + 0.42 * s, bh: 0.02 - 0.42 * s, fk: -0.2 - 0.6 * Math.max(0, -Math.cos(ph)), bk: -0.2 - 0.6 * Math.max(0, Math.cos(ph)) };
+        T = { ...T, fh: 0.1 + 0.52 * s, bh: 0.02 - 0.52 * s, fk: -0.2 - 0.6 * Math.max(0, -Math.cos(ph)), bk: -0.2 - 0.6 * Math.max(0, Math.cos(ph)) };
       }
     }
     if (f.zapT > 0) T = { ...T, fs: T.fs + Utils.rand(-0.4, 0.4), bs: T.bs + Utils.rand(-0.4, 0.4), head: T.head + Utils.rand(-0.3, 0.3) };
@@ -839,7 +1057,7 @@ class SamsaKombat {
     A.t -= dt;
     if (this.phase === 'finish' && this.finishW === f) return inp;    // фаталити — по таймеру
     if (A.t > 0 || f.state !== 'idle') return inp;
-    A.t = Utils.rand(0.14, 0.3);
+    A.t = Utils.rand(0.07, 0.18);
     const dist = Math.abs(o.x - f.x), fwd = o.x > f.x ? 'right' : 'left', back = fwd === 'right' ? 'left' : 'right';
     const hold = (keys, tm) => { A.hold = keys; A.holdT = tm; };
     const threat = (o.state === 'attack' || (o.state === 'jump' && o.act)) && dist < 170;
@@ -848,6 +1066,7 @@ class SamsaKombat {
     if ((threat && r < 0.5) || (projIn && r < 0.6)) { hold({ block: true, down: o.act && o.act.m.zone === 'low' }, 0.35); return { block: true }; }
     if (o.state === 'dizzy') { hold({ [fwd]: true }, 0.2); return inp; }
     const ranged = f.id === 'gal' || f.id === 'daur' || f.id === 'ulzhan' || f.id === 'aseke';
+    if (dist > 220 && r < 0.18 && f.state === 'idle') { this._dash(f, fwd === 'right' ? 1 : -1); return {}; }
     if (dist > 280) {
       if (f.cd <= 0 && (ranged || r < 0.25) && (f.id !== 'aseke' || dist < 260)) return { special: true };
       hold({ [fwd]: true }, Utils.rand(0.2, 0.45)); return inp;
@@ -882,9 +1101,10 @@ class SamsaKombat {
     const W = this.winner;
     if (this.pt > 0.7 && W.state === 'idle') W.state = 'win';
     if (this.pt < 1.4) return;
-    const opts = 3;
-    if (Input.wasPressed('KeyW') || Input.wasPressed('ArrowUp') || Input.wasPressed('MobileUp')) { this.overSel = (this.overSel + opts - 1) % opts; AudioSys.play('menu_move'); }
-    if (Input.wasPressed('KeyS') || Input.wasPressed('ArrowDown') || Input.wasPressed('MobileDown')) { this.overSel = (this.overSel + 1) % opts; AudioSys.play('menu_move'); }
+    const labels = this._overLabels(), opts = labels.length;
+    if (this.overSel >= opts) this.overSel = 0;
+    if (Input.wasPressed('KeyW') || Input.wasPressed('ArrowUp') || Input.wasPressed('MobileUp')) { this.overSel = (this.overSel + opts - 1) % opts; this._snd('menu_move'); }
+    if (Input.wasPressed('KeyS') || Input.wasPressed('ArrowDown') || Input.wasPressed('MobileDown')) { this.overSel = (this.overSel + 1) % opts; this._snd('menu_move'); }
     let go = Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('KeyJ') || Input.wasPressed('MobileEnter');
     if (Input.consumeClick()) {
       const mx = Input.mouse.x, my = Input.mouse.y;
@@ -892,15 +1112,16 @@ class SamsaKombat {
     }
     if (this._esc()) { this.exit(); return; }
     if (!go) return;
-    AudioSys.play('menu_select');
-    if (this.overSel === 0) { this.screen = 'vs'; this.t = 0; }
-    else if (this.overSel === 1) { this.screen = 'select'; this.locked = [false, false]; AudioSys.stopMusic(); AudioSys.playMusic('/static/audio/menu_music.mp3'); }
+    this._snd('menu_select');
+    const pick = labels[this.overSel];
+    if (pick === 'РЕВАНШ') { this.screen = 'vs'; this.t = 0; if (this.net) this.net.send({ t: 'Kgo', st: this.stageSel, pk: this.pick }); }
+    else if (pick === 'ДРУГИЕ БОЙЦЫ') { this.screen = 'select'; this.locked = [false, false]; if (this.net) this.net.send({ t: 'Ksel' }); AudioSys.stopMusic(); AudioSys.playMusic('/static/audio/menu_music.mp3'); }
     else this.exit();
   }
 
   _overRects(w, h) {
     const bw = Math.min(260, w * 0.4), bh = 34;
-    return [0, 1, 2].map(i => ({ x: w / 2 - bw / 2, y: h * 0.5 + i * (bh + 10), w: bw, h: bh }));
+    return [0, 1, 2].map(i => ({ x: w / 2 - bw / 2, y: h * 0.5 + i * (bh + 10), w: bw, h: bh }));   // до трёх кнопок
   }
 
   _esc() {
@@ -910,14 +1131,14 @@ class SamsaKombat {
 
   _updatePause() {
     if (this._esc()) { this.paused = false; return; }
-    if (Input.wasPressed('KeyW') || Input.wasPressed('ArrowUp') || Input.wasPressed('MobileUp') || Input.wasPressed('KeyS') || Input.wasPressed('ArrowDown') || Input.wasPressed('MobileDown')) { this.pauseSel = 1 - this.pauseSel; AudioSys.play('menu_move'); }
+    if (Input.wasPressed('KeyW') || Input.wasPressed('ArrowUp') || Input.wasPressed('MobileUp') || Input.wasPressed('KeyS') || Input.wasPressed('ArrowDown') || Input.wasPressed('MobileDown')) { this.pauseSel = 1 - this.pauseSel; this._snd('menu_move'); }
     let go = Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.wasPressed('MobileEnter');
     if (Input.consumeClick()) {
       const mx = Input.mouse.x, my = Input.mouse.y;
       this._overRects(this.game.W, this.game.H).slice(0, 2).forEach((r, i) => { if (mx > r.x && mx < r.x + r.w && my > r.y && my < r.y + r.h) { this.pauseSel = i; go = true; } });
     }
     if (!go) return;
-    AudioSys.play('menu_select');
+    this._snd('menu_select');
     if (this.pauseSel === 0) this.paused = false; else this.exit();
   }
 
@@ -948,13 +1169,13 @@ class SamsaKombat {
     const D = { asik: 4.6, gal: 4.8, daur: 4.8, dani: 4.6, aseke: 4.6, ulzhan: 4.8 }[F.id];
 
     if (F.id === 'asik') {
-      if (t < 0.7) { W.fpose = 'win'; if (once('wh', 0.1)) { this._pop('ФЬЮТЬ!', W.x, 210, '#ffffff', 18); AudioSys.play('menu_select'); } }
+      if (t < 0.7) { W.fpose = 'win'; if (once('wh', 0.1)) { this._pop('ФЬЮТЬ!', W.x, 210, '#ffffff', 18); this._snd('menu_select'); } }
       else if (t < 2.1) {
         const ph = Math.floor((t - 0.7) / 0.11);
         W.fpose = ph % 2 ? 'cross' : 'jab';
         if (ph !== F.ph) {
           F.ph = ph; const h = head();
-          this._bleed(h.x, h.y - Utils.rand(0, 40), 14, W.dir, 0.9); AudioSys.play('punch', 0.8); this.shake = 5;
+          this._bleed(h.x, h.y - Utils.rand(0, 40), 14, W.dir, 0.9); this._snd('punch', 0.8); this.shake = 5;
           L.fpose = { ...KPOSE.hit, head: -0.6 + Math.random() * 0.4 };
           L.x += W.dir * 2;
         }
@@ -965,12 +1186,12 @@ class SamsaKombat {
           fx.noHead = true;
           this._gib(h.x, h.y, W.dir * 180, 980, 'head', null, 14, L.id);
           this._bleed(h.x, h.y - 10, 140, W.dir, 1.3);
-          AudioSys.play('tank_hit'); this.shake = 16; this.hitstop = 0.12;
+          this._snd('tank_hit'); this.shake = 16; this.hitstop = 0.12;
           L.fpose = 'dizzy';
         }
       }
       if (t > 2.2 && t < 3.6 && !fx.down) for (let i = 0; i < 4; i++) this.blood.push({ x: L.x + L.dir * 4, y: 140, vx: Utils.rand(-70, 70), vy: Utils.rand(420, 820), s: Utils.rand(2, 4.5), c: Math.random() < 0.5 ? '#c00818' : '#ff2030' });
-      if (once('fall', 3.3)) { fx.down = true; L.fpose = 'dizzy'; L.frot = 1.5; this._dust(L.x); AudioSys.play('tank_hit', 0.5); }
+      if (once('fall', 3.3)) { fx.down = true; L.fpose = 'dizzy'; L.frot = 1.5; this._dust(L.x); this._snd('tank_hit', 0.5); }
       if (t > 3.4) W.fpose = 'win';
     }
 
@@ -982,8 +1203,8 @@ class SamsaKombat {
         if (Math.random() < 0.4) { const b = head(); this._bleed(L.x, Utils.rand(60, 150), 2, -L.dir, 0.4); }
         L.fpose = { ...KPOSE.hit, fs: Math.sin(t * 20) * 1.2, bs: Math.cos(t * 17) * 1.2, head: -0.4 + Math.sin(t * 12) * 0.3 };
         fx.burn = Math.min(1, (t - 0.3) / 1.6);
-        if (once('fs', 0.3)) AudioSys.play('throw');
-        if (Math.floor(t * 5) !== F.snd) { F.snd = Math.floor(t * 5); AudioSys.play('player_hurt', 0.4); }
+        if (once('fs', 0.3)) this._snd('throw');
+        if (Math.floor(t * 5) !== F.snd) { F.snd = Math.floor(t * 5); this._snd('player_hurt', 0.4); }
       }
       if (t > 0.5 && t < 3.3) for (let i = 0; i < 3; i++) this._spark(L.x + Utils.rand(-18, 18), Utils.rand(10, 170), Utils.rand(-20, 20), Utils.rand(80, 220), 0.5, 'fire');
       if (once('skel', 2.3)) { fx.skeleton = true; fx.burn = 0; L.fpose = 'dizzy'; this._pop('ДО КОСТЕЙ!', L.x, 220, '#ff9a3a', 16); }
@@ -992,7 +1213,7 @@ class SamsaKombat {
         for (let i = 0; i < 9; i++) this._gib(L.x + Utils.rand(-10, 10), Utils.rand(40, 150), Utils.rand(-160, 160), Utils.rand(100, 420), i === 0 ? 'skull' : 'bone', '#f4efe0', i === 0 ? 12 : Utils.rand(8, 14));
         this.marks.push({ kind: 'ash', x: L.x });
         for (let i = 0; i < 30; i++) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(0, 100), Utils.rand(-40, 40), Utils.rand(20, 120), 1.4, 'dust');
-        AudioSys.play('tank_hit', 0.6);
+        this._snd('tank_hit', 0.6);
       }
     }
 
@@ -1012,7 +1233,7 @@ class SamsaKombat {
           this.tracer = { x0: h.x + W.dir * 14, y0: h.y, x1: L.x, y1: hy, t: 0.05 };
           this._spark(h.x + W.dir * 16, h.y, 0, 0, 0.06, 'flash');
           this._bleed(L.x - W.dir * 4, hy, 7, W.dir, 0.8);
-          if (n % 2 === 0) AudioSys.play('shoot_uzi', 0.6);
+          if (n % 2 === 0) this._snd('shoot_uzi', 0.6);
           L.fpose = { ...KPOSE.hit, lean: -0.3 + Math.sin(t * 30) * 0.25, head: -0.5 + Math.cos(t * 26) * 0.3, fs: Math.sin(t * 22), bs: Math.cos(t * 19) };
           L.x += W.dir * 0.6; this.shake = 3;
         }
@@ -1026,7 +1247,7 @@ class SamsaKombat {
       if (t < 0.5 && Math.random() < 0.6) this._spark(W.x + Utils.rand(-20, 20), Utils.rand(10, 170), 0, Utils.rand(20, 80), 0.6, 'shadow');
       if (once('cl', 0.5)) {
         F.clones = [{ x: L.x - 80, z: 0, dir: 1 }, { x: L.x + 80, z: 0, dir: -1 }, { x: L.x - L.dir * 30, z: 200, dir: -L.dir }];
-        AudioSys.play('stun');
+        this._snd('stun');
       }
       if (F.clones) {
         F.clones.forEach((c, i) => {
@@ -1035,13 +1256,13 @@ class SamsaKombat {
           if (i === 2) c.z = Math.max(0, 200 - Math.max(0, t - 0.6) * 300);
           if (once('s' + i, at + 0.06)) {
             this.slash = { x: L.x, y: 100, a: i === 2 ? 1.57 : (c.dir > 0 ? -0.6 : 0.6), t: 0.18 };
-            this._bleed(L.x, Utils.rand(80, 150), 40, c.dir, 1); AudioSys.play('melee_swing'); AudioSys.play('punch'); this.shake = 6;
+            this._bleed(L.x, Utils.rand(80, 150), 40, c.dir, 1); this._snd('melee_swing'); this._snd('punch'); this.shake = 6;
             L.fpose = { ...KPOSE.hit, lean: -0.3 * c.dir * L.dir };
           }
         });
         if (t > 2) F.clones = null;
       }
-      if (once('cut', 1.85)) { fx.cut = { dx: 0, dy: 0, rot: 0 }; AudioSys.play('tank_hit'); this.shake = 12; this._bleed(L.x, 90, 120, 1, 0.8); this._bleed(L.x, 90, 120, -1, 0.8); L.fpose = 'dizzy'; }
+      if (once('cut', 1.85)) { fx.cut = { dx: 0, dy: 0, rot: 0 }; this._snd('tank_hit'); this.shake = 12; this._bleed(L.x, 90, 120, 1, 0.8); this._bleed(L.x, 90, 120, -1, 0.8); L.fpose = 'dizzy'; }
       if (fx.cut) {
         const c = fx.cut, k = Math.min(1, (t - 1.85) / 0.7);
         c.dx = k * 22; c.dy = k * k * 30; c.rot = k * 1.2;
@@ -1059,7 +1280,7 @@ class SamsaKombat {
         L.fpose = { ...KPOSE.hit, fs: Utils.rand(-1, 2), bs: Utils.rand(-1, 2), head: Utils.rand(-0.6, 0.3), lean: Utils.rand(-0.4, 0.1) };
         L.shakeX = Utils.rand(-3, 3);
         if (Math.random() < 0.5) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(20, 170), Utils.rand(-120, 120), Utils.rand(-60, 160), 0.25, 'zap');
-        if (Math.floor(t * 2.5) !== F.snd) { F.snd = Math.floor(t * 2.5); AudioSys.play('stun', 0.7); }
+        if (Math.floor(t * 2.5) !== F.snd) { F.snd = Math.floor(t * 2.5); this._snd('stun', 0.7); }
         F.pct = Math.min(99, Math.round((t - 0.4) / 2.2 * 100));
       }
       if (once('boom', 2.6)) { fx.xray = false; L.shakeX = 0; F.pct = null; this._explode(L, W.dir, true); this._pop('ОШИБКА 404', L.x, 200, '#05d9e8', 20); }
@@ -1082,15 +1303,15 @@ class SamsaKombat {
         fx.squash = 0.07; L.fpose = 'stance';
         this._bleed(L.x, 6, 180, 1, 1.1); this._bleed(L.x, 6, 180, -1, 1.1);
         for (let i = 0; i < 40; i++) this._pool(L.x + Utils.rand(-80, 80), 6);
-        AudioSys.play('tank_hit'); AudioSys.play('player_death', 0.6); this.shake = 22; this.hitstop = 0.15;
+        this._snd('tank_hit'); this._snd('player_death', 0.6); this.shake = 22; this.hitstop = 0.15;
       }
       if (once('mark', 2.9)) this.marks.push({ kind: 'stamp', x: L.x });
       if (t > 3.6) F.stamp = null;
     }
 
-    if (t > D * 0.78 && once('FT', D * 0.78)) { this._banner('ФАТАЛИТИ!', KF[F.id].fatality, '#ff1020', 99, true); AudioSys.play('player_death'); }
+    if (t > D * 0.78 && once('FT', D * 0.78)) { this._banner('ФАТАЛИТИ!', KF[F.id].fatality, '#ff1020', 99, true); this._snd('player_death'); }
     if (t > D + 0.8 && this.phase === 'fatality') {
-      this._endMatch(W, true);
+      this._replay = true; this._endMatch(W, true); this._replay = false;   // клиент доигрывает фаталити сам
       this.banner = { text: 'ФАТАЛИТИ!', sub: `${W.def.name} ПОБЕЖДАЕТ`, col: '#ff1020', dur: 99, t: 1, big: true };
       AudioSys.playMusic('/static/audio/menu_music.mp3');
     }
@@ -1104,7 +1325,7 @@ class SamsaKombat {
     this._gib(L.x, 150, dir * 220, 900, 'head', null, 14, L.id);
     this._bleed(L.x, 100, 260, 1, 1.4); this._bleed(L.x, 100, 260, -1, 1.4);
     if (pixels) for (let i = 0; i < 60; i++) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(20, 170), Utils.rand(-300, 300), Utils.rand(-100, 400), 1.2, 'pixel');
-    AudioSys.play('tank_hit'); AudioSys.play('enemy_death');
+    this._snd('tank_hit'); this._snd('enemy_death');
     this.shake = 20; this.hitstop = 0.12;
   }
 
@@ -1294,9 +1515,19 @@ class SamsaKombat {
   }
 
   _drawHud(ctx, w, h) {
-    const s = Math.min(1, w / 960), bw = Math.min(380, w * 0.36), bh = 18 * s + 4, top = 16 * s;
+    const s = Math.min(1, w / 960), bh = 18 * s + 4, top = 16 * s, ps = Math.round(bh * 2 + 10);
+    const bw = Math.min(360, w * 0.37 - ps);
     for (let i = 0; i < 2; i++) {
-      const f = this.f[i], x = i === 0 ? 16 : w - 16 - bw;
+      const f = this.f[i], x = i === 0 ? 16 + ps + 8 : w - 16 - ps - 8 - bw;
+      // портрет бойца
+      const px = i === 0 ? 16 : w - 16 - ps, py = top - 4;
+      ctx.fillStyle = '#0a0612'; ctx.fillRect(px - 3, py - 3, ps + 6, ps + 6);
+      ctx.save(); ctx.beginPath(); ctx.rect(px, py, ps, ps); ctx.clip();
+      ctx.fillStyle = f.def.color + '44'; ctx.fillRect(px, py, ps, ps);
+      this._face(ctx, f.id, px, py, ps, ps, this.t, i === 1);
+      if (f.hp <= 0) { ctx.fillStyle = 'rgba(160,0,10,0.45)'; ctx.fillRect(px, py, ps, ps); }
+      ctx.restore();
+      ctx.strokeStyle = f.def.color; ctx.lineWidth = 2; ctx.strokeRect(px - 1, py - 1, ps + 2, ps + 2);
       ctx.fillStyle = '#0a0612'; ctx.fillRect(x - 3, top - 3, bw + 6, bh + 6);
       ctx.fillStyle = '#5a0a0e'; ctx.fillRect(x, top, bw, bh);
       const fr = (v) => Math.max(0, v) / 100 * bw;
@@ -1309,7 +1540,7 @@ class SamsaKombat {
       ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x, top + 2, bw, 2);
       ctx.font = `bold ${Math.round(14 * s + 2)}px "Courier New", monospace`; ctx.textAlign = i === 0 ? 'left' : 'right'; ctx.textBaseline = 'top';
       ctx.lineWidth = 3; ctx.strokeStyle = '#000';
-      const nm = f.def.name + (this._isHuman(i) ? '' : ' (CPU)');
+      const nm = f.def.name + (this.net && this.netNames ? ` · ${this.netNames[i]}` : this._isHuman(i) ? '' : ' (CPU)');
       ctx.strokeText(nm, i === 0 ? x : x + bw, top + bh + 6); ctx.fillStyle = f.def.color; ctx.fillText(nm, i === 0 ? x : x + bw, top + bh + 6);
       // победы — самсы
       for (let j = 0; j < K_WINS; j++) {
@@ -1337,7 +1568,7 @@ class SamsaKombat {
       ctx.font = '11px "Courier New", monospace'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
       const line = this.twoP
         ? 'И1: WASD, J рука, K нога, L блок, I приём, F фаталити   •   И2: стрелки, «,» рука, «.» нога, «/» блок, «;» приём, «\'» фаталити'
-        : 'A/D — ход   W — прыжок   S — присед   J — рука   K — нога   L — блок   I — приём   F — фаталити   (присед+J — апперкот, присед+K — подсечка)';
+        : 'A/D — ход (дважды — рывок)   W — прыжок   S — присед   J — рука   K — нога   L — блок   I — приём   F — фаталити   (присед+J — апперкот, присед+K — подсечка)';
       ctx.fillText(line, w / 2, h - 10, w - 20);
     }
   }
@@ -1383,11 +1614,15 @@ class SamsaKombat {
     ctx.textBaseline = 'alphabetic';
   }
 
-  _drawOverMenu(ctx, w, h) { this._menuButtons(ctx, w, h, ['РЕВАНШ', 'ДРУГИЕ БОЙЦЫ', 'В МЕНЮ'], this.overSel); }
+  _drawOverMenu(ctx, w, h) {
+    this._menuButtons(ctx, w, h, this._overLabels(), this.overSel);
+    if (this.net && this.net.role === 'client') { ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillText('реванш или выбор бойцов — за хостом', w / 2, h * 0.5 - 12); }
+  }
 
   _drawPause(ctx, w, h) {
-    ctx.fillStyle = 'rgba(4,2,10,0.7)'; ctx.fillRect(0, 0, w, h);
-    this.game.menu.glowText(ctx, 'ПАУЗА', w / 2, h * 0.36, '#ffd319', Math.min(48, w * 0.07), 'center', 18);
-    this._menuButtons(ctx, w, h, ['ПРОДОЛЖИТЬ', 'ВЫЙТИ В МЕНЮ'], this.pauseSel);
+    ctx.fillStyle = this.net ? 'rgba(4,2,10,0.45)' : 'rgba(4,2,10,0.7)'; ctx.fillRect(0, 0, w, h);
+    this.game.menu.glowText(ctx, this.net ? 'МЕНЮ' : 'ПАУЗА', w / 2, h * 0.36, '#ffd319', Math.min(48, w * 0.07), 'center', 18);
+    this._menuButtons(ctx, w, h, ['ПРОДОЛЖИТЬ', this.net ? 'В ЛОББИ' : 'ВЫЙТИ В МЕНЮ'], this.pauseSel);
+    if (this.net) { ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#c8c2e0'; ctx.fillText('сетевой бой не останавливается', w / 2, h * 0.36 + 34); }
   }
 }

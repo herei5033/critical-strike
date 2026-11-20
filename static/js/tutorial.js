@@ -126,7 +126,7 @@ const TUTORIALS = [
       T_HEAL,
       T_GRENADE,
       { say: [
-        ['ereke', 'Твой навык — F, КЛОНЫ. Три теневых Дани держатся рядом пять секунд и стреляют сами.'],
+        ['ereke', 'Твой навык — F, КЛОНЫ. Три теневых Дани с пистолетами держатся рядом пять секунд и стреляют сами. Хрупкие: одно попадание — и нет клона.'],
         ['dani', 'Наконец-то кто-то поработает вместо меня.'],
         ['ereke', 'У них по два сердца и пистолет. Перезарядка — десять секунд.'],
       ] },
@@ -140,15 +140,15 @@ const TUTORIALS = [
           return T.track.clones && !T.alive();
         } },
       { say: [
-        ['ereke', 'А теперь главное. Каждые 10 убийств появляется ИДЕАЛЬНЫЙ КЛОН: шесть сердец, M4 с глушителем.'],
-        ['ereke', 'Он ходит рядом, пока жив, и сам лечится самсой, если ранен.'],
+        ['ereke', 'А теперь главное. Каждые 10 убийств появляется ИДЕАЛЬНЫЙ КЛОН: три сердца, M4 с глушителем.'],
+        ['ereke', 'Он воюет рядом двенадцать секунд и сам лечится самсой, если ранен. Враги бьют клонов так же, как тебя.'],
         ['dani', 'Идеальный — значит, весь в меня.'],
       ] },
       { hint: 'Заряд почти полный (9/10). Убейте одну мишень — появится ИДЕАЛЬНЫЙ КЛОН.', keys: ['ЛКМ'],
         setup: (T, g, p) => { p.charge = MODE_KILLS - 1; T.dummy(4, 0.5, 0.3); }, goal: (T, g) => g.allies.some(a => a.kind === 'perfect' && !a.dead) },
       { hint: 'Клон ранен — он сам найдёт самсу. Подождите, пока он подлечится.',
-        setup: (T, g) => { const c = g.allies.find(a => a.kind === 'perfect'); if (c) c.hp = 3; T.item(4, 0.75, 0.75, 'health'); },
-        goal: (T, g) => { const c = g.allies.find(a => a.kind === 'perfect' && !a.dead); return !!c && c.hp >= 4; } },
+        setup: (T, g) => { const c = g.allies.find(a => a.kind === 'perfect'); if (c) { c.hp = 1; c.life = 60; } T.item(4, 0.75, 0.75, 'health'); },
+        goal: (T, g) => { const c = g.allies.find(a => a.kind === 'perfect' && !a.dead); return !c || c.hp >= 2; } },
       { say: [
         ['ereke', 'Полигон пройден. Свободен, Данияр. На пару не опаздывай.'],
         ['dani', 'Агай, у меня сегодня как раз короткий день.'],
@@ -289,6 +289,7 @@ class Tutorial {
     if (kind === 'health') p = new Pickup(s.x, s.y, null, true);
     else if (kind === 'armor') { p = new Pickup(s.x, s.y, null); p.isArmor = true; }
     else p = new Pickup(s.x, s.y, makeWeapon(kind));
+    p._levelItem = true;
     this.g.pickups.push(p);
     return p;
   }

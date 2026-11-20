@@ -108,7 +108,7 @@ class CoopUI {
 
   lobbyButtons() {
     const b = [];
-    if (this.isHost) b.push('НАЧАТЬ КОРПОРАТИВ');
+    if (this.isHost) b.push('НАЧАТЬ КОРПОРАТИВ', 'SAMSA KOMBAT');
     b.push('НАПИСАТЬ В ЧАТ', 'ВЫЙТИ ИЗ КОМНАТЫ');
     return b;
   }
@@ -179,6 +179,7 @@ class CoopUI {
       this.broadcastLobby();
     } else if (m.t === 'chat') this.addChat(p.name, m.text);
     else if (m.t === 'bye') this.net.drop(pid, 'bye');
+    else if (m.t && m.t[0] === 'K') { if (this.game.kombat.net) this.game.kombat.onNet(m); }
     else if (this.game.coop) this.game.coop.onNet(pid, m);
   }
 
@@ -189,6 +190,7 @@ class CoopUI {
     const p = this.players[i];
     this.players.splice(i, 1);
     if (this.game.coop) this.game.coop.onLeft(pid);
+    if (this.game.kombat.net) this.game.kombat._backToLobby('Соперник отключился');
     this.net.broadcast({ t: 'left', pid });
     this.addChat('', this.inMatch ? `${p.name} покинул игру` : `${p.name} вышел из комнаты`, true);
     this.broadcastLobby();
@@ -269,12 +271,15 @@ class CoopUI {
       g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed }, this.net);
     }
     else if (m.t === 'toLobby') { if (g.coop) g.leaveMatch(); }
+    else if (m.t === 'Kstart') { this.inMatch = true; g.kombat.openNet('client', 'host', m.names); }
+    else if (m.t && m.t[0] === 'K') { if (g.kombat.net) g.kombat.onNet(m); }
     else if (m.t === 'left') { if (g.coop) g.coop.onLeft(m.pid); }
     else if (g.coop) g.coop.onNet('host', m);
   }
 
   _hostGone(reason) {
     const g = this.game;
+    if (g.kombat.net) { g.kombat.net = null; g.kombat.screen = 'select'; }
     this.reset();
     if (g.coop) { g.coop.closed = true; g.coop.closeReason = reason; }
     else { this.screen = 'home'; this.flash(reason); if (g.state !== 'coop' && g.state !== 'menu') this.open(); }
@@ -318,6 +323,18 @@ class CoopUI {
     this.game.leaveMatch();
     this.addChat('', 'Хост начал корпоратив заново', true);
     this._start();
+  }
+
+  // Хост: файтинг один на один с напарником по той же P2P-связи
+  _startKombat() {
+    if (!this.isHost || this.inMatch) return;
+    if (this.players.length !== 2) { this.flash('Для SAMSA KOMBAT нужно ровно 2 игрока в комнате'); return; }
+    const other = this.players.find(p => !p.host);
+    const names = [Nick.get() || 'ХОСТ', other.name];
+    this.inMatch = true;
+    this.net.broadcast({ t: 'Kstart', names });
+    this.addChat('', `SAMSA KOMBAT: ${names[0]} против ${names[1]}`, true);
+    this.game.kombat.openNet('host', other.pid, names);
   }
 
   backToLobby() {
@@ -393,6 +410,7 @@ class CoopUI {
       const name = btns[act];
       AudioSys.play('menu_select');
       if (name === 'НАЧАТЬ КОРПОРАТИВ') this._start();
+      else if (name === 'SAMSA KOMBAT') this._startKombat();
       else if (name === 'НАПИСАТЬ В ЧАТ') this._openChat();
       else this.leave();
     }
@@ -1044,6 +1062,11 @@ class CoopSession {
     if (!p) return;
     if (e.t === 'dmg') { p.takeDamage(e.a || 1, e.c >= 0 ? { kind: DEATH_KINDS[e.c], angle: e.g } : undefined); this.game.shake = Math.max(this.game.shake, 0.6); this.game.chromaticOffset = 10; }
     else if (e.t === 'heal') { if (p.hp < p.maxHp) { p.hp++; AudioSys.play('pickup_health'); } }
+    else if (e.t === 'adm') {
+      // враг хоста ударил моего клона
+      const a = this.game.allies.filter(q => !q.dead)[e.i];
+      if (a) a.hit(1);
+    }
     else if (e.t === 'give' && e.fx !== undefined) {
       // арсенал: ствол летит к Дауру и попадает в руку по прилёту
       this.game.pulls.push({ w: makeWeapon(e.w, e.am), sx: e.fx, sy: e.fy, x: e.fx, y: e.fy, t: 0, target: p, equip: true });
@@ -1334,6 +1357,88 @@ class CoopSession {
       if (P.dead) { ctx.fillStyle = '#ff4060'; ctx.fillText('РАНЕН', cx, cy + 32); }
       ctx.restore();
     }
+  }
+
+  // ---------- стрелки к напарникам за краем экрана ----------
+  drawTeamArrows(ctx, W, H, scale) {
+    const g = this.game, cam = g.cam;
+    if (!cam) return;
+    for (const rp of this.remotes.values()) {
+      if (!rp.hasState) continue;
+      const sx = (rp.x + 9 - cam.x) * cam.zoom, sy = (rp.y + 9 - cam.y) * cam.zoom;
+      if (sx > 16 && sy > 16 && sx < W - 16 && sy < H - 16) continue;
+      const cx = W / 2, cy = H / 2, a = Math.atan2(sy - cy, sx - cx);
+      const k = Math.min((W / 2 - 34) / Math.abs(Math.cos(a) || 1e-6), (H / 2 - 34) / Math.abs(Math.sin(a) || 1e-6));
+      const ex = Utils.clamp(cx + Math.cos(a) * k, 30, W - 30), ey = Utils.clamp(cy + Math.sin(a) * k, (g._hudBottom || 90 * scale) + 50 * scale, H - 30);   // не залезать на панели HUD
+      const col = rp.dead ? '#ff4060' : SLOT_COLORS[rp.slot % 3];
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.save(); ctx.rotate(a);
+      ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-8, -10); ctx.lineTo(-4, 0); ctx.lineTo(-8, 10); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      // имя и расстояние
+      const dist = Math.round(Math.hypot(rp.x - g.player.x, rp.y - g.player.y) / TILE);
+      ctx.font = `bold ${Math.round(10 * scale + 1)}px "Courier New", monospace`; ctx.textAlign = 'center';
+      const tx = -Math.cos(a) * 22, ty = -Math.sin(a) * 22 + 4;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      const label = `${rp.name}${rp.dead ? ' ✚' : ''} ${dist}м`;
+      ctx.strokeText(label, tx, ty); ctx.fillStyle = col; ctx.fillText(label, tx, ty);
+      ctx.restore();
+    }
+  }
+
+  // ---------- карта уровня (кнопка M) ----------
+  _mapImage() {
+    const L = this.game.level;
+    if (this._mapFor === L && this._mapCanvas) return this._mapCanvas;
+    const c = document.createElement('canvas');
+    c.width = L.cols; c.height = L.rows;
+    const x = c.getContext('2d');
+    const img = x.createImageData(L.cols, L.rows);
+    for (let r = 0; r < L.rows; r++) for (let q = 0; q < L.cols; q++) {
+      const v = L.grid[r] ? L.grid[r][q] : T_OUT, i = (r * L.cols + q) * 4;
+      const col = v === T_WALL ? [150, 140, 190] : v === T_FLOOR ? [44, 36, 70] : [14, 10, 22];
+      img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    this._mapCanvas = c; this._mapFor = L;
+    return c;
+  }
+
+  drawMap(ctx, W, H) {
+    const g = this.game, L = g.level;
+    if (!L || !L.grid) return;
+    const M = g.menu, img = this._mapImage();
+    const pad = 40, k = Math.min((W - pad * 2) / L.cols, (H - pad * 2 - 30) / L.rows);
+    const mw = L.cols * k, mh = L.rows * k, mx = W / 2 - mw / 2, my = H / 2 - mh / 2 + 12;
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,2,10,0.78)'; ctx.fillRect(0, 0, W, H);
+    M.panel(ctx, mx - 12, my - 36, mw + 24, mh + 48, '#05d9e8', 0.92);
+    ctx.textAlign = 'left'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
+    ctx.fillText(`КАРТА ЭТАЖА ${this.levelNo}`, mx, my - 14);
+    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px "Courier New", monospace';
+    ctx.fillText(Input.isMobile ? 'КАРТА — закрыть' : 'M — закрыть', mx + mw, my - 14);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, mx, my, mw, mh);
+    const P = (wx, wy) => [mx + wx / TILE * k, my + wy / TILE * k];
+    const t = performance.now() / 1000;
+    // боссы
+    for (const e of g.enemies) if (e.isBoss && !e.dead) { const [x, y] = P(e.cx(), e.cy()); ctx.fillStyle = '#ff2a40'; ctx.fillRect(x - 4, y - 4, 8, 8); }
+    // клоны (свои)
+    for (const a of g.allies) if (!a.dead) { const [x, y] = P(a.cx(), a.cy()); ctx.fillStyle = '#b48aff'; ctx.fillRect(x - 2, y - 2, 4, 4); }
+    const dot = (wx, wy, col, name, dead, me) => {
+      const [x, y] = P(wx, wy), r = (me ? 6 : 5) + (me ? Math.sin(t * 6) * 1.5 : 0);
+      ctx.fillStyle = '#05030a'; ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dead ? '#ff4060' : col; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.font = 'bold 11px "Courier New", monospace'; ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(name + (dead ? ' ✚' : ''), x, y - r - 5);
+      ctx.fillStyle = dead ? '#ff4060' : col; ctx.fillText(name + (dead ? ' ✚' : ''), x, y - r - 5);
+    };
+    for (const rp of this.remotes.values()) if (rp.hasState) dot(rp.x + 9, rp.y + 9, SLOT_COLORS[rp.slot % 3], rp.name, rp.dead, false);
+    const p = g.player;
+    if (p) dot(p.x + 9, p.y + 9, SLOT_COLORS[(this.me.slot || 0) % 3], 'ВЫ', p.dead, true);
+    ctx.restore();
   }
 
   // Панель команды: здоровье всех игроков постоянно на экране

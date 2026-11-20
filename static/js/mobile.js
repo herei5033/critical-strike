@@ -82,6 +82,7 @@
   tapBtn('btn-grenade', () => Input.simulatePress('KeyG'));
   tapBtn('btn-kick', () => Input.simulatePress('KeyF'));
   tapBtn('btn-ult', () => Input.simulatePress('KeyE'));
+  tapBtn('btn-map', () => Input.simulatePress('KeyM'));
   tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
   // Samsa Kombat
   floatingStick('zone-fmove', 'stick-fmove', 52,
@@ -116,6 +117,7 @@
     $('mobile-fight-controls').classList.toggle('active', fighting);
     $('fbtn-f').classList.toggle('on', fighting && K.phase === 'finish' && !!K.finishW && K.finishW.side === 0);
     $('mobile-menu-controls').classList.toggle('active', !playing && !fighting && !TextField.active && g.state !== 'loading' && g.state !== 'levelLoad');
+    document.body.classList.toggle('in-coop', !!g.coop);
     const p = g.player;
     if (!playing || !p) return;
     document.body.dataset.hero = p.charId;
