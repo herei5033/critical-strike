@@ -18,6 +18,9 @@
     <input id="text-input" type="text" autocomplete="off" spellcheck="false">
   </div>
 
+  <!-- Переключатель Critical Strike / DLC «Расследование Аулета» -->
+  <button id="mode-btn" onclick="window.switchMode(window.AULET && AULET.active ? 'cs' : 'aulet')"></button>
+
   <!-- Кнопка фуллскрина -->
   <button id="fs-btn" title="Полный экран">⛶</button>
 
@@ -106,6 +109,13 @@
   <script src="{{ url_for('static', filename='js/kombat.js') }}"></script>
   <script src="{{ url_for('static', filename='js/game.js') }}"></script>
   <script src="{{ url_for('static', filename='js/mobile.js') }}"></script>
+  <!-- DLC «Расследование Аулета» -->
+  <script src="{{ url_for('static', filename='js/aulet/engine.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/aulet/art.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/aulet/props.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/aulet/music.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/aulet/story_ch0.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/aulet/story_ch1.js') }}"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
