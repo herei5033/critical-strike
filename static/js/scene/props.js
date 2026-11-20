@@ -1,5 +1,5 @@
 // =====================================================================
-// РАССЛЕДОВАНИЕ АУЛЕТА — мебель, предметы, город.
+// Движок сцен — мебель, предметы, город.
 // w,h — основание в клетках; up — сколько пикселей рисуется выше основания;
 // solid — твёрдая часть [dx,dy,w,h] (null — проходимо); z — сдвиг глубины.
 // =====================================================================
@@ -224,7 +224,7 @@
     R(c, x + 23, ly - 12, 2, 8, '#ffe08a');
     R(c, x + 15, ly - 17, 18, 3, '#3a3a3e'); R(c, x + 21, ly - 20, 6, 3, '#2a2a2e');
   } };
-  P.corpse = { w: 1, h: 1, up: 6, draw(c, x, y, o) { Art.body(c, AuletStory.chars.kamila.look, x + 8, y + 14); } };
+  P.corpse = { w: 1, h: 1, up: 6, draw(c, x, y, o) { Art.body(c, o.look || { skin: '#d8ae90', hair: '#1a1416', coat: '#9a8462', pants: '#2a2a30' }, x + 8, y + 14); } };
   P.vent = { w: 1, h: 1, up: 8, draw(c, x, y) { R(c, x + 4, y - 4, 8, 16, '#5c5e60'); R(c, x + 3, y - 8, 10, 4, '#6e7072'); R(c, x + 4, y - 4, 8, 1, '#2a2a2c'); R(c, x + 10, y - 4, 2, 16, '#4a4c4e'); } };
   P.antenna = { w: 1, h: 1, up: 24, draw(c, x, y) { R(c, x + 7, y - 24, 1, 36, '#7a7e82'); R(c, x + 2, y - 20, 12, 1, '#7a7e82'); R(c, x + 4, y - 14, 8, 1, '#7a7e82'); R(c, x + 5, y + 10, 5, 3, '#4a4c4e'); } };
   P.tank = { w: 2, h: 2, up: 12, draw(c, x, y) {
@@ -317,6 +317,48 @@
   } };
   P.chair_out = { w: 1, h: 1, up: 6, draw(c, x, y) { R(c, x + 3, y - 4, 10, 7, '#3a5a4a'); R(c, x + 3, y + 3, 10, 5, '#4a6a5a'); R(c, x + 4, y + 8, 1, 6, '#2a2a2a'); R(c, x + 11, y + 8, 1, 6, '#2a2a2a'); } };
   P.pot_ash = { w: 1, h: 1, up: 0, solid: null, walk: true, draw(c, x, y) { R(c, x + 4, y + 7, 8, 6, '#6a3a2a'); R(c, x + 5, y + 7, 6, 2, '#3a3a3a'); R(c, x + 6, y + 6, 4, 1, '#d8d0c0'); R(c, x + 9, y + 5, 3, 1, '#d8d0c0'); } };
+  // ---------- разное: подъезд, крыша, допросная ----------
+  P.liftdoor = { w: 1, h: 1, solid: null, z: -150, draw(c, x, y) {
+  R(c, x + 1, y, 14, 16, '#2a2a2e'); R(c, x + 2, y + 1, 5, 15, '#5a5c60'); R(c, x + 9, y + 1, 5, 15, '#5a5c60'); R(c, x + 7, y + 1, 2, 15, '#1a1a1e');
+  R(c, x + 3, y + 5, 3, 1, '#d8d8d0'); R(c, x + 10, y + 7, 3, 1, '#d8d8d0');
+} };
+  P.flood = { w: 1, h: 1, up: 14, solid: null, draw(c, x, y, o, t) {
+  R(c, x + 7, y - 6, 2, 18, '#3a3c40'); R(c, x + 3, y + 10, 10, 2, '#2a2c30'); R(c, x + 3, y + 12, 1, 3, '#2a2c30'); R(c, x + 12, y + 12, 1, 3, '#2a2c30');
+  R(c, x + 2, y - 14, 10, 8, '#2a2c30'); R(c, x + 3, y - 13, 8, 6, '#f0f4ff');
+} };
+  P.itable = { w: 2, h: 1, up: 10, draw(c, x, y, o, t) {
+  R(c, x, y - 2, 32, 10, '#6a6e72'); R(c, x, y - 2, 32, 1, '#8a8e92'); R(c, x, y + 8, 32, 2, '#3a3e42');
+  R(c, x + 2, y + 10, 2, 5, '#2a2e32'); R(c, x + 28, y + 10, 2, 5, '#2a2e32');
+  R(c, x + 3, y - 1, 9, 6, '#e8e2d0'); R(c, x + 4, y + 1, 6, 1, '#555'); R(c, x + 4, y + 3, 4, 1, '#555');   // протокол
+  R(c, x + 14, y, 6, 3, '#7a8a8a'); R(c, x + 15, y, 4, 1, '#ddd');                                        // пепельница
+  R(c, x + 23, y - 9, 2, 8, '#2a2a2a'); R(c, x + 20, y - 12, 8, 4, '#3a3a3a'); R(c, x + 21, y - 8, 6, 1, '#ffe7a8');   // лампа
+  R(c, x + 26, y - 4, 3, 5, 'rgba(160,190,210,0.7)');                                                    // стакан воды
+} };
+  P.mirrorwall = { w: 3, h: 1, solid: null, z: -150, draw(c, x, y, o, t) {
+  R(c, x + 1, y + 1, 46, 12, '#3a3a36'); R(c, x + 2, y + 2, 44, 10, '#0e1012');
+  R(c, x + 6, y + 3, 10, 1, 'rgba(255,255,255,0.12)'); R(c, x + 30, y + 8, 6, 1, 'rgba(255,255,255,0.08)');
+} };
+  P.wallclock = { w: 1, h: 1, solid: null, z: -150, draw(c, x, y) {
+  R(c, x + 4, y + 2, 8, 8, '#d8d2c0'); R(c, x + 5, y + 3, 6, 6, '#efe9d8'); R(c, x + 8, y + 4, 1, 3, '#1a1a1a'); R(c, x + 8, y + 6, 2, 1, '#1a1a1a');
+} };
+  P.answerer = { w: 1, h: 1, solid: null, z: 3, draw(c, x, y, o, t, E) {
+  R(c, x + 3, y - 3, 10, 5, '#1e1e22'); R(c, x + 4, y - 2, 4, 3, '#2e2e34');
+  const heard = E && E.S && E.S.flags.heard_vm;
+  R(c, x + 10, y - 2, 2, 2, !heard && Math.sin(t * 5) > 0 ? '#ff3a2a' : '#4a1a1a');
+} };
+  P.gascyl = { w: 1, h: 1, up: 6, draw(c, x, y) {
+  R(c, x + 4, y - 4, 8, 16, '#b03a2a'); R(c, x + 5, y - 6, 6, 2, '#7a2a1a'); R(c, x + 7, y - 8, 2, 2, '#888'); R(c, x + 4, y + 2, 8, 1, '#8a2a1a');
+  R(c, x + 12, y + 6, 4, 4, '#7a8a9a'); R(c, x + 13, y + 5, 2, 1, '#5a6a7a');   // чайник
+} };
+  P.poster = { w: 1, h: 1, solid: null, z: -150, draw(c, x, y) {
+  R(c, x + 1, y + 2, 14, 10, '#d8d2c0'); R(c, x + 2, y + 3, 12, 3, '#2a4a8a'); R(c, x + 3, y + 7, 9, 1, '#555'); R(c, x + 3, y + 9, 7, 1, '#555');
+} };
+  P.graffiti = { w: 2, h: 1, solid: null, z: 30, draw(c, x, y, o) {
+  c.fillStyle = '#c03a3a'; c.font = 'bold 5px monospace'; c.textAlign = 'center';
+  String(o.text || '').split(String.fromCharCode(10)).forEach((l, i) => c.fillText(l, x + 16, y + 20 + i * 6));
+} };
+  P.cat.z = 1;
+
   P.hotspot = { w: 1, h: 1, solid: null, walk: true, draw() {} };
   P.block = { w: 1, h: 1, draw() {} };
 })();

@@ -1,5 +1,5 @@
 // =====================================================================
-// РАССЛЕДОВАНИЕ АУЛЕТА — пиксельная графика.
+// Движок сцен — пиксельная графика.
 // Всё рисуется кодом: тайлы, мебель, город, люди, портреты.
 // Мир 480×270, тайл 16×16. Вид сверху с наклоном (3/4).
 // =====================================================================
@@ -523,112 +523,6 @@ const Art = {
     ctx.drawImage(cv, x, y, 36 * s, 36 * s);
   },
 
-  // игральная кость (для проверок)
-  die(ctx, x, y, s, v, col, rot) {
-    ctx.save(); ctx.translate(x + s / 2, y + s / 2); ctx.rotate(rot || 0);
-    ctx.fillStyle = '#efe6cf'; ctx.fillRect(-s / 2, -s / 2, s, s);
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(-s / 2 + 1, -s / 2 + 1, s - 2, s - 2);
-    ctx.fillStyle = '#1a1414';
-    const p = s * 0.26, P = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] }[v] || [];
-    for (const [a, b] of P) ctx.fillRect(a * p - 1.5, b * p - 1.5, 3, 3);
-    ctx.restore();
-  },
 
-  // символы внутренних голосов
-  voiceGlyph(ctx, v, x, y, size, t) {
-    const col = AVOICE[v].color;
-    ctx.fillStyle = '#08080b'; ctx.fillRect(x - 2, y - 2, size + 4, size + 4);
-    ctx.strokeStyle = col; ctx.lineWidth = 2;
-    ctx.strokeRect(x - 1, y - 1, size + 2, size + 2);
-    const cx = x + size / 2, cy = y + size / 2, r = size * 0.32;
-    ctx.save();
-    ctx.globalAlpha = 0.85 + 0.15 * Math.sin(t * 2);
-    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
-    ctx.beginPath();
-    if (v === 'R') {           // треугольник и точка — геометрия
-      ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r * 0.8); ctx.lineTo(cx - r, cy + r * 0.8); ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy + r * 0.25, 3, 0, 7); ctx.fill();
-    } else if (v === 'I') {    // глаз
-      ctx.moveTo(cx - r, cy); ctx.quadraticCurveTo(cx, cy - r, cx + r, cy); ctx.quadraticCurveTo(cx, cy + r, cx - r, cy); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy, r * 0.32, 0, 7); ctx.fill();
-    } else if (v === 'H') {    // кулак-квадрат с трещиной
-      ctx.strokeRect(cx - r * 0.8, cy - r * 0.8, r * 1.6, r * 1.6);
-      ctx.moveTo(cx - r * 0.8, cy - r * 0.1); ctx.lineTo(cx - r * 0.1, cy + r * 0.2); ctx.lineTo(cx + r * 0.3, cy - r * 0.3); ctx.lineTo(cx + r * 0.8, cy); ctx.stroke();
-    } else {                   // маяк: волны и луч
-      ctx.moveTo(cx - r, cy + r * 0.6); for (let i = 0; i <= 8; i++) ctx.lineTo(cx - r + i * r / 4, cy + r * 0.6 + (i % 2 ? -3 : 3)); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx - 4, cy + r * 0.4); ctx.lineTo(cx - 2, cy - r * 0.8); ctx.lineTo(cx + 2, cy - r * 0.8); ctx.lineTo(cx + 4, cy + r * 0.4); ctx.stroke();
-      const a = t * 1.2;
-      ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.8); ctx.lineTo(cx + Math.cos(a) * r * 1.4, cy - r * 0.8 + Math.sin(a) * r * 0.4); ctx.stroke();
-    }
-    ctx.restore();
-  },
 
-  // ---------------------------------------------------------------
-  // титульная сцена: ночной Актау, дом с маяком, море, дождь
-  // ---------------------------------------------------------------
-  titleScene(c, t) {
-    c.imageSmoothingEnabled = false;
-    const g = c.createLinearGradient(0, 0, 0, 170);
-    g.addColorStop(0, '#04050b'); g.addColorStop(1, '#141a2a');
-    c.fillStyle = g; c.fillRect(0, 0, AW, AH);
-    for (let i = 0; i < 70; i++) { const a = 0.3 + 0.5 * Math.abs(Math.sin(t * 0.5 + i)); c.globalAlpha = a * 0.6; R(c, ah(i, 1) * AW | 0, ah(i, 2) * 120 | 0, 1, 1, '#cdd6ff'); }
-    c.globalAlpha = 1;
-    // дальние дома
-    for (let i = 0; i < 22; i++) {
-      const w = 14 + (ah(i, 3) * 20 | 0), h = 20 + (ah(i, 4) * 40 | 0), x = (i * 23 + (ah(i, 5) * 10 | 0)) % (AW + 20) - 10;
-      R(c, x, 168 - h, w, h, '#0e1119');
-      for (let yy = 168 - h + 3; yy < 164; yy += 5) for (let xx = x + 2; xx < x + w - 2; xx += 4) if (ah(xx, yy) > 0.82) R(c, xx, yy, 2, 2, ah(xx, yy, 1) > 0.5 ? '#c99a4a' : '#6a7fa0');
-    }
-    // дом с маяком
-    const bx = 330, bw = 60, bt = 74;
-    R(c, bx, bt, bw, 168 - bt, '#161a22');
-    for (let yy = bt + 5; yy < 164; yy += 9) for (let xx = bx + 4; xx < bx + bw - 4; xx += 8) {
-      const lit = ah(xx, yy, 7);
-      R(c, xx, yy, 5, 5, lit > 0.75 ? (lit > 0.92 ? '#7aa0c8' : '#d9a650') : '#0b0d12');
-    }
-    // маяк на крыше
-    R(c, bx + 24, bt - 32, 12, 32, '#c9c2b0'); R(c, bx + 24, bt - 24, 12, 4, '#a83a32'); R(c, bx + 24, bt - 12, 12, 4, '#a83a32');
-    R(c, bx + 22, bt - 40, 16, 8, '#2a2a2e'); R(c, bx + 25, bt - 38, 10, 5, '#fff2c0'); R(c, bx + 21, bt - 42, 18, 2, '#3a3a3e');
-    // луч
-    const ang = t * 0.7, lx = bx + 30, ly = bt - 36;
-    c.save(); c.globalCompositeOperation = 'lighter';
-    for (const s of [0, Math.PI]) {
-      const a = ang + s, len = 420;
-      const k = Math.abs(Math.cos(a));
-      const gr = c.createLinearGradient(lx, ly, lx + Math.cos(a) * len, ly + Math.sin(a) * len * 0.25);
-      gr.addColorStop(0, `rgba(255,236,170,${0.32 * (0.4 + k * 0.6)})`); gr.addColorStop(1, 'rgba(255,236,170,0)');
-      c.fillStyle = gr; c.beginPath(); c.moveTo(lx, ly);
-      c.lineTo(lx + Math.cos(a - 0.08) * len, ly + Math.sin(a - 0.08) * len * 0.25);
-      c.lineTo(lx + Math.cos(a + 0.08) * len, ly + Math.sin(a + 0.08) * len * 0.25);
-      c.closePath(); c.fill();
-    }
-    const gl = c.createRadialGradient(lx, ly, 0, lx, ly, 26);
-    gl.addColorStop(0, 'rgba(255,230,160,0.6)'); gl.addColorStop(1, 'rgba(255,230,160,0)');
-    c.fillStyle = gl; c.fillRect(lx - 26, ly - 26, 52, 52);
-    c.restore();
-    // обрыв и море
-    R(c, 0, 168, AW, 8, '#2a261e');
-    for (let x = 0; x < AW; x += 6) R(c, x, 166 + (ah(x, 9) * 3 | 0), 6, 4, '#3a3428');
-    const sg = c.createLinearGradient(0, 176, 0, AH);
-    sg.addColorStop(0, '#0b1724'); sg.addColorStop(1, '#03070c');
-    c.fillStyle = sg; c.fillRect(0, 176, AW, AH - 176);
-    for (let i = 0; i < 90; i++) {
-      const y = 178 + (ah(i, 11) * 90 | 0), x = ((ah(i, 12) * AW + t * (6 + (y - 176) * 0.1)) % (AW + 20)) - 10;
-      R(c, x | 0, y, 3 + (ah(i, 13) * 6 | 0), 1, '#1a3348');
-    }
-    // отражение маяка
-    for (let y = 180; y < AH; y += 3) { c.globalAlpha = 0.25 * (1 - (y - 180) / 90); R(c, lx - 3 + Math.sin(y * 0.4 + t * 2) * 3, y, 6, 1, '#ffe6a0'); }
-    c.globalAlpha = 1;
-    // силуэт на обрыве
-    const sx = 120, sy = 168;
-    R(c, sx - 3, sy - 22, 7, 14, '#07080b'); R(c, sx - 4, sy - 10, 9, 6, '#07080b'); R(c, sx - 2, sy - 4, 2, 4, '#07080b'); R(c, sx + 1, sy - 4, 2, 4, '#07080b');
-    R(c, sx - 2, sy - 28, 5, 6, '#07080b');
-    const sm = (t * 8) % 30;
-    c.globalAlpha = 0.25 * (1 - sm / 30); R(c, sx + 4 + sm * 0.3, sy - 20 - sm, 2, 2, '#9a9a9a'); c.globalAlpha = 1;
-    R(c, sx + 3, sy - 20, 1, 1, '#ff8a3a');
-    // дождь
-    c.strokeStyle = 'rgba(160,180,210,0.22)'; c.beginPath();
-    for (let i = 0; i < 120; i++) { const x = (ah(i, 20) * (AW + 40) - t * 60 + i * 7) % (AW + 40); const y = (ah(i, 21) * AH + t * 240) % AH; c.moveTo(x, y); c.lineTo(x - 2, y + 6); }
-    c.stroke();
-  },
 };

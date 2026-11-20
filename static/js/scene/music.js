@@ -1,10 +1,10 @@
 // =====================================================================
-// РАССЛЕДОВАНИЕ АУЛЕТА — звук.
-// Музыка: если есть static/audio/aulet/<настроение>.mp3 — играет файл,
+// Движок сцен — звук.
+// Музыка: если есть static/audio/scene/<настроение>.mp3 — играет файл,
 // иначе — процедурный нуарный эмбиент (пэд, редкие ноты пианино, ветер и дождь).
 // =====================================================================
 
-const AuletMusic = {
+const SceneMusic = {
   mood: null, on: true, nodes: null, timer: null, fileOk: {},
 
   ctx() { if (!AudioSys.ctx) AudioSys.init(); return AudioSys.ctx; },
@@ -31,7 +31,7 @@ const AuletMusic = {
     this.mood = mood;
     AudioSys.lastTrack = null;
     if (!this.on || !AudioSys.musicEnabled) return;
-    const url = `/static/audio/aulet/${mood}.mp3`;
+    const url = `/static/audio/scene/${mood}.mp3`;
     if (this.fileOk[url] === undefined) {
       this.fileOk[url] = null;
       try { const r = await fetch(url, { method: 'HEAD' }); this.fileOk[url] = r.ok; } catch (e) { this.fileOk[url] = false; }
@@ -130,7 +130,7 @@ const AuletMusic = {
     this.timer = setTimeout(note, 1500);
   },
 
-  volMul() { return window.AULET ? AULET.volK('music') / 0.7 : 1; },
+  volMul() { return window.SCENE ? SCENE.volK('music') / 0.7 : 1; },
   applyVol() {
     const n = this.nodes, ac = this.ctx();
     if (n) n.master.gain.setTargetAtTime(0.32 * (this._mvol || 0.8) * this.volMul(), ac.currentTime, 0.3);
@@ -148,7 +148,7 @@ const AuletMusic = {
 // короткие звуки интерфейса и мира — тоже синтез
 const ASfx = {
   _t: 0,
-  mul() { return window.AULET ? AULET.volK('sfx') : 1; },
+  mul() { return window.SCENE ? SCENE.volK('sfx') : 1; },
   env(type, freq, dur, vol, slide) {
     const ac = AudioSys.ctx;
     if (!ac || !AudioSys.ready) return;

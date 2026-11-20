@@ -222,6 +222,6 @@ body:not(.is-mobile) #mobile-game-controls, body:not(.is-mobile) #mobile-menu-co
 }
 #text-input::placeholder { color: rgba(255, 255, 255, 0.45); }
 
-/* ===== DLC «Расследование Аулета» ===== */
-body.aulet .mobile-overlay { display: none !important; }
-body.aulet #game-container { background: #000; }
+/* ===== Сцены-локации (движок static/js/scene) ===== */
+body.in-scene .mobile-overlay { display: none !important; }
+body.in-scene #game-container { background: #000; }
