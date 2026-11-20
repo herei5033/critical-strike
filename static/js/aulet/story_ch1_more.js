@@ -83,7 +83,7 @@ Object.assign(AuletStory.thoughts, {
 
 // ---------- карта: флешбэк «Допросная № 2, 2019» ----------
 AuletStory.maps.mem2019 = {
-  name: 'Допросная № 2. Март 2019', memory: true, noSmoke: true, music: 'memory', dark: 0.42, tint: '#140c04', zoom: 1.5, selfLight: 40,
+  name: 'Допросная № 2. Март 2019', memory: true, noSmoke: true, music: 'memory', dark: 0.42, tint: '#140c04', zoom: 2, selfLight: 40,
   style: { wall: 'stair', floor: 'lino' },
   doors: { '6,8': 'metal' },
   tiles: [

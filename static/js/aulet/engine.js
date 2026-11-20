@@ -6,7 +6,7 @@
 // Контент (карты и диалоги) — в story_ch*.js, формат описан в story_ch0.js.
 // =====================================================================
 
-const AW = 480, AH = 270, TS = 16;
+const AW = 480, AH = 270, TS = 16, RS = 2;   // RS — во сколько раз мир рисуется точнее базовой сетки
 const AFONT = 'Georgia, "Times New Roman", serif';
 const AMONO = '"Courier New", monospace';
 const ASAVE = 'aulet_save';
@@ -273,8 +273,8 @@ const AULET = {
     if (this.inited) return;
     this.inited = true;
     this.cv = canvas; this.ctx = canvas.getContext('2d');
-    this.lo = aMk(AW, AH); this.lctx = this.lo.getContext('2d');
-    this.dark = aMk(AW, AH); this.dctx = this.dark.getContext('2d');
+    this.lo = aMk(AW * RS, AH * RS); this.lctx = this.lo.getContext('2d');
+    this.dark = aMk(AW * RS, AH * RS); this.dctx = this.dark.getContext('2d');
     this.grain = aMk(240, 136);
     this.toasts = []; this.sel = 0; this.rain = [];
     canvas.addEventListener('wheel', (e) => {
@@ -881,7 +881,7 @@ const AULET = {
   camTY() {
     const z = this.zoom || 1, VH = AH / z, mh = this.map.h * TS;
     if (mh <= VH) return (mh - VH) / 2;
-    return Math.max(0, Math.min(mh - VH, this.pl.y - 8 - VH / 2));
+    return Math.max(0, Math.min(mh - VH, this.pl.y - 8 - VH / 2 + (this.map.def.camOffY || 0)));
   },
   updCam(dt) {
     const k = Math.min(1, dt * 5);
@@ -1187,11 +1187,12 @@ const AULET = {
 
   drawWorld() {
     const c = this.lctx, m = this.map, cam = this.cam, t = this.t, z = this.zoom || 1;
+    c.setTransform(RS, 0, 0, RS, 0, 0);
     c.imageSmoothingEnabled = false;
     c.fillStyle = m.def.void || '#050507'; c.fillRect(0, 0, AW, AH);
     const cx = Math.round(cam.x * z) / z, cy = Math.round(cam.y * z) / z;
     c.save(); c.scale(z, z); c.translate(-cx, -cy);
-    c.drawImage(m.bg, 0, 0);
+    c.drawImage(m.bg, 0, 0, m.w * TS, m.h * TS);
     // море — анимированное
     const x0 = Math.floor(cx / TS) - 1, x1 = x0 + AW / z / TS + 3, y0 = Math.floor(cy / TS) - 1, y1 = y0 + AH / z / TS + 3;
     for (const [sx, sy] of m.sea) if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) Art.sea(c, sx, sy, t, m);
@@ -1200,6 +1201,12 @@ const AULET = {
     for (const p of m.props) {
       if (p.if && !this.cond(p.if)) continue;
       const P = Art.props[p.k]; if (!P) continue;
+      // мягкая тень под мебелью
+      if (!P.walk && !p.walk && P.solid !== null && (P.z || 0) > -100 && !P.noShadow) {
+        const w = (p.w || P.w) * TS, by = (p.y + P.h) * TS;
+        c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(p.x * TS + 1, by - 2, w - 2, 3);
+        c.fillStyle = 'rgba(0,0,0,0.12)'; c.fillRect(p.x * TS - 1, by - 1, w + 2, 3);
+      }
       list.push({ y: (p.y + P.h) * TS + (P.z || 0), draw: () => P.draw(c, p.x * TS, p.y * TS, p, t, this) });
     }
     for (const n of m.npcs) {
@@ -1239,7 +1246,7 @@ const AULET = {
     for (const p of this.splash) {
       const r = p.t * 12;
       c.fillStyle = `rgba(190,205,225,${0.5 * (1 - p.t / 0.25)})`;
-      if (r < 1.5) c.fillRect(p.x, p.y, 1, 1); else { c.fillRect(p.x - r, p.y, 1, 1); c.fillRect(p.x + r, p.y, 1, 1); c.fillRect(p.x, p.y - r * 0.5, 1, 1); }
+      if (r < 1.5) c.fillRect(p.x, p.y, 0.5, 0.5); else { c.fillRect(p.x - r, p.y, 0.5, 0.5); c.fillRect(p.x + r, p.y, 0.5, 0.5); c.fillRect(p.x, p.y - r * 0.5, 0.5, 0.5); }
     }
     for (const p of this.puffs) {
       const a = 0.35 * (1 - p.t / 1.6), sz = 1 + p.t * 2;
@@ -1258,7 +1265,7 @@ const AULET = {
     this.drawLight(c, cx, cy);
     // дождь
     if (this.rain.length) {
-      c.strokeStyle = 'rgba(170,190,215,0.28)'; c.lineWidth = 1; c.beginPath();
+      c.strokeStyle = 'rgba(170,190,215,0.3)'; c.lineWidth = 0.5; c.beginPath();
       for (const r of this.rain) { c.moveTo(r.x, r.y); c.lineTo(r.x - 2, r.y + 7); }
       c.stroke();
     }
@@ -1269,6 +1276,7 @@ const AULET = {
     const amb = def.dark === undefined ? 0.5 : def.dark;
     if (amb <= 0) return;
     d.globalCompositeOperation = 'source-over';
+    d.setTransform(RS, 0, 0, RS, 0, 0);
     d.clearRect(0, 0, AW, AH);
     d.fillStyle = def.tint || '#060914';
     d.globalAlpha = amb; d.fillRect(0, 0, AW, AH); d.globalAlpha = 1;
@@ -1298,7 +1306,7 @@ const AULET = {
       d.restore();
     }
     d.globalCompositeOperation = 'source-over';
-    c.drawImage(this.dark, 0, 0);
+    c.drawImage(this.dark, 0, 0, AW, AH);
     // цветное свечение
     c.save(); c.globalCompositeOperation = 'lighter';
     for (const l of all) {
@@ -1564,6 +1572,7 @@ const AULET = {
   // ---------- титульный экран ----------
   drawTitle(ctx) {
     const c = this.lctx, t = this.t;
+    c.setTransform(RS, 0, 0, RS, 0, 0);
     Art.titleScene(c, t);
     ctx.drawImage(this.lo, 0, 0, 960, 540);
     this.drawPost(ctx);

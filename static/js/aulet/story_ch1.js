@@ -141,7 +141,7 @@ Object.assign(AuletStory.thoughts, {
   rows.push(fill('~'), fill('~'), fill('~'));
 
   AuletStory.maps.street = {
-    name: '4-й микрорайон', outdoor: true, rain: true, music: 'night', dark: 0.66, tint: '#050816', selfLight: 30,
+    name: '4-й микрорайон', zoom: 1.5, outdoor: true, rain: true, music: 'night', dark: 0.66, tint: '#050816', selfLight: 30,
     tiles: rows,
     props: [
       { k: 'kiosk', x: 17, y: 6, name: 'Киоск «24 часа»', dlg: 'c1_gulnar' },
@@ -189,7 +189,7 @@ Object.assign(AuletStory.thoughts, {
 // КАРТА: девятый этаж
 // ---------------------------------------------------------------------
 AuletStory.maps.stair = {
-  name: 'Подъезд, 9-й этаж', zoom: 1.5, music: 'night', dark: 0.72, tint: '#0a0a12',
+  name: 'Подъезд, 9-й этаж', zoom: 2, music: 'night', dark: 0.72, tint: '#0a0a12',
   style: { wall: 'stair', floor: 'concrete' },
   doors: { '2,1': 'padded', '11,1': 'wood' },
   tiles: [
@@ -226,7 +226,7 @@ AuletStory.maps.stair = {
 // КАРТА: крыша с маяком
 // ---------------------------------------------------------------------
 AuletStory.maps.roof = {
-  name: 'Крыша дома с маяком', outdoor: true, rain: true, music: 'roof', dark: 0.66, tint: '#060a18', selfLight: 30,
+  name: 'Крыша дома с маяком', zoom: 1.5, camOffY: -45, outdoor: true, rain: true, music: 'roof', dark: 0.66, tint: '#060a18', selfLight: 30,
   style: { wall: 'roof' },
   tiles: (() => {
     const r = ['pppppppppppppppppppppppppp'];
@@ -268,7 +268,8 @@ AuletStory.maps.roof = {
 // КАРТА: квартира Камилы
 // ---------------------------------------------------------------------
 AuletStory.maps.kamila = {
-  name: 'Квартира Камилы', zoom: 1.5, music: 'tension', dark: 0.62, noSmoke: true, tint: '#070914', windowView: 'sea', selfLight: 48,
+  name: 'Квартира Камилы', zoom: 2, music: 'tension', dark: 0.62, noSmoke: true, tint: '#070914', windowView: 'sea', selfLight: 48,
+  doors: { '2,11': 'padded' },
   style: { wall: 'kam', floor: 'parquet', floor2: 'lino', floor3: 'tile', walls: [[13, 0, 19, 2, 'kitchen'], [13, 8, 19, 11, 'bath']] },
   tiles: [
     '####################',
@@ -316,7 +317,8 @@ AuletStory.maps.kamila = {
 // КАРТА: квартира Дани
 // ---------------------------------------------------------------------
 AuletStory.maps.dani = {
-  name: 'Квартира Дани', zoom: 1.5, music: 'home', dark: 0.45, noSmoke: true, tint: '#08091a', windowView: 'sea',
+  name: 'Квартира Дани', zoom: 2, music: 'home', dark: 0.45, noSmoke: true, tint: '#08091a', windowView: 'sea',
+  doors: { '2,8': 'wood' },
   style: { wall: 'dani', floor: 'parquet' },
   tiles: [
     '##############',

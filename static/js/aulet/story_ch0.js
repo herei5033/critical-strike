@@ -88,7 +88,8 @@ Object.assign(AuletStory.chapters, {
 // Карта: квартира Аулета
 // ---------------------------------------------------------------------
 AuletStory.maps.flat = {
-  name: 'Квартира Аулета', zoom: 1.5, music: 'home', dark: 0.6, tint: '#070a16', windowView: 'sea',
+  name: 'Квартира Аулета', zoom: 2, music: 'home', dark: 0.6, tint: '#070a16', windowView: 'sea',
+  doors: { '3,13': 'padded', '3,2': 'balcony' },
   style: { wall: 'home', floor: 'parquet', floor2: 'lino', floor3: 'tile',
     walls: [[14, 0, 25, 2, 'kitchen'], [16, 8, 25, 13, 'bath'], [0, 0, 8, 1, 'roof']],
     floors: [[1, 1, 7, 1, 'concrete']] },

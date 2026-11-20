@@ -44,7 +44,7 @@ const Art = {
         const fl = this.regionStyle(st.floors, x, y) || st.floor || 'parquet';
         this.floor(c, px, py, fl, x, y);
         const left = x > 0 ? m.grid[y][x - 1] : ' ', right = x + 1 < m.w ? m.grid[y][x + 1] : ' ';
-        if (!WALLISH.has(below) && (WALLISH.has(above) || (WALLISH.has(left) && WALLISH.has(right)))) this.door(c, px, py, (m.def.doors && m.def.doors[x + ',' + y]) || st.door || 'padded', x, y);
+        if (!WALLISH.has(below) && (WALLISH.has(above) || (WALLISH.has(left) && WALLISH.has(right)))) this.door(c, px, py, (m.def.doors && m.def.doors[x + ',' + y]) || st.door || 'open', x, y);
         else { R(c, px, py, TS, TS, 'rgba(0,0,0,0.35)'); R(c, px + 1, py, 1, TS, '#2a1d14'); R(c, px + 14, py, 1, TS, '#2a1d14'); }
         continue;
       }
