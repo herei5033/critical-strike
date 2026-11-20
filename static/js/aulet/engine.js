@@ -1770,7 +1770,7 @@ function syncModeBtn() {
   const b = document.getElementById('mode-btn');
   if (!b) return;
   const g = window.game;
-  const show = AULET.active ? AULET.canSwitch() : (g && g.state === 'menu' && !(g.menu && (g.menu.showHelp || g.menu.showLeaderboard)));
+  const show = AULET.active && AULET.canSwitch();   // в Critical Strike вход в DLC — пунктом главного меню
   b.classList.toggle('show', !!show);
   b.classList.toggle('dlc', AULET.active);
   const html = AULET.active ? '<small>◀ ВЕРНУТЬСЯ</small><b>CRITICAL STRIKE</b>' : '<small>DLC</small><b>РАССЛЕДОВАНИЕ АУЛЕТА</b>';

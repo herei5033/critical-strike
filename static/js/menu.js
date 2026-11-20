@@ -114,7 +114,7 @@ const BOSS_INFO = [
 class Menu {
   constructor(game) {
     this.game = game;
-    this.items = ['РЕЖИМЫ ИГРЫ', 'СПРАВОЧНИК', 'ТАБЛИЦА ЛИДЕРОВ', 'МУЗЫКА: ВКЛ'];
+    this.items = ['РЕЖИМЫ ИГРЫ', 'РАССЛЕДОВАНИЕ АУЛЕТА', 'СПРАВОЧНИК', 'ТАБЛИЦА ЛИДЕРОВ', 'МУЗЫКА: ВКЛ'];
     this.sel = 0;
     this.t = 0;
     this._lastMouse = { x: -1, y: -1 };
@@ -308,6 +308,8 @@ class Menu {
     const item = this.items[this.sel];
     if (item === 'РЕЖИМЫ ИГРЫ') {
       this.game.modesUI.open();
+    } else if (item === 'РАССЛЕДОВАНИЕ АУЛЕТА') {
+      if (window.switchMode) window.switchMode('aulet');   // сюжетное DLC
     } else if (item === 'СПРАВОЧНИК') {
       for (const id of ['bandit', 'tank', 'hound', 'sniper']) if (!this.enemyImages[id].src) this.enemyImages[id].src = `/static/img/enemy_${id}.png`;
       this.showHelp = true;
@@ -581,6 +583,42 @@ class Menu {
     ctx.restore();
   }
 
+  // Пункт DLC: нуарная плашка — тёмная бумага, золотой шрифт с засечками, луч маяка
+  _drawDlcItem(ctx, r, active, fs) {
+    ctx.save();
+    const path = () => { ctx.beginPath(); ctx.moveTo(r.x + 14, r.y); ctx.lineTo(r.x + r.w, r.y); ctx.lineTo(r.x + r.w - 14, r.y + r.h); ctx.lineTo(r.x, r.y + r.h); ctx.closePath(); };
+    const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
+    g.addColorStop(0, active ? '#2a2112' : '#15110b'); g.addColorStop(1, active ? '#120d07' : '#0a0806');
+    ctx.fillStyle = g;
+    if (active) { ctx.shadowColor = '#e8c76a'; ctx.shadowBlur = 18 * (0.75 + 0.25 * Math.sin(this.t * 4)); }
+    path(); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = active ? '#e8c76a' : 'rgba(232,199,106,0.45)'; ctx.lineWidth = active ? 1.5 : 1;
+    path(); ctx.stroke();
+    // луч маяка скользит по плашке
+    ctx.save(); path(); ctx.clip();
+    const bx = r.x - 60 + ((this.t * 70) % (r.w + 120));
+    const lg = ctx.createLinearGradient(bx - 40, 0, bx + 40, 0);
+    lg.addColorStop(0, 'rgba(255,236,170,0)'); lg.addColorStop(0.5, `rgba(255,236,170,${active ? 0.22 : 0.1})`); lg.addColorStop(1, 'rgba(255,236,170,0)');
+    ctx.fillStyle = lg; ctx.fillRect(bx - 40, r.y, 80, r.h);
+    ctx.restore();
+    // метка DLC
+    ctx.font = `bold ${Math.max(8, fs * 0.42)}px "Courier New", monospace`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = active ? '#e8c76a' : 'rgba(232,199,106,0.6)';
+    ctx.fillText('DLC', r.x + 20, r.y + r.h / 2 + 1);
+    ctx.font = `bold ${fs * 0.92}px Georgia, "Times New Roman", serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = active ? '#f3e2b0' : '#c9b27a';
+    ctx.fillText('Расследование Аулета', r.x + r.w / 2 + 8, r.y + r.h / 2 + 1);
+    if (active) {
+      const ax = 14 + Math.sin(this.t * 8) * 4;
+      ctx.fillStyle = '#e8c76a';
+      ctx.beginPath(); ctx.moveTo(r.x - ax - 10, r.y + r.h / 2 - 7); ctx.lineTo(r.x - ax, r.y + r.h / 2); ctx.lineTo(r.x - ax - 10, r.y + r.h / 2 + 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(r.x + r.w + ax + 10, r.y + r.h / 2 - 7); ctx.lineTo(r.x + r.w + ax, r.y + r.h / 2); ctx.lineTo(r.x + r.w + ax + 10, r.y + r.h / 2 + 7); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   _itemRects(w, h) {
     // кнопки помещаются между логотипом и подсказками внизу при любом числе пунктов
     const n = this.items.length, y0 = h * 0.46, avail = h - 66 - y0;
@@ -606,6 +644,7 @@ class Menu {
     const fs = Math.min(22, w * 0.036, rects0h(this, w, h) * 0.6);
     rects.forEach((r, i) => {
       const active = i === this.sel;
+      if (this.items[i] === 'РАССЛЕДОВАНИЕ АУЛЕТА') { this._drawDlcItem(ctx, r, active, fs); return; }
       ctx.save();
       if (active) {
         const pulse = 0.75 + 0.25 * Math.sin(this.t * 6);
