@@ -66,7 +66,8 @@ const AuletMusic = {
     this._stopSynth();
     const master = ac.createGain(); master.gain.value = 0;
     master.connect(ac.destination);
-    master.gain.linearRampToValueAtTime(0.32 * M.vol, ac.currentTime + 3);
+    master.gain.linearRampToValueAtTime(0.32 * M.vol * this.volMul(), ac.currentTime + 3);
+    this._mvol = M.vol;
     const rev = this._reverb(ac), wet = ac.createGain(); wet.gain.value = 0.55;
     rev.connect(wet); wet.connect(master);
     const filt = ac.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = M.bright; filt.Q.value = 0.7;
@@ -129,6 +130,12 @@ const AuletMusic = {
     this.timer = setTimeout(note, 1500);
   },
 
+  volMul() { return window.AULET ? AULET.volK('music') / 0.7 : 1; },
+  applyVol() {
+    const n = this.nodes, ac = this.ctx();
+    if (n) n.master.gain.setTargetAtTime(0.32 * (this._mvol || 0.8) * this.volMul(), ac.currentTime, 0.3);
+    if (AudioSys.musicGain) AudioSys.musicGain.gain.value = 0.3 * this.volMul();
+  },
   weather(k) {
     this._weather = k;
     const n = this.nodes;
@@ -141,9 +148,11 @@ const AuletMusic = {
 // короткие звуки интерфейса и мира — тоже синтез
 const ASfx = {
   _t: 0,
+  mul() { return window.AULET ? AULET.volK('sfx') : 1; },
   env(type, freq, dur, vol, slide) {
     const ac = AudioSys.ctx;
     if (!ac || !AudioSys.ready) return;
+    vol *= this.mul(); if (vol <= 0) return;
     const now = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, now);
     if (slide) o.frequency.exponentialRampToValueAtTime(slide, now + dur);
@@ -153,6 +162,7 @@ const ASfx = {
   noise(dur, vol, freq) {
     const ac = AudioSys.ctx;
     if (!ac || !AudioSys.ready) return;
+    vol *= this.mul(); if (vol <= 0) return;
     const b = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate), d = b.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
     const s = ac.createBufferSource(); s.buffer = b;
@@ -175,5 +185,9 @@ const ASfx = {
   lighter() { this.noise(0.06, 0.2, 4000); setTimeout(() => this.noise(0.4, 0.08, 700), 120); },
   heart() { this.env('sine', 60, 0.18, 0.2, 40); setTimeout(() => this.env('sine', 55, 0.2, 0.16, 38), 240); },
   glass() { this.env('sine', 2200, 0.5, 0.03); this.env('sine', 3300, 0.4, 0.02); },
+  die() { this.noise(0.03, 0.12, 2600 + Math.random() * 1500); },
+  type() { this.env('square', 1800 + Math.random() * 400, 0.012, 0.006); },
+  thunder() { this.noise(2.6, 0.5, 90); setTimeout(() => this.noise(1.6, 0.3, 140), 300); },
+  buzz() { let i = 0; const b = () => { if (i++ > 2) return; this.env('sawtooth', 120, 0.25, 0.04); setTimeout(b, 380); }; b(); },
   knock() { this.noise(0.06, 0.3, 300); setTimeout(() => this.noise(0.06, 0.3, 300), 180); setTimeout(() => this.noise(0.06, 0.3, 300), 360); },
 };

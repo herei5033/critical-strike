@@ -523,6 +523,17 @@ const Art = {
     ctx.drawImage(cv, x, y, 36 * s, 36 * s);
   },
 
+  // игральная кость (для проверок)
+  die(ctx, x, y, s, v, col, rot) {
+    ctx.save(); ctx.translate(x + s / 2, y + s / 2); ctx.rotate(rot || 0);
+    ctx.fillStyle = '#efe6cf'; ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(-s / 2 + 1, -s / 2 + 1, s - 2, s - 2);
+    ctx.fillStyle = '#1a1414';
+    const p = s * 0.26, P = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] }[v] || [];
+    for (const [a, b] of P) ctx.fillRect(a * p - 1.5, b * p - 1.5, 3, 3);
+    ctx.restore();
+  },
+
   // символы внутренних голосов
   voiceGlyph(ctx, v, x, y, size, t) {
     const col = AVOICE[v].color;

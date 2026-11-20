@@ -117,7 +117,7 @@ AuletStory.maps.flat = {
     { k: 'rug', x: 4, y: 5, w: 6, h: 2, walk: true },
     { k: 'decor', v: 'bottles', x: 10, y: 6 },
     { k: 'tv', x: 2, y: 7, name: 'Телевизор', dlg: 'p_tv', on: false },
-    { k: 'box', x: 12, y: 7, name: 'Коробка «КАСЫМОВ»', dlg: 'p_box' },
+    { k: 'box', x: 12, y: 7, name: 'Коробка «КАСЫМОВ»', dlg: 'p_box', open: false },
     { k: 'chair', x: 9, y: 4, dir: 'up' },
     // кухня
     { k: 'fridge', x: 14, y: 3, photo: true, name: 'Холодильник', dlg: 'p_fridge' },
@@ -279,7 +279,9 @@ Object.assign(AuletStory.dlg, {
         ['H', 'Закрой. Закрой коробку.'],
         ['R', 'Под фотографией — копия протокола признания. Подпись Марата. И твоя. И ещё одна, внизу, мелко: «протокол вёл л-т Тлеулов Е.»'],
         { clue: 'kasymov' },
+        { if: '!f.mem_done', then: [{ call: 'p_box_flash' }] },
       ] },
+      { t: '[Открыть снова. Вспомнить.]', if: 'c.kasymov && !f.mem_done', once: false, do: [{ call: 'p_box_flash' }] },
       { t: '[Не открывать.]', do: [['R', 'Правильно. Сначала живые дела. Потом мёртвые.']] },
     ] },
   ],
