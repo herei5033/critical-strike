@@ -154,7 +154,7 @@ const Flames = {
     for (let i = 0; i < 3; i++) {
       const aa = a + Utils.rand(-0.2, 0.2);
       const sp = Utils.rand(340, 440);
-      this.list.push({ x, y, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: Utils.rand(0.6, 0.75), max: 0.75, r: 4, dmg: damaging, by });
+      this.list.push({ x, y, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: Utils.rand(0.45, 0.55), max: 0.55, r: 4, dmg: damaging, by });
     }
     if (this.list.length > 700) this.list.splice(0, this.list.length - 700);
   },
@@ -174,7 +174,7 @@ const Flames = {
       for (const e of game.enemies) {
         if (e.dead || (e._burnCd || 0) > 0) continue;
         if (Utils.dist(p.x, p.y, e.cx(), e.cy()) < p.r + 10) {
-          e._burnCd = 0.22;
+          e._burnCd = 0.3;
           e.takeDamage(1, game.pickups, { kind: 'burn', angle: Math.atan2(p.vy, p.vx), by: p.by });
           Effects.burst(e.cx(), e.cy(), '255,140,40', 4, 120);
         }

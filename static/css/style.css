@@ -138,6 +138,7 @@ body.in-gym #action-btns .abtn:not(.gym-only):not(#btn-use) { display: none !imp
 body.in-gym .gym-only { display: flex; }
 #btn-ball { width: 78px; height: 78px; border-color: #3fff7f; }
 #btn-ready { border-color: #ffd319; }
+#btn-run { border-color: #05d9e8; }
 #btn-ready.on { background: rgba(255, 211, 25, 0.4); }
 
 /* --- Слой МЕНЮ (телефон) --- */

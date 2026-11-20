@@ -107,7 +107,7 @@ class Boss extends Enemy {
     this.bossBonus = def.bonus;
     this.w = 22; this.h = 22;
     // Здоровье растёт с числом игроков
-    this.maxHp = Math.round((def.hp + def.hp * 0.5 * (playerCount - 1)) * hpMul);
+    this.maxHp = Math.round((def.hp + def.hp * 0.5 * (playerCount - 1)) * hpMul * 1.35);   // баланс: боссы на 35% живучее
     this.hp = this.maxHp;
     this.speed = def.speed;
     this.weapon = makeWeapon(def.behavior === 'gunner' ? 'm4' : 'knife');
@@ -513,7 +513,7 @@ class Boss extends Enemy {
 // Следит за счётом и выпускает боссов на порогах очков
 class BossDirector {
   constructor() {
-    this.nextScore = 2500;
+    this.nextScore = 2000;
     this.count = 0;
     this.active = null;
     this.delay = 0;
@@ -569,6 +569,6 @@ class BossDirector {
     Effects.popup(b.cx(), b.cy() - 44, `БОСС ПОВЕРЖЕН +${b.bossBonus}`, '#ffd319', 16);
     // каждый следующий порог дальше: 2000 → +3500 → +4500 ...
     const n = game.allPlayers ? game.allPlayers().length : 1;
-    this.nextScore = game.score + (3500 + this.count * 700) * (1 + 0.4 * (n - 1));
+    this.nextScore = game.score + (3000 + this.count * 600) * (1 + 0.4 * (n - 1));
   }
 }

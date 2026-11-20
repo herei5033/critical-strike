@@ -84,7 +84,8 @@
   tapBtn('btn-ult', () => Input.simulatePress('KeyE'));
   tapBtn('btn-map', () => Input.simulatePress('KeyM'));
   tapBtn('btn-use', () => Input.simulatePress('KeyE'));
-  tapBtn('btn-ball', () => Input.simulatePress('Space'));
+  tapBtn('btn-ball', () => { Input.keys.Space = true; }, () => { Input.keys.Space = false; });   // держать — сильнее
+  tapBtn('btn-run', () => { Input._mobileRun = true; }, () => { Input._mobileRun = false; });
   tapBtn('btn-ready', () => Input.simulatePress('KeyG'));
   tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
   // Samsa Kombat

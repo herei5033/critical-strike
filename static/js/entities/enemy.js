@@ -5,20 +5,20 @@ class Enemy {
     this.w = 18; this.h = 18;
     this.type = type;
 
-    this.speed = 120;
+    this.speed = 140;          // баланс: враги быстрее (было 120)
     this.maxHp = 1;
     this.hp = 1;
 
     const pool = ['m4','ak47','glock','uzi','bat','pipe','knife','sword'];
 
     if (type === 'tank') {
-      this.speed = 70;
-      this.maxHp = 3;
-      this.hp = 3;
+      this.speed = 80;
+      this.maxHp = 5;          // баланс: танк держит 5 попаданий (было 3)
+      this.hp = 5;
       this.weapon = makeWeapon('shotgun');
-      this.fovRange = 180;
+      this.fovRange = 230;
     } else if (type === 'hound') {
-      this.speed = 200;
+      this.speed = 225;
       this.weapon = makeWeapon('knife');
       this.fovRange = 350;
       this.fovAngle = Math.PI * 1.5;
@@ -54,8 +54,8 @@ class Enemy {
     this.waitTimer = 0;
 
     if (type === 'normal') {
-      this.fovAngle = Math.PI / 2.2;
-      this.fovRange = 240;
+      this.fovAngle = Math.PI / 1.9;
+      this.fovRange = 290;
     }
 
     this.seed = (Math.random() * 1e9) | 0;
@@ -414,11 +414,11 @@ class Enemy {
         if (!this.canSeePlayer(player, level)) {
           this.state = 'chase';
           this.chargeTimer = 0;
-        } else if (this.chargeTimer > 1.5) {
+        } else if (this.chargeTimer > 1.15) {
           AudioSys.play('sniper_shot');
           this._shots = (this._shots || 0) + 1;
           this.flashTimer = 0.08;
-          this.attackTimer = 2.0;
+          this.attackTimer = 1.5;
           this.chargeTimer = 0;
 
           const dx = pcx - this.cx();
@@ -586,7 +586,7 @@ class Enemy {
       }
 
       if (this.attackTimer <= 0) {
-        this.attackTimer = this.weapon.cooldown + 0.15;
+        this.attackTimer = this.weapon.cooldown * 1.1 + 0.07;   // баланс: стреляют чаще (было +0.15)
         if (isRanged) {
           if (this.weapon.ammo > 0) {
             this.weapon.ammo--;
@@ -606,7 +606,7 @@ class Enemy {
                 { const nb = new Bullet(bx, by, a, this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; if (this.weapon.life) nb.life = this.weapon.life; bullets.push(nb); }
               }
             } else {
-              { const nb = new Bullet(bx, by, this.angle + Utils.rand(-0.06, 0.06) + (this.weapon.spread ? Utils.rand(-this.weapon.spread, this.weapon.spread) : 0), this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; if (this.weapon.life) nb.life = this.weapon.life; bullets.push(nb); }
+              { const nb = new Bullet(bx, by, this.angle + Utils.rand(-0.045, 0.045) + (this.weapon.spread ? Utils.rand(-this.weapon.spread, this.weapon.spread) : 0), this.weapon.bulletSpeed, false, this.weapon.color); nb.src = this.weapon.id; if (this.weapon.life) nb.life = this.weapon.life; bullets.push(nb); }
             }
           } else {
             this.weapon = null;
@@ -644,7 +644,7 @@ class Enemy {
       this._droppedWeapon = null;
       const g = typeof window !== 'undefined' && window.game;
       const trio = g && g.coop && g.coop.players && g.coop.players.length >= 3;
-      const healthChance = (this.type === 'tank' ? 0.8 : 0.2) * (trio ? 1.35 : 1);   // втроём самса падает чаще
+      const healthChance = (this.type === 'tank' ? 0.5 : 0.12) * (trio ? 1.35 : 1);   // баланс: самса реже   // втроём самса падает чаще
       if (Math.random() < healthChance) {
         pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), null, true));
       }

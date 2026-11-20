@@ -1,13 +1,13 @@
 // Длительность анимации удара для каждого вида холодного оружия (сек)
 const MELEE_SWING = { bat: 0.34, pipe: 0.3, sword: 0.3, knife: 0.2 };
 // Активные навыки (клавиша F): Дани — клоны, Гала — рывок
-const SKILL_CD = { dani: 10, gal: 1.6, daur: 7 };   // Дани — клоны, Гала — рывок, Даур — арсенал
+const SKILL_CD = { dani: 12, gal: 1.6, daur: 9 };   // Дани — клоны, Гала — рывок, Даур — арсенал
 const PULL_TIME = 0.55;     // сколько летят притянутые стволы
 const DASH_SPEED = 720;     // рывок Галы, пикселей в секунду
 const DASH_MAX = 0.9;       // максимум секунд в рывке
 const RAGE_AURA = 44;       // аура смерти Даура в ярости (радиус)
 const BABAH_R = 208;        // взрыв «БАБАХ» Галы
-const MODE_TIME = 6;        // ярость Даура / лотерея Дани
+const MODE_TIME = 5;        // ярость Даура / лотерея Дани
 // Ценность огнестрела: Даур первым выбрасывает самое бесполезное
 const WEAPON_VALUE = { glock: 1, uzi: 1.3, m4: 2, ak47: 2, shotgun: 1.8, m4s: 2.6, goldenUzi: 2.3, minigun: 3, sniper: 2.6, rpg: 3, flamer: 2.6 };
 function weaponValue(w) {
@@ -75,9 +75,10 @@ class Player {
   }
 
   takeDamage(amount, cause) {
-    if (this.dead || this.hurtCooldown > 0 || this.dashT > 0) return;
+    // неуязвим только в начале рывка (0,3 с), а не весь рывок
+    if (this.dead || this.hurtCooldown > 0 || this.dashT > DASH_MAX - 0.3) return;
     this._lastCause = cause;
-    this.hurtCooldown = Input.isMobile ? 0.9 : 0.6;
+    this.hurtCooldown = Input.isMobile ? 0.75 : 0.5;
     if (this.armor > 0) {
       const a = Math.min(this.armor, amount);
       this.armor -= a; amount -= a;
@@ -241,7 +242,7 @@ class Player {
       }
       dx = 0; dy = 0;
     }
-    const spd = this.speed * (this.rageT > 0 ? 1.3 : 1);
+    const spd = this.speed * (this.rageT > 0 ? 1.3 : 1) * (this.sprintMul || 1);
     const nx = this.x + dx * spd * dt;
     const ny = this.y + dy * spd * dt;
 

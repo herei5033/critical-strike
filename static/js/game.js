@@ -301,6 +301,7 @@ class Game {
     if (this.coop) { this.coop.prepareLevel(); this.coop.inGym = true; }
     this._afterLevelStart();
     this.gym = new GymBreak(this);
+    this.cam.zoom = this.zoom * 0.85;          // в зале камера дальше на 15%
     this.levelBanner = { name: 'СПОРТЗАЛ', sub: 'передышка: мяч, ворота, коллеги. G — готов', color: '#3fff7f', t: 3 };
     if (intro) this.state = 'coopIntro';
   }
@@ -439,17 +440,17 @@ class Game {
   // ---------- сюжет: охотники, которые сами ищут героя ----------
   _storyHunters(dt, players) {
     if (this.storyIdx === null || this.coop || !this.mission || this.mission.complete) return;
-    this._huntSpawnT = (this._huntSpawnT === undefined ? 25 : this._huntSpawnT) - dt;
+    this._huntSpawnT = (this._huntSpawnT === undefined ? 18 : this._huntSpawnT) - dt;
     if (this._huntSpawnT > 0) return;
-    this._huntSpawnT = Utils.rand(24, 34);
+    this._huntSpawnT = Utils.rand(16, 24);
     const hunters = this.enemies.filter(e => e._hunter && !e.dead).length;
-    if (hunters >= 6) return;
+    if (hunters >= 8) return;
     const lit = new Set();
     for (const p of players) for (const r of this.level.getLitRooms(p).lit) lit.add(r);
     const far = this.level.rooms.filter(r => !lit.has(r) && !r.hall).sort(() => Math.random() - 0.5);
     const room = far[0];
     if (!room) return;
-    const n = Math.min(6 - hunters, 2 + Math.floor(this.storyIdx / 3));
+    const n = Math.min(8 - hunters, 3 + Math.floor(this.storyIdx / 3));
     for (let i = 0; i < n; i++) {
       const pt = this.level.randomFreePoint(room);
       if (!pt) continue;
@@ -587,7 +588,8 @@ class Game {
     const worldH = TILE * Math.ceil(45 * k + (k > 1 ? 2 : 0));
     const L = layout ? scaledLayout(layout, CAMPAIGN_SCALE) : null;
     // в корпоративе врагов больше: +30% за каждого напарника
-    const enemyMul = (this.coop ? 1 + 0.3 * (this.coop.players.length - 1) : 1) * extraMul;
+    // баланс: врагов на 20% больше, в корпоративе +45% за каждого напарника
+    const enemyMul = (this.coop ? 1 + 0.45 * (this.coop.players.length - 1) : 1) * extraMul * 1.2;
     try { this.level = new Level(worldW, worldH, L ? { layout: L, enemyMul } : { enemyMul }); }
     catch (e) { console.error('Level gen failed:', e); this.level = null; }
 
@@ -615,7 +617,7 @@ class Game {
       const e = new Enemy(p.x, p.y, p.behavior, p.waypoints, p.type);
       if (p.weapon) e.weapon = makeWeapon(p.weapon);
       // с каждым уровнем враги быстрее и зорче
-      if (diff > 0) { e.speed *= 1 + diff * 0.06; e.fovRange *= 1 + diff * 0.08; }
+      if (diff > 0) { e.speed *= 1 + diff * 0.08; e.fovRange *= 1 + diff * 0.08; }
       return e;
     });
     this.totalEnemies = this.enemies.length;
@@ -630,7 +632,7 @@ class Game {
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, makeWeapon(Utils.choice(weaponPool))));
     }
-    for (let i = 0; i < (layout ? 3 : 4) + (this.coop ? this.coop.players.length - 1 : 0); i++) {
+    for (let i = 0; i < (layout ? 2 : 3) + (this.coop ? this.coop.players.length - 1 : 0); i++) {
       const r = Utils.choice(this.level.rooms);
       const p = this.level.randomFreePoint(r);
       if (p) this.pickups.push(new Pickup(p.x, p.y, null, true));
@@ -1174,8 +1176,8 @@ class Game {
     } catch (e) {}
   }
 
-  // Личный счёт убийств героя: каждые 10 — заряд режима героя
-  // у Даура и Дани каждые 10 убийств (заряд) включают особый режим.
+  // Личный счёт убийств героя: каждые 14 — заряд режима героя
+  // каждые 14 убийств (заряд) включают особый режим героя.
   _creditKill(e) {
     if (!e.killedBy) return;
     const pl = this.allPlayers().find(p => p && p.charId === e.killedBy);
@@ -1338,7 +1340,7 @@ class Game {
       const x = d.x + 9, y = d.y + 9, last = d._trailLast;
       if (!last || Utils.dist(last.x, last.y, x, y) > 12) {
         d._trailLast = { x, y };
-        this.fireTrail.push({ x, y, t: 0, life: 2.5, by: d.charId, seed: Math.random() * 10 });
+        this.fireTrail.push({ x, y, t: 0, life: 2, by: d.charId, seed: Math.random() * 10 });
       }
     }
     for (const d of [this.player]) if (d && d.dashT <= 0) d._trailLast = null;
@@ -1350,7 +1352,7 @@ class Game {
       for (const e of this.enemies) {
         if (e.dead || (e._trailCd || 0) > 0) continue;
         if (Utils.dist(f.x, f.y, e.cx(), e.cy()) < 18) {
-          e._trailCd = 0.45;
+          e._trailCd = 0.6;
           e.takeDamage(1, this.pickups, { kind: 'burn', angle: 0, by: f.by });
           Effects.burst(e.cx(), e.cy(), '255,140,40', 5, 120);
         }
@@ -1473,8 +1475,8 @@ class Game {
     if (!players.length) return;
     // добивание: когда осталось мало врагов, каждые 3 с они «слышат» ближайшего героя
     this._huntT = (this._huntT || 0) - dt;
-    if (alive.length && (alive.length <= 6 || alive.length / total <= 0.2) && this._huntT <= 0) {
-      this._huntT = 3;
+    if (alive.length && (alive.length <= 8 || alive.length / total <= 0.25) && this._huntT <= 0) {
+      this._huntT = 2;
       for (const e of alive) {
         let best = players[0], bd = Infinity;
         for (const p of players) { const d = Utils.dist(p.x, p.y, e.x, e.y); if (d < bd) { bd = d; best = p; } }
@@ -1489,17 +1491,17 @@ class Game {
     if (this.campaignIdx !== null && !this.coop) return;
     if (this.storyIdx !== null && !this.coop) return;
     const n = players.length;
-    const maxWaves = this.coop ? 3 : 2;
-    this._waveT = (this._waveT === undefined ? 20 : this._waveT) - dt;
-    if ((this._waves || 0) >= maxWaves || this._waveT > 0 || alive.length / total > 0.55) return;
-    this._waveT = this.coop ? 22 : 30;
+    const maxWaves = this.coop ? 4 : 3;
+    this._waveT = (this._waveT === undefined ? 15 : this._waveT) - dt;
+    if ((this._waves || 0) >= maxWaves || this._waveT > 0 || alive.length / total > 0.65) return;
+    this._waveT = this.coop ? 18 : 24;
     this._waves = (this._waves || 0) + 1;
     const lit = new Set();
     for (const p of players) for (const r of this.level.getLitRooms(p).lit) lit.add(r);
     const far = this.level.rooms.filter(r => !lit.has(r) && !r.hall).map(r => ({ r, d: Math.min(...players.map(p => Utils.dist((r.x + r.w / 2) * TILE, (r.y + r.h / 2) * TILE, p.x, p.y))) })).sort((a, b) => b.d - a.d);
     const room = far.length ? far[Math.min(far.length - 1, Utils.randInt(0, 2))].r : null;
     if (!room) return;
-    const size = 3 + n + this._waves;
+    const size = 4 + n + this._waves;
     for (let i = 0; i < size; i++) {
       const pt = this.level.randomFreePoint(room);
       if (!pt) continue;
@@ -2586,9 +2588,9 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон на 14 с за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
-      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, огненный РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
-      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 10 убийств', hp: 6, speed: 1, weapon: 'uzi' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон на 14 с за 14 убийств', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, огненный РЫВОК [F] и БАБАХ [E] за 14 убийств', hp: 6, speed: 1, weapon: 'flamer' },
+      { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 14 убийств', hp: 6, speed: 1, weapon: 'uzi' },
     ];
 
     const isMobile = this.W < 800;
@@ -2707,7 +2709,7 @@ class Game {
   }
 }
 
-const MODE_KILLS = 10;   // убийств до ярости Даура / лотереи Дани (заряд копится между уровнями)
+const MODE_KILLS = 14;   // убийств до ярости Даура / лотереи Дани (заряд копится между уровнями)
 const MODE_OF = { daur: 'rage', dani: 'clone', gal: 'babah' };   // что даёт заряд каждому герою
 const COMBO_CAP = 10;     // множитель очков за комбо не больше x10
 
