@@ -83,13 +83,13 @@ class Player {
       const a = Math.min(this.armor, amount);
       this.armor -= a; amount -= a;
       if (amount <= 0) {
-        AudioSys.play('tank_hit');
+        AudioSys.play('armor_hit');
         if (typeof Effects !== 'undefined') { Effects.screenFlash(0.22, '60,140,255'); Effects.ring(this.x + 9, this.y + 9, '90,170,255', 24); }
         return;
       }
     }
     this.hp -= amount;
-    AudioSys.play('player_hurt');
+    AudioSys.play('hurt_' + this.charId);
     if (typeof Effects !== 'undefined') Effects.screenFlash(0.28, '255,30,60');
     if (this.hp <= 0) { this.hp = 0; this.die(cause); }
   }
@@ -211,7 +211,7 @@ class Player {
         this.dashT = DASH_MAX;
         this._dashDir = len > 0.2 ? Math.atan2(dy, dx) : this.angle;
         this._dashHit = new Set();
-        AudioSys.play('melee_swing');
+        AudioSys.play('dash');
         Effects.dust(this.x + 9, this.y + 13, 6);
       }
     }
@@ -238,7 +238,7 @@ class Player {
         this.dashT = 0;
         Effects.ring(this.x + 9, this.y + 9, '255,160,60', 34);
         Effects.dust(this.x + 9, this.y + 9, 8);
-        if (hitWall) { AudioSys.play('punch'); Effects.hitstop = Math.max(Effects.hitstop, 0.04); }
+        if (hitWall) { AudioSys.play('dash_wall'); Effects.hitstop = Math.max(Effects.hitstop, 0.04); }
       }
       dx = 0; dy = 0;
     }
@@ -267,7 +267,7 @@ class Player {
     if (this.moveAmt > 0.3) {
       this.stepTimer -= dt;
       if (this.stepTimer <= 0) {
-        AudioSys.play('footstep');
+        AudioSys.play('step_' + this.charId);
         Effects.dust(this.x + this.w / 2, this.y + this.h / 2 + 4, 1);
         this.stepTimer = 0.32;
       }
@@ -379,7 +379,7 @@ class Player {
         this.swingDur = 0.22;
         this.swingTimer = this.swingDur;
         this.punchSide = -this.punchSide;
-        AudioSys.play('punch');
+        AudioSys.play('fist');
         this._pendingHit = { delay: 0.06, fists: true };
       }
     }
@@ -394,7 +394,7 @@ class Player {
     if (w.projectile === 'flame') {
       // огнемёт: шум и звук реже, гильз нет
       this._fired.push({ type: 'flame', x: bx, y: by, a });
-      if (Math.random() < 0.25) AudioSys.play('throw');
+      if (Math.random() < 0.25) AudioSys.play('shoot_flamer');
       level.addNoise(cx, cy, 250);
       return true;
     }
@@ -447,7 +447,7 @@ class Player {
       const lv = this._level;
       const nx = e.x + Math.cos(a) * 18, ny = e.y + Math.sin(a) * 18;
       if (lv && !lv.collides(nx, ny, e.w, e.h)) { e.x = nx; e.y = ny; }
-      AudioSys.play('punch');
+      AudioSys.play('dash_hit');
       Effects.ring(e.cx(), e.cy(), '255,230,150', 24);
       Effects.burst(e.cx(), e.cy(), '255,255,255', 8, 160);
       Effects.hitstop = Math.max(Effects.hitstop, 0.03);
@@ -474,7 +474,7 @@ class Player {
     this.hurtCooldown = 1.5;
     Effects.ring(this.x + this.w / 2, this.y + this.h / 2, '60,255,140', 34);
     Effects.burst(this.x + this.w / 2, this.y + this.h / 2, '120,255,170', 16, 160);
-    AudioSys.play('pickup_health');
+    AudioSys.play('revive');
   }
 
   die(cause = {}) {
@@ -486,7 +486,7 @@ class Player {
     const slide = { bullet: 70, shotgun: 200, blunt: 60, blade: 30, crush: 150, explosion: 240 }[kind] || 60;
     this.deathAnim = { t: 0, kind, pose: kind === 'blunt' || kind === 'crush' ? 'side' : kind === 'blade' ? 'face' : 'back',
                        vx: Math.cos(ang) * slide, vy: Math.sin(ang) * slide, pool: 0, fromAngle: this.angle };
-    AudioSys.play('player_death');
+    AudioSys.play('death_' + this.charId);
     if (typeof Effects !== 'undefined') {
       Effects.bloodSplat(this.x + this.w / 2, this.y + this.h / 2, this.deathAngle, 30);
       Effects.screenFlash(0.5, '255,20,50');

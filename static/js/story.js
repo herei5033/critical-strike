@@ -342,6 +342,7 @@ const StoryAssets = {
     if (!c) return null;
     if (c.hero && game.images[id] && game.images[id].naturalWidth) return game.images[id];
     if (!(id in this.imgs) && !Assets.has({ type: 'portrait', name: id })) {
+      if (!hasMedia(`img/story/${id}.png`)) { this.imgs[id] = null; return null; }
       const img = new Image();
       img.onerror = () => { this.imgs[id] = null; };
       img.src = `/static/img/story/${id}.png`;
@@ -351,6 +352,7 @@ const StoryAssets = {
     return img && img.complete && img.naturalWidth ? img : null;
   },
   _load(src) {
+    if (!hasMedia(src)) return null;
     const a = new Audio();
     a.preload = 'auto';
     a.src = src;
@@ -362,12 +364,12 @@ const StoryAssets = {
     if (!(id in this.voices)) {
       const a = this._load(`/static/audio/story/blip_${id}.mp3`);
       this.voices[id] = a;
-      a.addEventListener('error', () => { this.voices[id] = null; });
+      if (a) a.addEventListener('error', () => { this.voices[id] = null; });
     }
     if (!this._blipTried) {
       this._blipTried = true;
       const a = this._load('/static/audio/story/blip.mp3');
-      a.addEventListener('canplaythrough', () => { this._blip = a; });
+      if (a) a.addEventListener('canplaythrough', () => { this._blip = a; });
     }
     const v = this.voices[id] && this.voices[id].readyState >= 2 ? this.voices[id] : this._blip;
     if (v) { try { const c = v.cloneNode(); c.volume = 0.35; c.play().catch(() => {}); } catch (e) {} }
@@ -541,7 +543,7 @@ class StoryUI {
     }
     if (i >= StoryProgress.unlocked()) {
       this.msg = `Сначала пройдите «${STORY[i - 1].title}»`; this.msgT = 2.5;
-      AudioSys.play('empty_click');
+      AudioSys.play('ui_locked');
       return;
     }
     AudioSys.play('menu_select');

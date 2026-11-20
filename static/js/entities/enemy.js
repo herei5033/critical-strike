@@ -103,7 +103,7 @@ class Enemy {
   // Звук и вид оглушения (без игровой логики)
   _stunFx() {
     this.deathAngle = this.angle + Math.PI;
-    AudioSys.play('stun');
+    AudioSys.play('enemy_stun');
     Effects.burst(this.cx(), this.cy(), '255,230,120', 10, 140);
     Effects.ring(this.cx(), this.cy(), '255,230,120', 20);
   }
@@ -132,7 +132,7 @@ class Enemy {
       fromAngle: this.angle,
     };
     this.pool = { r: 0, max: (kind === 'blade' ? 20 : kind === 'shotgun' ? 19 : 15) * (this.isBoss ? 1.5 : 1), x: this.cx(), y: this.cy() };
-    AudioSys.playAt('enemy_death', this.cx(), this.cy(), 800);
+    AudioSys.playAt(this.isBoss ? 'boss_death' : 'death_' + this.type, this.cx(), this.cy(), 800);
     const gore = { shotgun: 30, blade: 22, bullet: 14, blunt: 9, fist: 6, throw: 8, crush: 20, explosion: 34, burn: 2 }[kind] || 12;
     if (kind === 'burn') { Effects.burst(this.cx(), this.cy(), '255,140,40', 16, 160); Effects.smoke(this.cx(), this.cy(), 0, 8); }
     Effects.bloodSplat(this.cx(), this.cy(), ang, gore);
@@ -165,7 +165,7 @@ class Enemy {
       const step = (Math.sin(d.crawlPhase) > 0 ? 34 : 8) * dt;
       if (local && !moveBy(Math.cos(this.deathAngle) * step, Math.sin(this.deathAngle) * step)) this.deathAngle += 0.6;
       moving = true;
-      if (d.crawlT <= 0) { d.pose = 'face'; d.crawl = false; AudioSys.play('player_hurt'); }
+      if (d.crawlT <= 0) { d.pose = 'face'; d.crawl = false; AudioSys.play('enemy_crawl'); }
     }
     // кровавый след
     if (moving) {

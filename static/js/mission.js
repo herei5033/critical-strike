@@ -245,7 +245,7 @@ class Mission {
     }
     g.totalEnemies = g.enemies.length;
     g.radio.push('', 'ЗАСАДА! Враги идут на шум.');
-    AudioSys.play('hound_bark');
+    AudioSys.play('ambush');
   }
 
   update(dt) {
@@ -267,7 +267,7 @@ class Mission {
       for (const it of this.items) {
         if (it.taken || Utils.dist(pcx, pcy, it.x, it.y) > 22) continue;
         it.taken = true;
-        AudioSys.play('pickup_weapon');
+        AudioSys.play('item_take');
         Effects.popup(it.x, it.y - 12, `+ ${ITEM_NAMES[it.kind] || 'предмет'}`, '#ffd319', 11);
         if (it.think) g.thoughts.say(it.think, 3.2);
       }
@@ -276,7 +276,7 @@ class Mission {
     else if (o.type === 'boss') done = !g.enemies.some(e => e.isBoss && !e.dead);
     if (done) {
       this.doneT = 0;
-      AudioSys.play('pickup_health');
+      AudioSys.play('objective_done');
       Effects.popup(pcx, pcy - 22, 'ЗАДАНИЕ ВЫПОЛНЕНО', '#3dff8a', 13);
       if (o.doneRadio) for (let k = 0; k < o.doneRadio.length; k += 2) g.radio.push(o.doneRadio[k], o.doneRadio[k + 1]);
       if (o.doneThink) g.thoughts.say(o.doneThink, 3.4);

@@ -17,8 +17,8 @@ const Explosives = {
     Effects.hitstop = Math.max(Effects.hitstop, 0.06);
     game.shake = Math.max(game.shake || 0, 1);
     game.chromaticOffset = 8;
-    AudioSys.play('shoot_shotgun');
-    AudioSys.play('tank_hit');
+    AudioSys.play('explosion');
+    AudioSys.play('explosion_debris');
     if (level && level.decals) {
       level.decals.push({ kind: 'scorch', x, y, r: r * 0.55, seed: (x * 31 + y * 7) | 0, rot: 0 });
       if (level._redrawRegion) level._redrawRegion(x - r, y - r, x + r, y + r, 0);
@@ -59,7 +59,7 @@ class Grenade {
     this.z = 8; this.vz = 120;
     this.fuse = 1.8; this.t = 0; this.rot = 0;
     this.by = by; this.dead = false; this.kind = 'grenade';
-    AudioSys.play('throw');
+    AudioSys.play('grenade_throw');
   }
 
   update(dt, game) {

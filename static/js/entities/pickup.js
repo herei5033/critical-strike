@@ -24,7 +24,7 @@ class Pickup {
     this.groundTimer = 0.25;
     this.traveled = 0;
     this.bounces = 0;
-    AudioSys.play('throw');
+    AudioSys.play('weapon_throw');
   }
 
   // pickups — массив пикапов (нужен, чтобы убитый врагом дропал оружие/аптечку в правильный массив)
@@ -108,10 +108,6 @@ class Pickup {
     if (this.pickedUp) return;
 
     if (this.thrown) {
-      ctx.fillStyle = 'rgba(255, 230, 100, 0.3)';
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, 12, 0, Math.PI * 2);
-      ctx.fill();
       ctx.save();
       ctx.translate(this.x, this.y);
       ctx.rotate(this.rotation);
@@ -126,18 +122,10 @@ class Pickup {
       return;
     }
 
-    const pulse = (Math.sin(this.phase) + 1) * 0.5;
-    const glow = this.isArmor ? '90,170,255' : this.isGrenade ? '120,255,120' : this.isHealth ? '255,68,68' : (this.weapon && (this.weapon.special || this.weapon.boss) ? '255,120,255' : (this.weapon && this.weapon.rare ? '255,140,40' : '255,230,100'));
-    ctx.fillStyle = `rgba(${glow}, ${0.35 + pulse * 0.4})`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = this.isHealth ? `rgba(255, 200, 200, ${0.15 + pulse * 0.2})` : `rgba(255, 255, 200, ${0.15 + pulse * 0.2})`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-
+    // на земле — без круговой подсветки: мягкая тень, покачивание, вращение и искорки
     const bob = Math.sin(this.phase * 1.5) * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.ellipse(this.x + 1, this.y + 6, this.weapon ? 10 : 7, 3, 0, 0, Math.PI * 2); ctx.fill();
     ctx.save();
     ctx.translate(this.x, this.y + bob);
     if (this.isArmor) {

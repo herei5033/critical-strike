@@ -322,7 +322,7 @@ class Tutorial {
     g.toMenu();
     g.storyUI.open('tutorial');
     g.storyUI.msg = `${this.def.title}: пройден!`; g.storyUI.msgT = 3;
-    AudioSys.play('game_start');
+    AudioSys.play('lesson_done');
   }
 
   update(dt) {
@@ -338,7 +338,7 @@ class Tutorial {
     }
     if (st.goal && st.goal(this, g, p)) {
       this.doneT = 0;
-      AudioSys.play('pickup_weapon');
+      AudioSys.play('step_done');
       Effects.popup(p.x + 9, p.y - 14, 'ВЫПОЛНЕНО!', '#3dff8a', 14);
       Effects.ring(p.x + 9, p.y + 9, '60,255,140', 30);
     }

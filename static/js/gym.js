@@ -136,7 +136,7 @@ class GymBreak {
     if (Utils.dist(b.x, b.y, bx, by) > GYM_BALL_R + reach) return false;
     b.vx = Math.cos(ang) * power; b.vy = Math.sin(ang) * power;
     this.lastTouch = id;
-    AudioSys.play('punch', 0.4 + power / GYM_KICK_MAX * 0.5);
+    AudioSys.play('ball_kick', 0.4 + power / GYM_KICK_MAX * 0.5);
     Effects.ring(b.x, b.y, '255,255,255', 10 + power / 60);
     return true;
   }
@@ -168,7 +168,7 @@ class GymBreak {
     if (Input.wasPressed('KeyG') && !TextField.active) {
       const me = this.myPid(), v = !this.ready.has(me);
       if (v) this.ready.add(me); else this.ready.delete(me);
-      AudioSys.play(v ? 'menu_select' : 'menu_move');
+      AudioSys.play(v ? 'ready_on' : 'ready_off');
       if (!this.isHost() && g.coopUI.net) g.coopUI.net.send('host', { t: 'gr', v: v ? 1 : 0 });
     }
     // разговор с коллегой
@@ -376,7 +376,7 @@ class GymBreak {
   _showMsg(text, col) {
     this.msg = { text, col, t: 0 };
     this._msgId = (this._msgId || 0) + 1;
-    AudioSys.play('game_start', 0.7);
+    AudioSys.play('whistle', 0.7);
     Effects.screenFlash(0.12, '255,255,255');
   }
 
@@ -386,7 +386,7 @@ class GymBreak {
     if (Utils.dist(b.x, b.y, p.x + 9, p.y + 9) > GYM_BALL_R + 30) return;
     b.vx = Math.cos(ang) * power; b.vy = Math.sin(ang) * power;
     this._predT = 0.15;
-    AudioSys.play('punch', 0.7);
+    AudioSys.play('ball_kick', 0.7);
   }
 
   _follow(dt) {

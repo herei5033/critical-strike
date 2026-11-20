@@ -621,7 +621,7 @@ class SamsaKombat {
     const inp = [0, 1].map(i => this._isHuman(i) ? this._readHuman(i) : this._ai(this.f[i], this.f[1 - i], dt));
     const control = this.phase === 'fight' || this.phase === 'finish';
     if (this.phase === 'intro') {
-      if (this.pt > 1.2 && this.pt - dt <= 1.2) { this._banner('БОЙ!', '', '#ff2a40', 0.8, true); this._snd('game_start'); }
+      if (this.pt > 1.2 && this.pt - dt <= 1.2) { this._banner('БОЙ!', '', '#ff2a40', 0.8, true); this._snd('kombat_fight'); }
       if (this.pt > 1.6) { this.phase = 'fight'; this.pt = 0; }
     }
     if (this.phase === 'fight') {
@@ -695,7 +695,7 @@ class SamsaKombat {
       } else { f.vx *= 0.7; f.walk = Math.max(0, f.walk - dt * 8); }
       if (inp.up && !f.crouch && !f.blocking) {
         f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * spd * 0.95; f.crouch = false; f.jumpT = 0;
-        this._snd('melee_swing', 0.4);
+        this._snd('kombat_whoosh', 0.4);
       } else if ((f.recover || 0) > 0 && (inp.punch || inp.kick || inp.special)) {
         // после промаха — пауза
       } else if (inp.special && f.cd <= 0 && !(KMOVES[K_SPECIAL[f.id]].shoot && this.proj.some(q => q.owner === f))) {
@@ -724,7 +724,7 @@ class SamsaKombat {
       if (f.stun <= 0) f.state = 'idle';
     } else if (st === 'air') {
       if (f.grounded && f.vz <= 0) {
-        this._dust(f.x); this.shake = Math.max(this.shake, 5); this._snd('tank_hit', 0.5);
+        this._dust(f.x); this.shake = Math.max(this.shake, 5); this._snd('kombat_land', 0.5);
         f.vx *= 0.3;
         f.juggle = 0;
         if (f.koed) { f.state = 'ko'; } else { f.state = 'down'; f.downT = 0.75; }
@@ -756,7 +756,7 @@ class SamsaKombat {
     if (!fwd) f.inv = 0.14;
     this.ghosts.push({ id: f.id, P: { ...f.pose }, x: f.x, z: f.z, dir: f.dir, a: 0.45 });
     this._dust(f.x);
-    this._snd('melee_swing', 0.4);
+    this._snd('kombat_whoosh', 0.4);
   }
 
   _physics(f, dt) {
@@ -791,9 +791,9 @@ class SamsaKombat {
     f.chain = K_PUNCH_CHAIN.indexOf(name);
     f.queued = null;
     if (m.special && name !== 'supper') this._pop(KF[f.id].special, f.x, 200 + f.z, KF[f.id].color, 13);
-    if (!m.shoot && !m.zap) this._snd('melee_swing', 0.6);
+    if (!m.shoot && !m.zap) this._snd('kombat_whoosh', 0.6);
     if (m.dash) f.vx = f.dir * m.dash;
-    if (name === 'sfolder' || name === 'sfire') this._snd('throw');
+    if (name === 'sfolder' || name === 'sfire') this._snd('kombat_special');
   }
 
   _stepMove(f, o, dt, inp) {
@@ -851,7 +851,7 @@ class SamsaKombat {
       o.vx = att.dir * (h.kb || 150) * 0.7;
       for (let i = 0; i < 8; i++) this._spark(hx, hy, att.dir * Utils.rand(40, 200), Utils.rand(-80, 180), 0.25, 'spark');
       this._impact(hx, hy, false, -1);
-      this._snd('tank_hit', 0.4);
+      this._snd('kombat_block', 0.4);
       this.hitstop = 0.03;
       return 'block';
     }
@@ -868,8 +868,8 @@ class SamsaKombat {
     this._bleed(hx, hy, Math.round(10 + dmg * 5), att.dir, power);
     this.hitstop = 0.035 + dmg * 0.0045;
     this.shake = Math.max(this.shake, 3 + dmg * 0.7);
-    this._snd(dmg >= 9 ? 'tank_hit' : 'punch');
-    if (Math.random() < 0.4) this._snd('player_hurt', 0.5);
+    this._snd(dmg >= 9 ? 'kombat_hit_heavy' : 'kombat_hit');
+    if (Math.random() < 0.4) this._snd('kombat_grunt', 0.5);
     if (h.burn) { o.burnT = 1.6; o.burnTick = 0.3; }
     if (h.zap) o.zapT = 0.9;
     if (o.hp <= 0) { this._ko(att, o); return 'ko'; }
@@ -902,7 +902,7 @@ class SamsaKombat {
     }
     att.wins++;
     this.proj = [];
-    this._snd('enemy_death');
+    this._snd('kombat_ko');
     if (att.wins >= K_WINS) {
       o.state = 'dizzy'; o.z = 0; o.vz = 0; o.vx = att.dir * 120; o.hp = 0;
       this.phase = 'finish'; this.pt = 0; this.finishW = att;
@@ -949,7 +949,7 @@ class SamsaKombat {
     const tx = hit ? o.x : f.x + f.dir * reach, ty = hit ? Math.min(o.height() * 0.65 + o.z, 130) : h.y;
     this.zapFx = { x0: h.x, y0: h.y, x1: tx, y1: ty, t: 0.28 };
     this._emit(['z', Math.round(h.x), Math.round(h.y), Math.round(tx), Math.round(ty)]);
-    this._snd('stun');
+    this._snd('kombat_stun');
     if (hit) this._resolveHit(f, o, { dmg: 8, zone: 'mid', kb: 90, stun: 0.95, zap: true, y: ty });
   }
 
@@ -1231,13 +1231,13 @@ class SamsaKombat {
     const D = { asik: 4.6, gal: 4.8, daur: 4.8, dani: 4.6, aseke: 4.6, ulzhan: 4.8 }[F.id];
 
     if (F.id === 'asik') {
-      if (t < 0.7) { W.fpose = 'win'; if (once('wh', 0.1)) { this._pop('ФЬЮТЬ!', W.x, 210, '#ffffff', 18); this._snd('menu_select'); } }
+      if (t < 0.7) { W.fpose = 'win'; if (once('wh', 0.1)) { this._pop('ФЬЮТЬ!', W.x, 210, '#ffffff', 18); this._snd('fatality_whistle'); } }
       else if (t < 2.1) {
         const ph = Math.floor((t - 0.7) / 0.11);
         W.fpose = ph % 2 ? 'cross' : 'jab';
         if (ph !== F.ph) {
           F.ph = ph; const h = head();
-          this._bleed(h.x, h.y - Utils.rand(0, 40), 14, W.dir, 0.9); this._snd('punch', 0.8); this.shake = 5;
+          this._bleed(h.x, h.y - Utils.rand(0, 40), 14, W.dir, 0.9); this._snd('fatality_punch', 0.8); this.shake = 5;
           L.fpose = { ...KPOSE.hit, head: -0.6 + Math.random() * 0.4 };
           L.x += W.dir * 2;
         }
@@ -1248,12 +1248,12 @@ class SamsaKombat {
           fx.noHead = true;
           this._gib(h.x, h.y, W.dir * 180, 980, 'head', null, 14, L.id);
           this._bleed(h.x, h.y - 10, 140, W.dir, 1.3);
-          this._snd('tank_hit'); this.shake = 16; this.hitstop = 0.12;
+          this._snd('fatality_tank_hit'); this.shake = 16; this.hitstop = 0.12;
           L.fpose = 'dizzy';
         }
       }
       if (t > 2.2 && t < 3.6 && !fx.down) for (let i = 0; i < 4; i++) this.blood.push({ x: L.x + L.dir * 4, y: 140, vx: Utils.rand(-70, 70), vy: Utils.rand(420, 820), s: Utils.rand(2, 4.5), c: Math.random() < 0.5 ? '#c00818' : '#ff2030' });
-      if (once('fall', 3.3)) { fx.down = true; L.fpose = 'dizzy'; L.frot = 1.5; this._dust(L.x); this._snd('tank_hit', 0.5); }
+      if (once('fall', 3.3)) { fx.down = true; L.fpose = 'dizzy'; L.frot = 1.5; this._dust(L.x); this._snd('fatality_tank_hit', 0.5); }
       if (t > 3.4) W.fpose = 'win';
     }
 
@@ -1265,8 +1265,8 @@ class SamsaKombat {
         if (Math.random() < 0.4) { const b = head(); this._bleed(L.x, Utils.rand(60, 150), 2, -L.dir, 0.4); }
         L.fpose = { ...KPOSE.hit, fs: Math.sin(t * 20) * 1.2, bs: Math.cos(t * 17) * 1.2, head: -0.4 + Math.sin(t * 12) * 0.3 };
         fx.burn = Math.min(1, (t - 0.3) / 1.6);
-        if (once('fs', 0.3)) this._snd('throw');
-        if (Math.floor(t * 5) !== F.snd) { F.snd = Math.floor(t * 5); this._snd('player_hurt', 0.4); }
+        if (once('fs', 0.3)) this._snd('fatality_throw');
+        if (Math.floor(t * 5) !== F.snd) { F.snd = Math.floor(t * 5); this._snd('fatality_player_hurt', 0.4); }
       }
       if (t > 0.5 && t < 3.3) for (let i = 0; i < 3; i++) this._spark(L.x + Utils.rand(-18, 18), Utils.rand(10, 170), Utils.rand(-20, 20), Utils.rand(80, 220), 0.5, 'fire');
       if (once('skel', 2.3)) { fx.skeleton = true; fx.burn = 0; L.fpose = 'dizzy'; this._pop('ДО КОСТЕЙ!', L.x, 220, '#ff9a3a', 16); }
@@ -1275,7 +1275,7 @@ class SamsaKombat {
         for (let i = 0; i < 9; i++) this._gib(L.x + Utils.rand(-10, 10), Utils.rand(40, 150), Utils.rand(-160, 160), Utils.rand(100, 420), i === 0 ? 'skull' : 'bone', '#f4efe0', i === 0 ? 12 : Utils.rand(8, 14));
         this.marks.push({ kind: 'ash', x: L.x });
         for (let i = 0; i < 30; i++) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(0, 100), Utils.rand(-40, 40), Utils.rand(20, 120), 1.4, 'dust');
-        this._snd('tank_hit', 0.6);
+        this._snd('fatality_tank_hit', 0.6);
       }
     }
 
@@ -1295,7 +1295,7 @@ class SamsaKombat {
           this.tracer = { x0: h.x + W.dir * 14, y0: h.y, x1: L.x, y1: hy, t: 0.05 };
           this._spark(h.x + W.dir * 16, h.y, 0, 0, 0.06, 'flash');
           this._bleed(L.x - W.dir * 4, hy, 7, W.dir, 0.8);
-          if (n % 2 === 0) this._snd('shoot_uzi', 0.6);
+          if (n % 2 === 0) this._snd('fatality_shoot_uzi', 0.6);
           L.fpose = { ...KPOSE.hit, lean: -0.3 + Math.sin(t * 30) * 0.25, head: -0.5 + Math.cos(t * 26) * 0.3, fs: Math.sin(t * 22), bs: Math.cos(t * 19) };
           L.x += W.dir * 0.6; this.shake = 3;
         }
@@ -1309,7 +1309,7 @@ class SamsaKombat {
       if (t < 0.5 && Math.random() < 0.6) this._spark(W.x + Utils.rand(-20, 20), Utils.rand(10, 170), 0, Utils.rand(20, 80), 0.6, 'shadow');
       if (once('cl', 0.5)) {
         F.clones = [{ x: L.x - 80, z: 0, dir: 1 }, { x: L.x + 80, z: 0, dir: -1 }, { x: L.x - L.dir * 30, z: 200, dir: -L.dir }];
-        this._snd('stun');
+        this._snd('fatality_stun');
       }
       if (F.clones) {
         F.clones.forEach((c, i) => {
@@ -1318,13 +1318,13 @@ class SamsaKombat {
           if (i === 2) c.z = Math.max(0, 200 - Math.max(0, t - 0.6) * 300);
           if (once('s' + i, at + 0.06)) {
             this.slash = { x: L.x, y: 100, a: i === 2 ? 1.57 : (c.dir > 0 ? -0.6 : 0.6), t: 0.18 };
-            this._bleed(L.x, Utils.rand(80, 150), 40, c.dir, 1); this._snd('melee_swing'); this._snd('punch'); this.shake = 6;
+            this._bleed(L.x, Utils.rand(80, 150), 40, c.dir, 1); this._snd('fatality_melee_swing'); this._snd('fatality_punch'); this.shake = 6;
             L.fpose = { ...KPOSE.hit, lean: -0.3 * c.dir * L.dir };
           }
         });
         if (t > 2) F.clones = null;
       }
-      if (once('cut', 1.85)) { fx.cut = { dx: 0, dy: 0, rot: 0 }; this._snd('tank_hit'); this.shake = 12; this._bleed(L.x, 90, 120, 1, 0.8); this._bleed(L.x, 90, 120, -1, 0.8); L.fpose = 'dizzy'; }
+      if (once('cut', 1.85)) { fx.cut = { dx: 0, dy: 0, rot: 0 }; this._snd('fatality_tank_hit'); this.shake = 12; this._bleed(L.x, 90, 120, 1, 0.8); this._bleed(L.x, 90, 120, -1, 0.8); L.fpose = 'dizzy'; }
       if (fx.cut) {
         const c = fx.cut, k = Math.min(1, (t - 1.85) / 0.7);
         c.dx = k * 22; c.dy = k * k * 30; c.rot = k * 1.2;
@@ -1342,7 +1342,7 @@ class SamsaKombat {
         L.fpose = { ...KPOSE.hit, fs: Utils.rand(-1, 2), bs: Utils.rand(-1, 2), head: Utils.rand(-0.6, 0.3), lean: Utils.rand(-0.4, 0.1) };
         L.shakeX = Utils.rand(-3, 3);
         if (Math.random() < 0.5) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(20, 170), Utils.rand(-120, 120), Utils.rand(-60, 160), 0.25, 'zap');
-        if (Math.floor(t * 2.5) !== F.snd) { F.snd = Math.floor(t * 2.5); this._snd('stun', 0.7); }
+        if (Math.floor(t * 2.5) !== F.snd) { F.snd = Math.floor(t * 2.5); this._snd('fatality_stun', 0.7); }
         F.pct = Math.min(99, Math.round((t - 0.4) / 2.2 * 100));
       }
       if (once('boom', 2.6)) { fx.xray = false; L.shakeX = 0; F.pct = null; this._explode(L, W.dir, true); this._pop('ОШИБКА 404', L.x, 200, '#05d9e8', 20); }
@@ -1365,13 +1365,13 @@ class SamsaKombat {
         fx.squash = 0.07; L.fpose = 'stance';
         this._bleed(L.x, 6, 180, 1, 1.1); this._bleed(L.x, 6, 180, -1, 1.1);
         for (let i = 0; i < 40; i++) this._pool(L.x + Utils.rand(-80, 80), 6);
-        this._snd('tank_hit'); this._snd('player_death', 0.6); this.shake = 22; this.hitstop = 0.15;
+        this._snd('fatality_tank_hit'); this._snd('fatality_player_death', 0.6); this.shake = 22; this.hitstop = 0.15;
       }
       if (once('mark', 2.9)) this.marks.push({ kind: 'stamp', x: L.x });
       if (t > 3.6) F.stamp = null;
     }
 
-    if (t > D * 0.78 && once('FT', D * 0.78)) { this._banner('ФАТАЛИТИ!', KF[F.id].fatality, '#ff1020', 99, true); this._snd('player_death'); }
+    if (t > D * 0.78 && once('FT', D * 0.78)) { this._banner('ФАТАЛИТИ!', KF[F.id].fatality, '#ff1020', 99, true); this._snd('fatality_player_death'); }
     if (t > D + 0.8 && this.phase === 'fatality') {
       this._replay = true; this._endMatch(W, true); this._replay = false;   // клиент доигрывает фаталити сам
       this.banner = { text: 'ФАТАЛИТИ!', sub: `${W.def.name} ПОБЕЖДАЕТ`, col: '#ff1020', dur: 99, t: 1, big: true };
@@ -1387,7 +1387,7 @@ class SamsaKombat {
     this._gib(L.x, 150, dir * 220, 900, 'head', null, 14, L.id);
     this._bleed(L.x, 100, 260, 1, 1.4); this._bleed(L.x, 100, 260, -1, 1.4);
     if (pixels) for (let i = 0; i < 60; i++) this._spark(L.x + Utils.rand(-20, 20), Utils.rand(20, 170), Utils.rand(-300, 300), Utils.rand(-100, 400), 1.2, 'pixel');
-    this._snd('tank_hit'); this._snd('enemy_death');
+    this._snd('fatality_tank_hit'); this._snd('fatality_enemy_death');
     this.shake = 20; this.hitstop = 0.12;
   }
 

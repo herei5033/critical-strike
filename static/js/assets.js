@@ -6,12 +6,15 @@
 // =====================================================================
 
 const UI_SOUNDS = ['menu_move', 'menu_select', 'char_select', 'empty_click', 'game_start'];
-const GAME_SOUNDS = [
+const GAME_SOUNDS_BASE = [
   'shoot_m4', 'shoot_ak47', 'shoot_glock', 'shoot_uzi', 'shoot_shotgun',
   'door_open', 'stun', 'throw', 'pickup_weapon', 'pickup_health',
   'enemy_death', 'punch', 'melee_swing', 'player_hurt', 'player_death', 'footstep',
   'tank_hit', 'hound_bark', 'sniper_charge', 'sniper_shot',
 ];
+// + собственные звуки всех событий (грузятся только те, файлы которых есть)
+const GAME_SOUNDS = GAME_SOUNDS_BASE.concat(Object.keys(SFX_FALLBACK).filter(n => !['ui_locked', 'map_toggle', 'pause', 'coop_pick', 'chat', 'chat_system'].includes(n)));
+UI_SOUNDS.push('ui_locked', 'map_toggle', 'pause', 'coop_pick', 'chat', 'chat_system');
 // silence.mp3 — необязательная тихая дорожка для пауз, справочника и экрана зачистки
 const QUIET_TRACK = '/static/audio/silence.mp3';
 const MUSIC = ['/static/audio/menu_music.mp3', '/static/audio/game_music.mp3', QUIET_TRACK];
@@ -49,6 +52,7 @@ const Assets = {
 
   _image(url, img) {
     return new Promise(res => {
+      if (!hasMedia(url)) { res(null); return; }
       img = img || new Image();
       if (img.complete && img.naturalWidth && img.src.endsWith(url)) { res(img); return; }
       img.onload = () => res(img); img.onerror = () => res(null);
@@ -59,6 +63,7 @@ const Assets = {
   // Фото персонажа сюжета: кладётся в StoryAssets, чтобы диалог взял его без задержки
   _portrait(id) {
     return new Promise(res => {
+      if (!hasMedia(`img/story/${id}.png`)) { StoryAssets.imgs[id] = null; res(null); return; }
       const img = new Image();
       img.onload = () => { StoryAssets.imgs[id] = img; res(img); };
       img.onerror = () => { StoryAssets.imgs[id] = null; res(null); };

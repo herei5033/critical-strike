@@ -285,7 +285,7 @@ class Game {
     if (intro) this.state = 'coopIntro';
   }
 
-  // ---------- корпоратив: спортзал между этажами ----------
+  // ---------- корпоратив: спортзал (GORILLA CUP из лобби) ----------
   startGym() {
     const intro = this.state === 'coopIntro';
     Utils.withSeed(GYM_LAYOUT.seed, () => this._buildLevel(GYM_LAYOUT));
@@ -335,7 +335,7 @@ class Game {
     delete Input._pressedThisFrame.KeyE;            // E не уходит в «БАБАХ»
     if (!got) { Effects.popup(b.x, b.y - 18, 'СТВОЛЫ ПОЛНЫЕ', '#9a94b8', 11); return; }
     b.used = true;
-    AudioSys.play('pickup_weapon');
+    AudioSys.play('ammo_box');
     Effects.ring(b.x, b.y, '90,255,140', 34);
     Effects.burst(b.x, b.y, '90,255,140', 14, 160);
     Effects.popup(b.x, b.y - 18, '+ПАТРОНЫ', '#3dff8a', 13);
@@ -466,7 +466,7 @@ class Game {
       this.enemies.push(e);
     }
     this.totalEnemies = this.enemies.length;
-    AudioSys.play('hound_bark', 0.6);
+    AudioSys.play('wave', 0.6);
     if (this.thoughts) setTimeout(() => this.thoughts.event('wave'), 2500);
     if (this.radio) this.radio.push('aseke', Utils.choice(['Вижу на камерах: ещё люди Депозита, идут к вам!', 'Осторожно, к вам гости. Ищут именно вас.', 'Подкрепление Депозита на подходе. Держитесь!']));
   }
@@ -860,7 +860,7 @@ class Game {
     }
     // Карта уровня (M)
     if ((this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyM') && !TextField.active && !this.paused) {
-      this.showMap = !this.showMap; AudioSys.play('menu_move');
+      this.showMap = !this.showMap; AudioSys.play('map_toggle');
     }
     // Чат корпоратива
     if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
@@ -882,8 +882,12 @@ class Game {
       this.levelClearTimer -= dt;
       const skip = !this.coop && (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.consumeClick());
       if (this.levelClearTimer <= 0 || skip) {
-        if (this.coop) this.startGym();       // передышка; на следующий этаж — когда все готовы
-        else this.startLevel();
+        if (this.coop) {
+          // корпоратив: сразу следующий этаж (спортзал теперь только в лобби — GORILLA CUP)
+          this.coop.levelNo++;
+          this.coop.seed = (Math.random() * 2e9) | 0;
+          this.startCoopLevel(this.coop.seed);
+        } else this.startLevel();
       }
       return;
     }
@@ -1084,19 +1088,21 @@ class Game {
       for (let i = 0; i < (coopClient ? 0 : this.pickups.length); i++) {
         const p = this.pickups[i];
         try { p.update(dt, this.level, this.enemies, this.pickups); } catch (err) { console.error('PICKUP UPDATE ERROR:', err); }
-        if (p.pickedUp || p.thrown || p.groundTimer > 0) continue;
+      }
+      // подбор: из всего, что лежит рядом, — сначала лучшее (заряженный огнестрел, потом остальное)
+      const near = coopClient || this.player.dead ? [] : pickupsByRank(this.pickups, this.player.x + this.player.w / 2, this.player.y + this.player.h / 2, 24);
+      for (const p of near) {
         if (p.weapon && (this.player._pullUntil || 0) > performance.now()) continue;   // арсенал: руки ждут стволы
-        const dist = Utils.dist(p.x, p.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2);
-        if (dist < 24 && !this.player.dead) {
+        {
           const pl = this.player;
           const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
           if (slot) {
             p.pickedUp = true;
             if (slot === 'health') { pl.hp++; AudioSys.play('pickup_health'); this.thoughts.event('samsa'); }
-            else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
-            else if (slot === 'armor') { this.thoughts.event('armor'); pl.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, '+БРОНЯ', '#5aa8ff', 12); Effects.ring(pl.x + 9, pl.y + 9, '90,170,255', 28); }
+            else if (slot === 'grenade') { pl.grenades++; AudioSys.play('pickup_grenade'); Effects.popup(pl.x + 9, pl.y - 8, '+ГРАНАТА', '#8aff8a', 11); }
+            else if (slot === 'armor') { this.thoughts.event('armor'); pl.armor = 2; AudioSys.play('pickup_armor'); Effects.popup(pl.x + 9, pl.y - 8, '+БРОНЯ', '#5aa8ff', 12); Effects.ring(pl.x + 9, pl.y + 9, '90,170,255', 28); }
             else if (slot === 'w1') { pl.weapon = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); if (pl.weapon.boss) this.thoughts.event('weapon'); }
-            else { pl.weapon2 = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_weapon'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
+            else { pl.weapon2 = prepWeapon(pl.charId, p.weapon); AudioSys.play('pickup_second'); Effects.popup(pl.x + 9, pl.y - 8, 'ДВА СТВОЛА!', '#ffd319', 11); }
           }
         }
       }
@@ -1113,6 +1119,7 @@ class Game {
         this._creditKill(e);
         Effects.popup(e.cx(), e.cy() - 14, `+${pts}`, this.combo > 1 ? '#ff2a6d' : '#ffd319', 13 + Math.min(this.combo, 5) * 2);
         if (this.combo > 1) Effects.popup(e.cx(), e.cy() - 30, `x${this.combo} КОМБО`, '#05d9e8', 11);
+        if (this.combo > 1) AudioSys.play(this.combo >= 5 ? 'combo_big' : 'combo', 0.7);
         if (this.combo === 5) this.thoughts.event('streak');
         Effects.screenFlash(0.08, '255,255,255');
         this.shake = Math.max(this.shake, 0.35);
@@ -1155,11 +1162,11 @@ class Game {
           this.state = 'victory'; this.victoryT = 0;
           Progress.unlock(this.campaignIdx + 2);
           if (this.campaignIdx >= CAMPAIGN.length - 1) this._submitRun();
-          AudioSys.play('game_start');
+          AudioSys.play('victory');
           Effects.screenFlash(0.35, '255,240,200');
         } else {
           this.state = 'levelClear'; this.levelClearTimer = this._lcMax = this.coop ? 2.6 : 2.2;
-          AudioSys.play('game_start'); Effects.screenFlash(0.25, '255,240,200');
+          AudioSys.play('level_clear'); Effects.screenFlash(0.25, '255,240,200');
         }
       }
       if (this.levelBanner) { this.levelBanner.t -= dt; if (this.levelBanner.t <= 0) this.levelBanner = null; }
@@ -1236,7 +1243,7 @@ class Game {
         if (this.level.collides(x, y, 16, 16)) { x = p.x; y = p.y; }
         this.allies.push(new Ally(p, x, y, 'shadow', i));
       }
-      AudioSys.play('stun');
+      AudioSys.play('clones');
       if (this.thoughts) this.thoughts.event('clones');
     }
     if (p._wantBabah) { p._wantBabah = false; this._babah(p); }
@@ -1313,7 +1320,7 @@ class Game {
       return;
     }
     Effects.ring(cx, cy, '90,200,255', 46);
-    AudioSys.play('stun');
+    AudioSys.play('arsenal');
     this._dropGuns(p, cx, cy, plan.keep);
     if (this.coop && !this.coop.isHost) {
       // клиент корпоратива: предметы у хоста — он выберет стволы и пришлёт их с анимацией
@@ -1415,7 +1422,7 @@ class Game {
           }
           if (!p.weapon) p.weapon = w; else if (!p.weapon2) p.weapon2 = w;
           else if (!this.coop || this.coop.isHost) this.pickups.push(new Pickup(tx, ty, f.w));   // руки заняты — кладём рядом
-          AudioSys.play('pickup_weapon');
+          AudioSys.play('arsenal_catch');
         }
       }
     }
@@ -1445,6 +1452,7 @@ class Game {
   // «БАБАХ» Галы: мощный взрыв вокруг, обычных врагов убивает, боссам — много урона, самого Галу не ранит
   _babah(p) {
     const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    AudioSys.play('babah');
     Explosives.explode(this, cx, cy, BABAH_R, { cosmetic: true });
     Effects.ring(cx, cy, '255,240,180', BABAH_R * 1.2);
     Effects.burst(cx, cy, '255,120,30', 50, 420);
@@ -1518,7 +1526,7 @@ class Game {
     }
     this.totalEnemies = this.enemies.length;
     Effects.screenFlash(0.18, '255,40,60');
-    AudioSys.play('hound_bark');
+    AudioSys.play('ambush');
     this.levelBanner = { name: 'ПОДКРЕПЛЕНИЕ', sub: `ВОЛНА ${this._waves} — ${size} ВРАГОВ ИДУТ К ВАМ`, color: '#ff2a40', t: 2.4 };
     if (this.thoughts) this.thoughts.event('wave');
   }
@@ -2490,7 +2498,7 @@ class Game {
     return true;
   }
 
-  _openPause() { this.paused = { sel: 0 }; }
+  _openPause() { this.paused = { sel: 0 }; AudioSys.play('pause'); }
 
   _pauseItems() {
     const list = [{ id: 'resume', text: 'ПРОДОЛЖИТЬ' }];
@@ -2725,5 +2733,5 @@ function announceMode(pl, m) {
   Effects.popup(cx, cy - 30, T[0], T[1], 16);
   Effects.ring(cx, cy, T[2], 60);
   Effects.screenFlash(0.3, T[2]);
-  AudioSys.play(m === 'rage' ? 'sniper_charge' : 'pickup_weapon');
+  AudioSys.play({ rage: 'rage_mode', clone: 'perfect_clone', babah: 'babah_ready' }[m] || 'mode_on');
 }

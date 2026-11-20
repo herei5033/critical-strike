@@ -1101,7 +1101,7 @@ class Level {
     const cols = { wood: '220,170,110', metal: '230,240,255', glass: '190,240,255', fabric: '220,150,180' };
     Effects.burst(f.x, f.y, cols[f.mat] || cols.wood, 24, 260);
     Effects.dust(f.x, f.y, 6);
-    AudioSys.play(f.mat === 'metal' ? 'tank_hit' : 'door_open');
+    AudioSys.play('break_' + (f.mat || 'wood'));
     this.destroyed.push(idx);
     this._redrawRegion(f.x - f.W, f.y - f.W, f.x + f.W, f.y + f.W, f.light ? f.light.r : 0);
   }
@@ -1121,7 +1121,7 @@ class Level {
     const ix = (w.x + 0.5 + w.dx * 0.8) * TILE, iy = (w.y + 0.5 + w.dy * 0.8) * TILE;
     for (let i = 0; i < 3; i++) this.decals.push({ kind: 'shards', seed: idx * 31 + i, rot: i, x: ix + (i - 1) * 9, y: iy + (i - 1) * 4 });
     Effects.burst(ix, iy, '190,240,255', 20, 220);
-    AudioSys.play('empty_click');
+    AudioSys.play('glass_break');
     this._redrawRegion((w.x - 1) * TILE, (w.y - 1) * TILE, (w.x + 2) * TILE, (w.y + 2) * TILE, 0);
   }
 

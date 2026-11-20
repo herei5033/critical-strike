@@ -63,8 +63,8 @@ class Door {
       if (e._path) e._path = null;
     }
     Effects.dust(this.x + this.w / 2, this.y + this.h / 2, 6);
-    AudioSys.playAt('door_open', this.hx, this.hy);
-    AudioSys.playAt('punch', this.hx, this.hy);
+    AudioSys.playAt('door_kick', this.hx, this.hy);
+    AudioSys.playAt('door_slam', this.hx, this.hy);
   }
 
   // Пули и удары разбивают дверь
@@ -81,7 +81,7 @@ class Door {
       Effects.burst(mx, my, '230,170,100', 26, 280);
       Effects.dust(mx, my, 6);
       Effects.hitstop = Math.max(Effects.hitstop, 0.04);
-      AudioSys.play('door_open');
+      AudioSys.play('door_break');
       this._chips = [];
       for (let i = 0; i < 6; i++) this._chips.push({ x: mx + Utils.rand(-22, 22), y: my + Utils.rand(-22, 22), a: Math.random() * 3, l: Utils.rand(6, 16) });
     }
@@ -193,7 +193,7 @@ class Door {
       // Резко распахнутая игроком дверь сбивает врага с ног (танк лишь останавливает створку)
       if (e !== player && this.playerPushTimer > 0 && tipSpeed > 170 && e.type !== 'tank') {
         e.stun();
-        AudioSys.play('punch');
+        AudioSys.play('door_knockdown');
         Effects.burst(e.x + e.w / 2, e.y + e.h / 2, '255,200,120', 14, 220);
         Effects.hitstop = Math.max(Effects.hitstop, 0.05);
         Effects.popup(e.x + e.w / 2, e.y - 6, 'БАМ!', '#ffd319', 13);

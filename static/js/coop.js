@@ -208,6 +208,7 @@ class CoopUI {
   }
 
   _recvChat(m) {
+    AudioSys.play(m.sys ? 'chat_system' : 'chat', 0.6);
     this.chat.push(m);
     this.chat = this.chat.slice(-40);
     if (this.game.coop) this.game.coop.pushChatLine(m);
@@ -356,7 +357,7 @@ class CoopUI {
     if (this.connecting) return;
     const taken = this.players.find(p => p.char === id && p.pid !== this.pid);
     if (taken) { this.flash(`${CHAR_NAMES[id]} уже выбран игроком ${taken.name}`); return; }
-    AudioSys.play('char_select');
+    AudioSys.play('coop_pick');
     if (this.isHost) { const me = this.players.find(p => p.pid === 'host'); if (me) me.char = id; this.broadcastLobby(); }
     else { this.pendingChar = id; if (this.net) this.net.send('host', { t: 'char', c: id }); }
   }
@@ -681,7 +682,7 @@ class RemotePlayer {
       if (!first && game.thoughts) game.thoughts.react('mateDown', this.name);
       this.dead = true; this.deathAngle = s.da || 0;
       Effects.bloodSplat(this.x + 9, this.y + 9, this.deathAngle, 30);
-      AudioSys.play('player_death');
+      AudioSys.play('ally_down');
     } else if (!s.d && this.dead) {
       if (game.thoughts) game.thoughts.react('mateUp', this.name);
       this.dead = false;
@@ -1106,8 +1107,8 @@ class CoopSession {
       else if (!p.weapon) p.weapon = prepWeapon(p.charId, makeWeapon(e.w, e.am));
       AudioSys.play('pickup_weapon');
     }
-    else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_weapon'); }
-    else if (e.t === 'armor+') { p.armor = 2; AudioSys.play('pickup_weapon'); Effects.popup(p.x + 9, p.y - 8, '+БРОНЯ', '#5aa8ff', 12); }
+    else if (e.t === 'gren+') { p.grenades = (p.grenades || 0) + 1; AudioSys.play('pickup_grenade'); }
+    else if (e.t === 'armor+') { p.armor = 2; AudioSys.play('pickup_armor'); Effects.popup(p.x + 9, p.y - 8, '+БРОНЯ', '#5aa8ff', 12); }
     else if (e.t === 'kc') { p.kills = e.n; }
     else if (e.t === 'chg') { p.charge = e.n; }
     else if (e.t === 'mode') {
@@ -1128,7 +1129,7 @@ class CoopSession {
     if (!g.level || !g.level.doors) return;
     g.score = s.sc; g.kills = s.k; g.totalEnemies = s.tot; g.combo = s.cb; g.comboTimer = s.ct;
 
-    if (s.st === 'clear' && g.state === 'playing') { g.state = 'levelClear'; g.levelClearTimer = g._lcMax = 2.6; AudioSys.play('game_start'); }
+    if (s.st === 'clear' && g.state === 'playing') { g.state = 'levelClear'; g.levelClearTimer = g._lcMax = 2.6; AudioSys.play('level_clear'); }
     if (s.st === 'over' && !this.teamOver) { this.teamOver = true; g.enterTeamOver(); }
 
     // враги
@@ -1258,7 +1259,7 @@ class CoopSession {
       e._netShots = a[6];
       e.flashTimer = 0.06; e.recoil = 1;
       if (e.type === 'sniper') AudioSys.play('sniper_shot');
-      else if (e.isBoss) { if (Math.random() < 0.5) AudioSys.play('shoot_uzi'); }
+      else if (e.isBoss) { if (Math.random() < 0.5) AudioSys.play('boss_burst'); }
       else if (e.weapon) AudioSys.play(e.weapon.sound);
       Effects.casing(e.cx(), e.cy(), e.angle, e.weapon && e.weapon.id === 'shotgun');
     }
@@ -1308,9 +1309,7 @@ class CoopSession {
     const g = this.game, pl = g.player;
     if (!pl || pl.dead) return;
     this._takeCd = Math.max(0, (this._takeCd || 0) - 1 / 60);
-    for (const p of g.pickups) {
-      if (p.thrown) continue;
-      if (Utils.dist(p.x, p.y, pl.x + 9, pl.y + 9) > 24) continue;
+    for (const p of pickupsByRank(g.pickups, pl.x + 9, pl.y + 9, 24)) {   // лучшее — первым
       if (p.weapon && (pl._pullUntil || 0) > performance.now()) continue;
       const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
       if (!slot) continue;
@@ -1520,7 +1519,7 @@ class CoopSession {
       const start = 0.7 + i * 0.45;
       const k = Utils.clamp((t - start) / 0.45, 0, 1);
       if (k <= 0) return;
-      if (!p._introSfx) { p._introSfx = true; AudioSys.play('char_select'); }
+      if (!p._introSfx) { p._introSfx = true; AudioSys.play('coop_intro'); }
       const e = 1 - Math.pow(1 - k, 3);
       const x = x0 + i * (cw + gap);
       const y = H * 0.26 + (1 - e) * H * 0.7;

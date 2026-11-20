@@ -71,6 +71,9 @@
     <p>Поверните телефон горизонтально</p>
   </div>
 
+  <!-- Список медиафайлов, которые есть на сервере (необязательные звуки и картинки) -->
+  <script>window.MEDIA_FILES = {{ media|tojson }};</script>
+
   <!-- Скрипты -->
   <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/input.js') }}"></script>

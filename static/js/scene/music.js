@@ -32,11 +32,7 @@ const SceneMusic = {
     AudioSys.lastTrack = null;
     if (!this.on || !AudioSys.musicEnabled) return;
     const url = `/static/audio/scene/${mood}.mp3`;
-    if (this.fileOk[url] === undefined) {
-      this.fileOk[url] = null;
-      try { const r = await fetch(url, { method: 'HEAD' }); this.fileOk[url] = r.ok; } catch (e) { this.fileOk[url] = false; }
-      if (this.mood !== mood) return;
-    }
+    if (this.fileOk[url] === undefined) this.fileOk[url] = hasMedia(url);
     if (this.fileOk[url]) { this._stopSynth(); AudioSys.playMusic(url); return; }
     AudioSys.stopMusic();
     this._synth(this.MOODS[mood] || this.MOODS.night);

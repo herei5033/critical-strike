@@ -173,7 +173,7 @@ class CampaignUI {
     if (c.locked) {
       this.msg = c.id === 'endless' ? 'Откроется после прохождения колледжа' : `Сначала пройдите «${CAMPAIGN[c.id - 1].name}»`;
       this.msgT = 2.5;
-      AudioSys.play('empty_click');
+      AudioSys.play('ui_locked');
       return;
     }
     AudioSys.play('menu_select');

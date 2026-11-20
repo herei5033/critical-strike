@@ -54,7 +54,7 @@ class Ally {
         o.hp++;
         Effects.popup(o.x + 9, o.y - 10, '+1 HP', '#3dff8a', 12);
         Effects.ring(o.x + 9, o.y + 9, '255,215,80', 26);
-        AudioSys.play('pickup_health', 0.7);
+        AudioSys.play('clone_heal', 0.7);
       }
     }
   }
@@ -118,7 +118,7 @@ class Ally {
         goal = { x: bp.x, y: bp.y };
         if (bd < 18) {
           bp.pickedUp = true; this.hp = Math.min(this.maxHp, this.hp + 1);
-          AudioSys.play('pickup_health', 0.6);
+          AudioSys.play('ally_samsa', 0.6);
           Effects.popup(this.cx(), this.cy() - 14, '+1 HP КЛОНУ', '#3dff8a', 10);
         }
       }

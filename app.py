@@ -55,7 +55,20 @@ def _clean_name(value, default='ANON', limit=16):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", media=_media_files())
+
+
+# Какие аудио и картинки реально лежат в static/audio и static/img.
+# Игра запрашивает только их — необязательные файлы, которых нет, не дают ошибок 404.
+def _media_files():
+    out = []
+    for sub in ('audio', 'img'):
+        root = os.path.join(app.static_folder, sub)
+        for dirpath, _, files in os.walk(root):
+            for f in files:
+                if f.lower().endswith(('.mp3', '.ogg', '.wav', '.png', '.jpg', '.jpeg', '.webp')):
+                    out.append(os.path.relpath(os.path.join(dirpath, f), app.static_folder).replace(os.sep, '/'))
+    return sorted(out)
 
 
 @app.route("/api/leaderboard", methods=["GET"])

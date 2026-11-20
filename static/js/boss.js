@@ -136,7 +136,7 @@ class Boss extends Enemy {
     this._stunImmune = t + 5;        // 5 секунд иммунитета после оглушения
     this.phase = 'dazed'; this.phaseT = Math.max(this.phaseT || 0, t);
     this.swingTimer = 0;
-    AudioSys.play('stun');
+    AudioSys.play('boss_stun');
     Effects.ring(this.cx(), this.cy(), '255,230,120', 44);
     return true;
   }
@@ -145,7 +145,7 @@ class Boss extends Enemy {
     if (this.dead) return;
     this.hp -= amount;
     this.hitFlash = 0.1;
-    AudioSys.play('tank_hit');
+    AudioSys.play('boss_hit');
     Effects.burst(this.cx(), this.cy(), '255,120,120', 8, 160);
     // Древний один раз встаёт снова с половиной здоровья
     if (this.hp <= 0 && this.def.revive && !this._revived) {
@@ -155,7 +155,7 @@ class Boss extends Enemy {
       Effects.screenFlash(0.4, '120,255,100');
       Effects.ring(this.cx(), this.cy(), '120,255,100', 80);
       Effects.popup(this.cx(), this.cy() - 40, 'ВТОРОЕ ДЫХАНИЕ!', '#7aff60', 15);
-      AudioSys.play('sniper_charge');
+      AudioSys.play('boss_second_wind');
       return;
     }
     if (this.hp <= 0) this.die(pickups, cause);
@@ -237,13 +237,13 @@ class Boss extends Enemy {
       if (dist < 50 && this.meleeCd <= 0 && los) {
         this.meleeCd = 0.9;
         this.swingDur = 0.36; this.swingTimer = this.swingDur; this.swingSide = -this.swingSide;
-        AudioSys.play('melee_swing');
+        AudioSys.play('boss_swing');
         player.takeDamage(1, { kind: 'blade', angle: this.angle });
       }
       if (los && dist < 320 && dist > (C.minDist || 70) && this.cooldown <= 0) {
         this.phase = 'windup'; this.phaseT = C.windup || 0.7;
         this._chainLeft = (C.chain || 1) - 1;
-        AudioSys.play('hound_bark');
+        AudioSys.play('boss_roar');
       }
     } else if (this.phase === 'windup') {
       // разбег: следит за целью, потом фиксирует направление
@@ -259,7 +259,7 @@ class Boss extends Enemy {
         // врезался в стену — оглушён и уязвим
         for (const d of level.doors) if (d.blocks(nx, ny, this.w, this.h)) d.push(null, this.cx(), this.cy(), Math.cos(this.chargeAngle) * 600, Math.sin(this.chargeAngle) * 600, false);
         this.phase = 'dazed'; this.phaseT = C.daze || 1.5;
-        AudioSys.play('tank_hit');
+        AudioSys.play('boss_wall_crash');
         Effects.ring(this.cx(), this.cy(), '255,255,255', 40);
         Effects.burst(this.cx(), this.cy(), '220,220,220', 18, 220);
         Effects.hitstop = Math.max(Effects.hitstop, 0.06);
@@ -302,7 +302,7 @@ class Boss extends Enemy {
       else if (dist < 150) this._moveToward(this.cx() - Math.cos(toP) * 40, this.cy() - Math.sin(toP) * 40, this.speed * 0.8, dt, level);
       if (los && dist < 460 && this.cooldown <= 0) {
         this.phase = 'spinup'; this.phaseT = 0.6;
-        AudioSys.play('sniper_charge');
+        AudioSys.play('boss_spinup');
       }
     } else if (this.phase === 'spinup') {
       this.phaseT -= dt;
@@ -324,7 +324,7 @@ class Boss extends Enemy {
         bullets.push(new Bullet(bx, by, a, 470, false, '#ffb040'));
         this.flashTimer = 0.05; this.recoil = 1;
         this._shots = (this._shots || 0) + 1;
-        if (this._shots % 2 === 0) AudioSys.play('shoot_uzi');
+        if (this._shots % 2 === 0) AudioSys.play('boss_minigun');
         Effects.casing(this.cx() + Math.cos(this.angle) * 10, this.cy() + Math.sin(this.angle) * 10, this.angle, false);
       }
       level.addNoise(this.cx(), this.cy(), 500);
@@ -359,7 +359,7 @@ class Boss extends Enemy {
       if (los && dist < 480 && this.cooldown <= 0) {
         this._alt = !this._alt;
         this.phase = this._alt ? 'spinup' : 'windup'; this.phaseT = this._alt ? 0.8 : 0.45;
-        AudioSys.play('sniper_charge');
+        AudioSys.play('boss_windup');
       }
     } else if (this.phase === 'spinup') {
       // три кольца огня во все стороны
@@ -377,7 +377,7 @@ class Boss extends Enemy {
           for (let i = 0; i < 18; i++) fire(off + i / 18 * Math.PI * 2, 230, this.def.ring || '#ff5020');
           this._ring++;
           this.flashTimer = 0.1;
-          AudioSys.play('shoot_shotgun');
+          AudioSys.play('boss_shotgun');
           Effects.ring(this.cx(), this.cy(), '255,90,30', 30);
         }
       } else {
@@ -389,7 +389,7 @@ class Boss extends Enemy {
           this._fireT = 0.16;
           for (const s of [-0.12, 0, 0.12]) fire(this.angle + s, 400, this.def.shot || '#ffb040');
           this.flashTimer = 0.05;
-          AudioSys.play('shoot_uzi');
+          AudioSys.play('boss_burst');
         }
       }
       level.addNoise(this.cx(), this.cy(), 500);
@@ -404,13 +404,13 @@ class Boss extends Enemy {
       if (dist > 60) this._navigate(player.x + 9, player.y + 9, this.speed * (los ? 1 : 1.8), dt, level);
       if (dist < 100 && los && this.cooldown <= 0) {
         this.phase = 'windup'; this.phaseT = 0.85;
-        AudioSys.play('hound_bark');
+        AudioSys.play('boss_roar');
       }
     } else if (this.phase === 'windup') {
       this.phaseT -= dt;
       if (this.phaseT <= 0) {
         // удар: всем в радиусе — урон, мебель вокруг разлетается
-        AudioSys.play('tank_hit'); AudioSys.play('shoot_shotgun');
+        AudioSys.play('boss_slam'); AudioSys.play('boss_slam_blast');
         Effects.ring(this.cx(), this.cy(), '200,255,160', SLAM_RADIUS);
         Effects.ring(this.cx(), this.cy(), '255,255,255', SLAM_RADIUS * 0.6);
         Effects.dust(this.cx(), this.cy(), 14);
@@ -431,7 +431,7 @@ class Boss extends Enemy {
 
   _callReinforcements(level, enemies, n = 2, pool = ['ak47', 'uzi', 'bat', 'pipe']) {
     const room = level.getRoomAt(this.cx(), this.cy());
-    AudioSys.play('hound_bark');
+    AudioSys.play('boss_call');
     Effects.popup(this.cx(), this.cy() - 30, 'ПОДКРЕПЛЕНИЕ!', '#ff3a3a', 13);
     for (let i = 0; i < n; i++) {
       const p = room ? level.randomFreePoint(room) : null;
@@ -558,7 +558,7 @@ class BossDirector {
 
   showBanner(boss) {
     this.banner = { name: boss.bossName, title: boss.bossTitle, t: 3.2 };
-    AudioSys.play('sniper_charge');
+    AudioSys.play('boss_intro');
     Effects.screenFlash(0.35, '255,20,40');
   }
 
