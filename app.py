@@ -12,6 +12,17 @@ import uuid
 
 app = Flask(__name__)
 
+
+# Версия статики = время изменения файла: после обновления браузер
+# не берёт из кэша старые скрипты (иначе новые и старые файлы смешиваются).
+@app.url_defaults
+def _static_version(endpoint, values):
+    if endpoint == 'static' and 'filename' in values:
+        try:
+            values['v'] = int(os.path.getmtime(os.path.join(app.static_folder, values['filename'])))
+        except OSError:
+            pass
+
 LEADERBOARD_FILE = os.path.join(os.path.dirname(__file__), 'leaderboard.json')
 _lock = threading.Lock()
 MAX_ENTRIES = 50

@@ -1467,6 +1467,8 @@ window.switchMode = function (mode) {
   }
   syncModeBtn();
 };
+window.AULET = AULET;
+window.toggleMode = () => window.switchMode(AULET.active ? 'cs' : 'aulet');
 function syncModeBtn() {
   const b = document.getElementById('mode-btn');
   if (!b) return;
@@ -1479,14 +1481,12 @@ function syncModeBtn() {
 }
 // DLC забирает цикл игры целиком: подменяем update/render, как только игра создана
 // (так не нужно трогать main.js, который у игроков может лежать в кэше браузера)
-const _auletHook = setInterval(() => {
-  const g = window.game;
-  if (!g) return;
-  clearInterval(_auletHook);
-  const upd = g.update.bind(g), ren = g.render.bind(g);
-  g.update = (dt) => (AULET.active ? AULET.update(dt) : upd(dt));
-  g.render = () => (AULET.active ? AULET.render() : ren());
-}, 30);
+if (typeof Game === 'function' && !Game.prototype._auletHooked) {
+  const upd = Game.prototype.update, ren = Game.prototype.render;
+  Game.prototype._auletHooked = true;
+  Game.prototype.update = function (dt) { return AULET.active ? AULET.update(dt) : upd.call(this, dt); };
+  Game.prototype.render = function () { return AULET.active ? AULET.render() : ren.call(this); };
+}
 
 // если игрок вышел из игры, находясь в DLC, — вернуть его туда, как только загрузится меню
 let _autoAulet = false;
