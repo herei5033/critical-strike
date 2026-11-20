@@ -268,7 +268,7 @@ class CoopUI {
     else if (m.t === 'start') {
       this.inMatch = true;
       this.players = m.players || this.players;
-      g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed }, this.net);
+      g.startCoopMatch({ code: this.code, pid: this.pid, isHost: false, players: this.players, seed: m.seed, lvl: m.lvl }, this.net);
     }
     else if (m.t === 'toLobby') { if (g.coop) g.leaveMatch(); }
     else if (m.t === 'Kstart') { this.inMatch = true; g.kombat.openNet('client', 'host', m.names); }
@@ -305,24 +305,25 @@ class CoopUI {
   }
 
   // ---------- хост: старт матча и возврат в лобби ----------
-  _start() {
+  _start(lvl = 1) {
     if (!this.isHost || this.inMatch) return;
     if (this.players.some(p => !p.char)) { this.flash('Не все выбрали персонажа'); return; }
     const seed = (Math.random() * 2e9) | 0;
     this.inMatch = true;
     const players = this.players.map(p => ({ ...p }));
-    this.net.broadcast({ t: 'start', seed, players });
+    this.net.broadcast({ t: 'start', seed, players, lvl });
     this.addChat('', 'Корпоратив начинается!', true);
-    this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed }, this.net);
+    this.game.startCoopMatch({ code: this.code, pid: 'host', isHost: true, players, seed, lvl }, this.net);
   }
 
   // Хост: начать корпоратив заново с теми же игроками (все проходят через лобби и сразу стартуют)
   restart() {
     if (!this.isHost) return;
+    const lvl = this.game.coop ? this.game.coop.levelNo : 1;     // этаж сохраняется
     if (this.net) this.net.broadcast({ t: 'toLobby' });
     this.game.leaveMatch();
-    this.addChat('', 'Хост начал корпоратив заново', true);
-    this._start();
+    this.addChat('', `Хост перезапустил этаж ${lvl}`, true);
+    this._start(lvl);
   }
 
   // Хост: файтинг один на один с напарником по той же P2P-связи
@@ -798,7 +799,7 @@ class CoopSession {
     for (const p of this.players) if (p.pid !== this.pid) this.remotes.set(p.pid, new RemotePlayer(p, this));
 
     this.seed = info.seed;
-    this.levelNo = 1;
+    this.levelNo = info.lvl || 1;
     this.chatLines = [];
     this.events = [];      // клиент → хост
     this.out = {};         // хост → клиенты
@@ -942,7 +943,7 @@ class CoopSession {
     if (this.teamOver) st = 'over';
     else if (g.state === 'levelClear') st = 'clear';
     return {
-      lvl: this.levelNo, seed: this.seed, st,
+      lvl: this.levelNo, seed: this.seed, st, gym: g.gym ? 1 : 0,
       sc: g.score, k: g.kills, tot: g.totalEnemies, cb: g.combo, ct: +(g.comboTimer || 0).toFixed(2),
       en: g.enemies.map(e => [
         Math.round(e.x), Math.round(e.y), +e.angle.toFixed(2),
@@ -1005,6 +1006,7 @@ class CoopSession {
   // Сообщения матча (лобби-сообщения разбирает CoopUI)
   onNet(pid, m) {
     const g = this.game;
+    if (m.t === 'gb' || m.t === 'gk' || m.t === 'gr') { if (g.gym) g.gym.onNet(pid, m); return; }
     try {
       if (this.isHost) {
         if (m.t === 'st') {
@@ -1114,6 +1116,7 @@ class CoopSession {
   // ---------- клиент: применяем снимок мира ----------
   _applySnap(s) {
     const g = this.game;
+    if (s.gym && !g.gym && s.lvl === this.levelNo) { g.startGym(); return; }
     if (s.lvl !== this.levelNo) {
       this.levelNo = s.lvl;
       this.seed = s.seed;
@@ -1305,6 +1308,7 @@ class CoopSession {
     for (const p of g.pickups) {
       if (p.thrown) continue;
       if (Utils.dist(p.x, p.y, pl.x + 9, pl.y + 9) > 24) continue;
+      if (p.weapon && (pl._pullUntil || 0) > performance.now()) continue;
       const slot = pickupSlot({ hp: pl.hp, maxHp: pl.maxHp, armor: pl.armor, charId: pl.charId, grenades: pl.grenades, w1: pl.weapon && pl.weapon.id, w2: pl.weapon2 && pl.weapon2.id }, p);
       if (!slot) continue;
       if (p._reqT && performance.now() - p._reqT < 600) continue;

@@ -329,7 +329,7 @@ class SamsaKombat {
     this._drawFireBg(ctx, w, h, t);
     this._logo(ctx, w / 2, 46, Math.min(46, w * 0.06));
     // режим
-    if (!Input.isMobile) {
+    if (!Input.isMobile && !this.net) {
       const r = this._modeRect(w, h);
       ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -349,7 +349,7 @@ class SamsaKombat {
       ctx.fillStyle = KF[id].color;
       ctx.fillText(KF[id].name, x, fy + 24);
       ctx.font = '11px "Courier New", monospace'; ctx.fillStyle = this.locked[s] ? '#3dff8a' : '#c8c2e0';
-      ctx.fillText(this.locked[s] ? 'ГОТОВ' : (s === 0 ? 'ИГРОК 1' : (this.twoP ? 'ИГРОК 2' : 'CPU')), x, fy + 40);
+      ctx.fillText(this.locked[s] ? 'ГОТОВ' : this.net && this.netNames ? this.netNames[s] : (s === 0 ? 'ИГРОК 1' : (this.twoP ? 'ИГРОК 2' : 'CPU')), x, fy + 40);
     }
     // описание бойца, которого сейчас выбирают
     const who = this.locked[0] ? 1 : 0, id = KF_IDS[this.pick[who]], F = KF[id];
@@ -385,7 +385,7 @@ class SamsaKombat {
         ctx.strokeRect(r.x - 2 - s * 4, r.y - 2 - s * 4, r.w + 4 + s * 8, r.h + 4 + s * 8);
         ctx.globalAlpha = 1;
         ctx.fillStyle = col; ctx.font = 'bold 11px "Courier New", monospace';
-        ctx.fillText(s === 0 ? 'P1' : (this.twoP ? 'P2' : 'CPU'), r.x + r.w / 2, r.y - 8 - s * 4);
+        ctx.fillText(s === 0 ? 'P1' : (this.twoP || this.net ? 'P2' : 'CPU'), r.x + r.w / 2, r.y - 8 - s * 4);
       }
     });
     this._drawShout(ctx, w, h);
@@ -658,6 +658,7 @@ class SamsaKombat {
   _updateFighter(f, o, inp, dt) {
     f.t += dt;
     f.cd = Math.max(0, f.cd - dt);
+    f.recover = Math.max(0, (f.recover || 0) - dt);
     f.inv = Math.max(0, f.inv - dt);
     f.comboT = Math.max(0, f.comboT - dt); if (f.comboT <= 0) f.comboN = 0;
     f.trail += (f.hp - f.trail) * Math.min(1, dt * (f.trail > f.hp ? 2.2 : 10));
@@ -695,7 +696,9 @@ class SamsaKombat {
       if (inp.up && !f.crouch && !f.blocking) {
         f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * spd * 0.95; f.crouch = false; f.jumpT = 0;
         this._snd('melee_swing', 0.4);
-      } else if (inp.special && f.cd <= 0) {
+      } else if ((f.recover || 0) > 0 && (inp.punch || inp.kick || inp.special)) {
+        // после промаха — пауза
+      } else if (inp.special && f.cd <= 0 && !(KMOVES[K_SPECIAL[f.id]].shoot && this.proj.some(q => q.owner === f))) {
         this._doMove(f, K_SPECIAL[f.id]); f.cd = f.def.cd;
       } else if (inp.punch) this._doMove(f, f.crouch ? (fwdH ? 'cjab' : 'upper') : fwdH ? 'fpunch' : backH ? 'bpunch' : 'jab');
       else if (inp.kick) this._doMove(f, f.crouch ? (fwdH ? 'slide' : 'sweep') : fwdH ? 'fkick' : backH ? 'bkick' : 'kick');
@@ -723,6 +726,7 @@ class SamsaKombat {
       if (f.grounded && f.vz <= 0) {
         this._dust(f.x); this.shake = Math.max(this.shake, 5); this._snd('tank_hit', 0.5);
         f.vx *= 0.3;
+        f.juggle = 0;
         if (f.koed) { f.state = 'ko'; } else { f.state = 'down'; f.downT = 0.75; }
       }
     } else if (st === 'down') {
@@ -776,7 +780,11 @@ class SamsaKombat {
   _doMove(f, name, air = false) {
     const m = KMOVES[name];
     if (!m) return;
-    f.act = { name, m, t: 0, hit: false, shots: 0 };
+    // один и тот же удар подряд слабеет: за 2 секунды каждый повтор −22% урона (до −55%)
+    f.recent = (f.recent || []).filter(r => f.t - r.t < 2.5);
+    const stale = f.recent.filter(r => r.name === name).length;
+    f.recent.push({ name, t: f.t });
+    f.act = { name, m, t: 0, hit: false, shots: 0, stale };
     if (!air) { f.state = 'attack'; f.crouch = ['upper', 'sweep', 'cjab', 'slide'].includes(name) ? f.crouch : false; }
     if (m.dive) { f.vz = -900; f.vx = f.dir * 560; }
     if (m.heavy || m.kick || m.special) this.ghosts.push({ id: f.id, P: { ...f.pose }, x: f.x, z: f.z, dir: f.dir, a: 0.3 });
@@ -806,7 +814,8 @@ class SamsaKombat {
     if (m.dash && a.t > m.a1 * 0.9) f.vx *= 0.5;
     if (a.t >= m.dur || (m.dash && a.hit)) {
       f.alpha = 1;
-      const nxt = m.next || f.queued;
+      if (m.dmg && !a.hit && !m.special && !m.air) f.recover = 0.16;
+      const nxt = m.next || (a.hit ? f.queued : null);
       f.act = null;
       if (f.state === 'attack') {
         if (nxt) { this._doMove(f, nxt); }
@@ -826,7 +835,9 @@ class SamsaKombat {
     if (m.zone === 'low' && o.z > 30) return;
     a.hit = true;
     const mul = m.special ? 1 : (m.kick ? f.def.kick : f.def.punch);
-    this._resolveHit(f, o, { ...m, dmg: m.dmg * mul, y: (m.y || 130) + o.z });
+    const st = a.stale ? Math.max(0.35, Math.pow(0.75, a.stale)) : 1;
+    if (a.stale >= 2) this._pop('ПОВТОР', f.x, 205 + f.z, '#9a94b8', 11);
+    this._resolveHit(f, o, { ...m, dmg: m.dmg * mul * st, kb: (m.kb || 150) * st, launch: m.launch && st > 0.6, knock: m.knock && st > 0.6, y: (m.y || 130) + o.z });
   }
 
   // общая логика попадания (удары, снаряды, электрокабель)
@@ -849,6 +860,8 @@ class SamsaKombat {
     this._impact(hx, hy, dmg >= 9 || h.launch || h.knock, o.side);
     o.act = null; o.alpha = 1; o.crouch = false; o.blocking = false;
     att.comboN++; att.comboT = 1.1;
+    o.taken = (o.taken || []).filter(t => this.pt - t < 1.4); o.taken.push(this.pt);
+    if (!o.grounded || o.state === 'air') o.juggle = (o.juggle || 0) + 1;
     if (att.comboN >= 3) this._pop(`${att.comboN} УДАРА!`, att.x, 210, '#ffd319', 14);
     // кровь — много
     const power = 0.6 + dmg / 10;
@@ -860,12 +873,22 @@ class SamsaKombat {
     if (h.burn) { o.burnT = 1.6; o.burnTick = 0.3; }
     if (h.zap) o.zapT = 0.9;
     if (o.hp <= 0) { this._ko(att, o); return 'ko'; }
+    // пятый удар подряд за 1,4 с — соперник вырывается и отскакивает
+    if (o.taken.length >= 5 && this.phase === 'fight') {
+      o.taken = []; o.juggle = 0;
+      o.act = null; o.state = 'dash'; o.dashDir = -o.dir; o.dashT = 0.24; o.vx = att.dir * 560; o.z = 0; o.vz = 0;
+      o.inv = 0.7; att.vx = -att.dir * 200;
+      this._pop('ВЫРВАЛСЯ!', o.x, 210, '#05d9e8', 14);
+      this._spark(o.x, 100, 0, 0, 0.3, 'flash');
+      return 'hit';
+    }
+    if ((o.juggle || 0) >= 3) { o.inv = 0.9; }         // не больше трёх ударов в воздухе
     if (h.launch || h.knock) {
       o.state = 'air'; o.vz = h.launch ? 820 : 380; o.vx = att.dir * (h.launch ? 150 : 260);
     } else if (h.heavy && dmg >= 9 && Math.random() < 0.45) {
       o.state = 'air'; o.vz = 360; o.vx = att.dir * 320;
     } else {
-      o.state = o.grounded ? 'hit' : 'air'; o.stun = h.stun || 0.3; o.vx = att.dir * (h.kb || 150);
+      o.state = o.grounded ? 'hit' : 'air'; o.stun = (h.stun || 0.3) * Math.max(0.5, 1 - 0.12 * (o.taken.length - 1)); o.vx = att.dir * (h.kb || 150);
       if (!o.grounded) o.vz = Math.max(o.vz, 200);
     }
     return 'hit';

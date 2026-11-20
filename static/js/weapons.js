@@ -5,7 +5,7 @@ const WEAPONS = {
   m4: { id: 'm4', name: 'M4', type: 'ranged', cooldown: 0.11, ammo: 30, maxAmmo: 30, bulletSpeed: 860, spread: 0.025, color: '#88ccff', length: 22, sound: 'shoot_m4' },
   ak47: { id: 'ak47', name: 'AK-47', type: 'ranged', cooldown: 0.13, ammo: 30, maxAmmo: 30, bulletSpeed: 800, spread: 0.05, color: '#ffaa55', length: 22, sound: 'shoot_ak47' },
   // Дробовик: веер дробин, бьёт недалеко
-  shotgun: { id: 'shotgun', name: 'Дробовик', type: 'ranged', cooldown: 0.8, ammo: 7, maxAmmo: 7, bulletSpeed: 660, life: 0.4,
+  shotgun: { id: 'shotgun', name: 'Дробовик', type: 'ranged', cooldown: 0.27, ammo: 7, maxAmmo: 7, bulletSpeed: 660, life: 0.4,
              color: '#ff4444', length: 24, sound: 'shoot_shotgun', spread: 0.32, pellets: 6 },
   bat: { id: 'bat', name: 'Бита', type: 'melee', cooldown: 0.45, range: 54, color: '#a0622b', length: 18, sound: 'melee_swing' },
   pipe: { id: 'pipe', name: 'Труба', type: 'melee', cooldown: 0.4, range: 48, color: '#9a9a9a', length: 16, sound: 'melee_swing' },
@@ -22,7 +22,7 @@ const WEAPONS = {
   m4s: { id: 'm4s', name: 'M4 с глушителем', type: 'ranged', cooldown: 0.12, ammo: 30, maxAmmo: 30, bulletSpeed: 880, spread: 0.02,
          color: '#9fe0ff', length: 28, sound: 'shoot_m4', silent: true, special: 'dani' },
 
-  // Оружие снайперов и боссов — трофей для любого героя
+  // Оружие боссов — трофей для любого героя (снайперка осталась только у врагов-снайперов)
   sniper: { id: 'sniper', name: 'Снайперка', type: 'ranged', cooldown: 0.9, ammo: 7, maxAmmo: 7, bulletSpeed: 1600, damage: 3,
             color: '#ff6060', length: 36, sound: 'sniper_shot', boss: true },
   minigun: { id: 'minigun', name: 'Миниган', type: 'ranged', cooldown: 0.055, ammo: 180, maxAmmo: 180, bulletSpeed: 740, spread: 0.11,
@@ -33,6 +33,9 @@ const WEAPONS = {
   nightstick: { id: 'nightstick', name: 'Дубинка', type: 'melee', cooldown: 0.24, range: 50, color: '#2a2a30', length: 18, sound: 'melee_swing', boss: true },
   spikedBat: { id: 'spikedBat', name: 'Бита с гвоздями', type: 'melee', cooldown: 0.4, range: 62, color: '#7a4a22', length: 22, sound: 'melee_swing', boss: true },
 };
+
+// патронов во всём огнестреле на 35% больше
+for (const w of Object.values(WEAPONS)) if (w.type === 'ranged') w.ammo = w.maxAmmo = Math.round(w.maxAmmo * 1.35);
 
 function makeWeapon(id, ammo) {
   const w = { ...WEAPONS[id] };

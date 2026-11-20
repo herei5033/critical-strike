@@ -266,6 +266,7 @@ class Game {
   // Уровень корпоратива строится из общего seed — у всех одинаковый
   startCoopLevel(seed) {
     const intro = this.state === 'coopIntro';
+    this.gym = null; if (this.coop) this.coop.inGym = false;
     // каждый третий этаж — улица: ночной город или джунгли (боссов приводит директор боссов)
     const n = this.coop.levelNo || 1;
     const out = n % 3 === 0 ? CAMPAIGN.find(c => c.id === (n % 6 === 0 ? 'jungle' : 'city')) : null;
@@ -277,7 +278,92 @@ class Game {
     this.levelBanner = out
       ? { name: out.name, sub: `ЭТАЖ ${n} • вылазка на улицу`, color: out.color, t: 3 }
       : { name: `ЭТАЖ ${n}`, sub: 'корпоратив', color: '#ff2a6d', t: 2.2 };
+    // шесть ящиков с патронами — у всех на одних и тех же местах
+    Utils.withSeed((seed ^ 0x5a5a) >>> 0, () => this._placeAmmoBoxes());
     if (intro) this.state = 'coopIntro';
+  }
+
+  // ---------- корпоратив: спортзал между этажами ----------
+  startGym() {
+    const intro = this.state === 'coopIntro';
+    Utils.withSeed(GYM_LAYOUT.seed, () => this._buildLevel(GYM_LAYOUT));
+    const L = this.level;
+    // пустой зал: ни мебели, ни врагов, ни оружия
+    L.furniture.length = 0;
+    if (L.itemGrid) L.itemGrid.fill(-1);
+    for (let y = 0; y < L.rows; y++) for (let x = 0; x < L.cols; x++) if (L.grid[y][x] === T_TALL || L.grid[y][x] === T_LOW) L.grid[y][x] = T_FLOOR;
+    this.enemies = []; this.pickups = []; this.totalEnemies = 0; this.projectiles = [];
+    this._spawnPlayer(this.coop ? this.coop.me.slot || 0 : 0);
+    const p = this.player;
+    p.weapon = null; p.weapon2 = null; p.grenades = 0; p.noAttack = true;
+    this.allies = [];
+    this.ammoBoxes = [];
+    if (this.coop) { this.coop.prepareLevel(); this.coop.inGym = true; }
+    this._afterLevelStart();
+    this.gym = new GymBreak(this);
+    this.levelBanner = { name: 'СПОРТЗАЛ', sub: 'передышка: мяч, ворота, коллеги. G — готов', color: '#3fff7f', t: 3 };
+    if (intro) this.state = 'coopIntro';
+  }
+
+  _placeAmmoBoxes() {
+    this.ammoBoxes = [];
+    const L = this.level;
+    if (!L || !L.rooms) return;
+    const rooms = L.rooms.filter(r => !r.hall && r !== L.playerRoom).sort(() => Math.random() - 0.5);
+    for (const r of rooms) {
+      if (this.ammoBoxes.length >= 6) break;
+      const pt = L.randomFreePoint(r);
+      if (pt) this.ammoBoxes.push({ x: pt.x, y: pt.y, used: false, ph: Math.random() * 6 });
+    }
+  }
+
+  // E рядом с ящиком — полный боекомплект во всех стволах (каждому игроку по разу на ящик)
+  _updateAmmoBoxes() {
+    const p = this.player;
+    this._nearBox = null;
+    if (!this.ammoBoxes || !p || p.dead) return;
+    for (const b of this.ammoBoxes) if (!b.used && Utils.dist(b.x, b.y, p.x + 9, p.y + 9) < 32) this._nearBox = b;
+    if (!this._nearBox || !Input.wasPressed('KeyE') || TextField.active) return;
+    const b = this._nearBox;
+    let got = false;
+    for (const w of [p.weapon, p.weapon2]) if (w && w.type === 'ranged' && w.ammo < w.maxAmmo) { w.ammo = w.maxAmmo; got = true; }
+    delete Input._pressedThisFrame.KeyE;            // E не уходит в «БАБАХ»
+    if (!got) { Effects.popup(b.x, b.y - 18, 'СТВОЛЫ ПОЛНЫЕ', '#9a94b8', 11); return; }
+    b.used = true;
+    AudioSys.play('pickup_weapon');
+    Effects.ring(b.x, b.y, '90,255,140', 34);
+    Effects.burst(b.x, b.y, '90,255,140', 14, 160);
+    Effects.popup(b.x, b.y - 18, '+ПАТРОНЫ', '#3dff8a', 13);
+  }
+
+  _drawAmmoBoxes(ctx) {
+    if (!this.ammoBoxes) return;
+    const t = performance.now() / 1000;
+    for (const b of this.ammoBoxes) {
+      ctx.save(); ctx.translate(b.x, b.y);
+      if (!b.used) {
+        const k = 0.6 + 0.4 * Math.sin(t * 4 + b.ph);
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 34);
+        g.addColorStop(0, `rgba(90,255,140,${0.35 * k})`); g.addColorStop(1, 'rgba(90,255,140,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.fillStyle = '#05030a'; ctx.fillRect(-13, -10, 26, 20);
+      ctx.fillStyle = b.used ? '#3a3a40' : '#3e5a2a'; ctx.fillRect(-12, -9, 24, 18);
+      ctx.fillStyle = b.used ? '#2a2a30' : '#2a4018'; ctx.fillRect(-12, -2, 24, 3);
+      if (!b.used) {
+        ctx.fillStyle = '#ffd319';
+        for (let i = 0; i < 4; i++) { ctx.fillRect(-8 + i * 5, -7, 3, 5); ctx.fillStyle = '#c89a20'; ctx.fillRect(-8 + i * 5, -7, 3, 1.5); ctx.fillStyle = '#ffd319'; }
+        ctx.strokeStyle = `rgba(120,255,160,${0.5 + 0.5 * Math.sin(t * 4 + b.ph)})`; ctx.lineWidth = 1.5; ctx.strokeRect(-14, -11, 28, 22);
+      } else { ctx.fillStyle = '#7a7a84'; ctx.font = 'bold 12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.fillText('✓', 0, 6); }
+      ctx.restore();
+      if (b === this._nearBox) {
+        ctx.font = 'bold 10px "Courier New", monospace'; ctx.textAlign = 'center';
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; const txt = Input.isMobile ? 'ПАТРОНЫ' : 'E — ПАТРОНЫ';
+        ctx.strokeText(txt, b.x, b.y - 16); ctx.fillStyle = '#3dff8a'; ctx.fillText(txt, b.x, b.y - 16);
+      }
+    }
   }
 
   // Оружие на полу: пустой огнестрел пропадает сразу, выброшенное холодное (кроме боссовского) — через 5 с.
@@ -339,7 +425,7 @@ class Game {
     ctx.fillStyle = g; ctx.fillRect(bx, by, bw * p, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(bx + bw * p - 2, by - 3, 4, 12);
     ctx.font = '12px "Courier New", monospace'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText(this.coop ? 'команда поднимается выше…' : (Input.isMobile ? 'тап — дальше' : 'ENTER — дальше'), W / 2, by + 30);
+    ctx.fillText(this.coop ? 'команда идёт в спортзал на передышку…' : (Input.isMobile ? 'тап — дальше' : 'ENTER — дальше'), W / 2, by + 30);
     // искры
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 24; i++) {
@@ -475,7 +561,7 @@ class Game {
   }
 
   _afterLevelStart() {
-    this.visited = new Set(); this.showMap = false;
+    this.visited = new Set(); this.showMap = false; this.pulls = [];
     for (const p of this.pickups) p._levelItem = true;
     this._waves = 0; this._waveT = undefined; this._huntT = 0;
     if (this.thoughts) { this.thoughts.cur = null; setTimeout(() => { if (this.state === 'playing') this.thoughts.event('level'); }, 3200); }
@@ -637,6 +723,7 @@ class Game {
   }
 
   toMenu() {
+    this.gym = null; this.ammoBoxes = [];
     TextField.close();
     this._exitAsk = null;
     this.paused = null;
@@ -789,11 +876,8 @@ class Game {
       this.levelClearTimer -= dt;
       const skip = !this.coop && (Input.wasPressed('MobileEnter') || Input.wasPressed('Enter') || Input.wasPressed('Space') || Input.consumeClick());
       if (this.levelClearTimer <= 0 || skip) {
-        if (this.coop) {
-          this.coop.levelNo++;
-          this.coop.seed = (Math.random() * 2e9) | 0;
-          this.startCoopLevel(this.coop.seed);
-        } else this.startLevel();
+        if (this.coop) this.startGym();       // передышка; на следующий этаж — когда все готовы
+        else this.startLevel();
       }
       return;
     }
@@ -873,6 +957,7 @@ class Game {
       this.comboTimer = Math.max(0, this.comboTimer - dt);
       if (this.comboTimer <= 0) this.combo = 0;
       const coopClient = this.coop && !this.coop.isHost;
+      if (this.coop && !this.gym) this._updateAmmoBoxes();
       if (!this.player.dead) {
         const shotsBefore = this.bullets.length;
         const frozen = (this._exitAsk || this.paused) ? [Input.keys, Input._pressedThisFrame, Input.mouse.down, Input.mouse.right] : null;
@@ -923,7 +1008,7 @@ class Game {
           catch (err) { console.error('ENEMY UPDATE ERROR:', err); }
         }
         this.totalEnemies = this.enemies.length;
-        if (this.bossDirector) this.bossDirector.update(dt, this);
+        if (this.bossDirector && !this.gym) this.bossDirector.update(dt, this);
         this._updateLottery(dt);
         this._unstickEnemies(dt);
         // подпись комнаты при входе (у статичных уровней — «Кабинет 319» и т.п.)
@@ -972,6 +1057,7 @@ class Game {
         for (const pr of this.projectiles) pr.update(dt, this);
         this.projectiles = this.projectiles.filter(pr => !pr.dead);
       }
+      if (this.gym) this.gym.update(dt);
       this.player._ffT = Math.max(0, (this.player._ffT || 0) - dt);
       if (this.coop) this.coop.remoteFlames(dt);
       Flames.update(dt, this);
@@ -993,6 +1079,7 @@ class Game {
         const p = this.pickups[i];
         try { p.update(dt, this.level, this.enemies, this.pickups); } catch (err) { console.error('PICKUP UPDATE ERROR:', err); }
         if (p.pickedUp || p.thrown || p.groundTimer > 0) continue;
+        if (p.weapon && (this.player._pullUntil || 0) > performance.now()) continue;   // арсенал: руки ждут стволы
         const dist = Utils.dist(p.x, p.y, this.player.x + this.player.w/2, this.player.y + this.player.h/2);
         if (dist < 24 && !this.player.dead) {
           const pl = this.player;
@@ -1055,7 +1142,7 @@ class Game {
         this._submitRun();
       }
       const cleared = this.storyIdx !== null && !this.coop ? !!(this.mission && this.mission.complete) : this.enemies.every(e => e.dead);
-      if (!coopClient && !this.tutorial && this.state === 'playing' && cleared) {
+      if (!coopClient && !this.tutorial && !this.gym && this.state === 'playing' && cleared) {
         if (this.storyIdx !== null && !this.coop) {
           this._storyComplete();
         } else if (this.campaignIdx !== null && !this.coop) {
@@ -1225,7 +1312,9 @@ class Game {
     if (this.coop && !this.coop.isHost) {
       // клиент корпоратива: предметы у хоста — он выберет стволы и пришлёт их с анимацией
       this.coop.event({ t: 'pull', n: plan.pull.length });
+      p._pullUntil = performance.now() + 1200;
     } else {
+      p._pullUntil = performance.now() + 750;
       for (const pk of plan.pull) { pk.pickedUp = true; this.pulls.push({ w: pk.weapon, sx: pk.x, sy: pk.y, x: pk.x, y: pk.y, t: 0, target: p, equip: true }); }
     }
     if (this.thoughts) this.thoughts.say(Utils.choice(['Ко мне, железо!', 'Апгрейд арсенала.', 'Телекинез — это просто хороший Wi-Fi.']), 2.6);
@@ -1312,6 +1401,12 @@ class Game {
         Effects.ring(tx, ty, '90,200,255', 22);
         if (f.equip && f.target === this.player && !f.target.dead) {
           const p = f.target, w = prepWeapon(p.charId, f.w);
+          if (p.weapon && p.weapon.type === 'melee') {
+            // холодное в руке арсенал не держит — кладём на пол
+            if (!this.coop || this.coop.isHost) this.pickups.push(new Pickup(tx + 12, ty, p.weapon));
+            else this.coop.event({ t: 'throw', w: p.weapon.id, am: 0, x: Math.round(tx), y: Math.round(ty), a: 0 });
+            p.weapon = null;
+          }
           if (!p.weapon) p.weapon = w; else if (!p.weapon2) p.weapon2 = w;
           else if (!this.coop || this.coop.isHost) this.pickups.push(new Pickup(tx, ty, f.w));   // руки заняты — кладём рядом
           AudioSys.play('pickup_weapon');
@@ -1369,7 +1464,7 @@ class Game {
 
   // Темп: последние враги сами идут на игроков, в бесконечном режиме и корпоративе — волны подкрепления
   _updatePacing(dt) {
-    if (this.tutorial) return;
+    if (this.tutorial || this.gym) return;
     if (this.coop && !this.coop.isHost) return;
     if (!this.level || !this.level.rooms) return;
     const alive = this.enemies.filter(e => !e.dead && !e.isBoss);
@@ -1702,7 +1797,7 @@ class Game {
 
     let ry = y0r + rh + 4 * s;
     const bd = this.bossDirector;
-    if (bd && !bd.active && !this.enemies.some(e => e.isBoss && !e.dead)) {
+    if (bd && !this.gym && !bd.active && !this.enemies.some(e => e.isBoss && !e.dead)) {
       const left = Math.max(0, bd.nextScore - this.score);
       ctx.font = font(8); ctx.textAlign = 'right'; ctx.fillStyle = left < 300 ? '#ff2a6d' : '#9a94b8';
       ctx.fillText(left > 0 ? `БОСС ЧЕРЕЗ ${left}` : 'БОСС БЛИЗКО…', R - 4 * s, ry + 8 * s);
@@ -2023,6 +2118,8 @@ class Game {
     for (const p of this.pickups) p.draw(b);
     if (this.coop) for (const r of this.coop.remotes.values()) r.draw(b);
     this._drawFireTrail(b);
+    if (this.coop && !this.gym) this._drawAmmoBoxes(b);
+    if (this.gym) this.gym.drawWorld(b);
     for (const a of this.allies) a.draw(b);
     this._drawPulls(b);
     this.player.draw(b);
@@ -2107,6 +2204,7 @@ class Game {
     if (this.mission) this.mission.drawHud(ctx, this.W, this.H, scale);
     this.radio.draw(ctx);
     this.thoughts.draw(ctx);
+    if (this.gym) this.gym.drawHud(ctx, this.W, this.H, scale);
     if (this.coop && this.cam) for (const rp of this.coop.remotes.values()) {
       if (!rp.hasState || !rp.thText) continue;
       const sx = (rp.x + 9 - this.cam.x) * this.cam.zoom, sy = (rp.y - this.cam.y) * this.cam.zoom - 18;
@@ -2224,17 +2322,22 @@ class Game {
       const k = Math.min(1, (3.2 - bn.t) * 3, bn.t * 2);
       ctx.save();
       ctx.globalAlpha = Math.max(0, k);
-      ctx.fillStyle = 'rgba(40,0,6,0.7)'; ctx.fillRect(0, this.H * 0.32, this.W, this.H * 0.22);
-      ctx.fillStyle = '#ff2a2a'; ctx.fillRect(0, this.H * 0.32, this.W, 3); ctx.fillRect(0, this.H * 0.54 - 3, this.W, 3);
+      // небольшая плашка под верхней панелью — не закрывает бой
+      const pw = Math.min(380, this.W * 0.6), ph = 50 * scale + 6, px = this.W / 2 - pw / 2;
+      const py = Math.max((this._hudBottom || 80 * scale), (this.mission && this.mission.panelBottom) || 0) + 8 * scale;
+      const slide = Math.min(1, (3.2 - bn.t) * 5);
+      ctx.translate(0, (1 - slide) * -20);
+      ctx.fillStyle = 'rgba(40,0,6,0.82)'; ctx.fillRect(px, py, pw, ph);
+      ctx.fillStyle = '#ff2a2a'; ctx.fillRect(px, py, 4, ph); ctx.fillRect(px + pw - 4, py, 4, ph);
       ctx.textAlign = 'center';
-      ctx.font = `bold ${14 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
-      ctx.fillText(Math.floor(performance.now() / 250) % 2 ? '!!! ВНИМАНИЕ !!!' : 'ПОЯВИЛСЯ БОСС', this.W / 2, this.H * 0.37);
-      ctx.font = `bold ${Math.min(56, this.W * 0.08)}px "Courier New", monospace`;
-      ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 24; ctx.fillStyle = '#ffffff';
-      ctx.fillText(bn.name, this.W / 2 + (Math.random() - 0.5) * 4, this.H * 0.46);
+      ctx.font = `bold ${11 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ffd319';
+      ctx.fillText(Math.floor(performance.now() / 250) % 2 ? '⚠ ПОЯВИЛСЯ БОСС ⚠' : 'ПОЯВИЛСЯ БОСС', this.W / 2, py + 14 * scale);
+      ctx.font = `bold ${Math.round(19 * scale)}px "Courier New", monospace`;
+      ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 12; ctx.fillStyle = '#ffffff';
+      ctx.fillText(bn.name, this.W / 2, py + 33 * scale, pw - 16);
       ctx.shadowBlur = 0;
-      ctx.font = `${14 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ff8080';
-      ctx.fillText(bn.title, this.W / 2, this.H * 0.51);
+      ctx.font = `${10 * scale}px "Courier New", monospace`; ctx.fillStyle = '#ff9090';
+      ctx.fillText(bn.title, this.W / 2, py + 46 * scale, pw - 16);
       ctx.restore();
     }
   }
@@ -2248,7 +2351,7 @@ class Game {
       ctx.fillText(`${this.campaignIdx + 1}. ${CAMPAIGN[this.campaignIdx].name}`, this.W / 2, 24 * scale);
       ctx.restore();
     }
-    if (this._roomLabel && this.state === 'playing' && !this.levelBanner && !this.tutorial) {
+    if (this._roomLabel && this.state === 'playing' && !this.levelBanner && !this.tutorial && !this.gym) {
       const r = this._roomLabel;
       ctx.save(); ctx.textAlign = 'center';
       ctx.globalAlpha = Math.min(1, r.t * 2, (2.2 - r.t) * 4);
@@ -2483,7 +2586,7 @@ class Game {
     M.drawBackground(ctx, this.W, this.H, t, 0.45);
 
     const chars = [
-      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон на 12 с за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
+      { id: 'dani', name: 'ДАНИ', perk: 'Теневой', desc: 'Каб. 316. M4 с глушителем. КЛОНЫ [F] и идеальный клон на 14 с за 10 убийств', hp: 6, speed: 1, weapon: 'm4s' },
       { id: 'gal', name: 'ГАЛА', perk: 'Поджигатель', desc: 'Каб. 321. Огнемёт, огненный РЫВОК [F] и БАБАХ [E] за 10 убийств', hp: 6, speed: 1, weapon: 'flamer' },
       { id: 'daur', name: 'ДАУР', perk: 'Стрелок', desc: 'Каб. 319. Два Uzi, АРСЕНАЛ [F] и ЯРОСТЬ с аурой смерти за 10 убийств', hp: 6, speed: 1, weapon: 'uzi' },
     ];

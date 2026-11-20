@@ -374,6 +374,7 @@ class Enemy {
     if (this.dead) return;
 
     // Выпавшее при оглушении оружие превращаем в пикап на полу
+    if (this._droppedWeapon && this._droppedWeapon.id === 'sniper') this._droppedWeapon = null;
     if (this._droppedWeapon) {
       const dp = new Pickup(this.cx() + Utils.rand(-8, 8), this.cy() + Utils.rand(-8, 8), this._droppedWeapon);
       dp.groundTimer = 0.3;
@@ -632,13 +633,18 @@ class Enemy {
     this.stunned = false;
     this._deathFx(cause);
     if (Array.isArray(pickups)) {
-      const drop = this.weapon || this._droppedWeapon;
+      let drop = this.weapon || this._droppedWeapon;
+      // снайперка игрокам не достаётся: со снайпера падает самса
+      const sniperDrop = drop && drop.id === 'sniper';
+      if (sniperDrop) { drop = null; pickups.push(new Pickup(this.x + this.w / 2, this.y + this.h / 2, null, true)); }
       if (drop) {
         pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), drop));
       }
       this.weapon = null;
       this._droppedWeapon = null;
-      const healthChance = this.type === 'tank' ? 0.8 : 0.2;
+      const g = typeof window !== 'undefined' && window.game;
+      const trio = g && g.coop && g.coop.players && g.coop.players.length >= 3;
+      const healthChance = (this.type === 'tank' ? 0.8 : 0.2) * (trio ? 1.35 : 1);   // втроём самса падает чаще
       if (Math.random() < healthChance) {
         pickups.push(new Pickup(this.x + this.w/2 + Utils.rand(-10, 10), this.y + this.h/2 + Utils.rand(-10, 10), null, true));
       }

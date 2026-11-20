@@ -83,6 +83,9 @@
   tapBtn('btn-kick', () => Input.simulatePress('KeyF'));
   tapBtn('btn-ult', () => Input.simulatePress('KeyE'));
   tapBtn('btn-map', () => Input.simulatePress('KeyM'));
+  tapBtn('btn-use', () => Input.simulatePress('KeyE'));
+  tapBtn('btn-ball', () => Input.simulatePress('Space'));
+  tapBtn('btn-ready', () => Input.simulatePress('KeyG'));
   tapBtn('btn-pause', () => { Input.setPause(true); setTimeout(() => Input.setPause(false), 60); });
   // Samsa Kombat
   floatingStick('zone-fmove', 'stick-fmove', 52,
@@ -118,6 +121,11 @@
     $('fbtn-f').classList.toggle('on', fighting && K.phase === 'finish' && !!K.finishW && K.finishW.side === 0);
     $('mobile-menu-controls').classList.toggle('active', !playing && !fighting && !TextField.active && g.state !== 'loading' && g.state !== 'levelLoad');
     document.body.classList.toggle('in-coop', !!g.coop);
+    document.body.classList.toggle('in-gym', !!g.gym);
+    const nearUse = !!(g._nearBox || (g.gym && g.gym.nearNpc));
+    document.body.classList.toggle('near-use', nearUse);
+    if (nearUse) $('btn-use').querySelector('span').textContent = g.gym ? 'ГОВОР' : 'ПАТР';
+    if (g.gym) $('btn-ready').classList.toggle('on', g.gym.ready.has(g.gym.myPid()));
     const p = g.player;
     if (!playing || !p) return;
     document.body.dataset.hero = p.charId;

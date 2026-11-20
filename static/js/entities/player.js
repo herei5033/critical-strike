@@ -6,7 +6,7 @@ const PULL_TIME = 0.55;     // сколько летят притянутые с
 const DASH_SPEED = 720;     // рывок Галы, пикселей в секунду
 const DASH_MAX = 0.9;       // максимум секунд в рывке
 const RAGE_AURA = 44;       // аура смерти Даура в ярости (радиус)
-const BABAH_R = 160;        // взрыв «БАБАХ» Галы
+const BABAH_R = 208;        // взрыв «БАБАХ» Галы
 const MODE_TIME = 6;        // ярость Даура / лотерея Дани
 // Ценность огнестрела: Даур первым выбрасывает самое бесполезное
 const WEAPON_VALUE = { glock: 1, uzi: 1.3, m4: 2, ak47: 2, shotgun: 1.8, m4s: 2.6, goldenUzi: 2.3, minigun: 3, sniper: 2.6, rpg: 3, flamer: 2.6 };
@@ -202,7 +202,7 @@ class Player {
     if (len > 0 && len > 1) { dx /= len; dy /= len; }
 
     // Навык F: Дани — теневые клоны, Гала — рывок
-    if (this.skillCd <= 0 && this.dashT <= 0 && SKILL_CD[this.charId] && Input.wasPressed('KeyF')) {
+    if (!this.noAttack && this.skillCd <= 0 && this.dashT <= 0 && SKILL_CD[this.charId] && Input.wasPressed('KeyF')) {
       this.skillCd = SKILL_CD[this.charId];
       if (this.charId === 'dani') this._wantClones = true;
       else if (this.charId === 'daur') this._wantPull = true;
@@ -215,7 +215,7 @@ class Player {
       }
     }
     // E — «БАБАХ» Галы (когда заряжен)
-    if (this.charId === 'gal' && this.babahReady && Input.wasPressed('KeyE')) { this.babahReady = false; this._wantBabah = true; }
+    if (!this.noAttack && this.charId === 'gal' && this.babahReady && Input.wasPressed('KeyE')) { this.babahReady = false; this._wantBabah = true; }
 
     const ox = this.x, oy = this.y;
     if (this.dashT > 0) {
@@ -339,6 +339,7 @@ class Player {
       }
     }
 
+    if (this.noAttack) shouldShoot = false;     // спортзал: без драк
     const dual = this.weapon2 && this.weapon && this.weapon.type === 'ranged';
     if (shouldShoot && dual) {
       // два ствола: у каждого свой темп, оба смотрят на прицел
@@ -468,7 +469,7 @@ class Player {
   revive() {
     if (!this.dead) return;
     this.dead = false;
-    this.hp = 1;
+    this.hp = Math.min(this.maxHp, 3);     // поднятый напарником встаёт с тремя сердцами
     this.hurtCooldown = 1.5;
     Effects.ring(this.x + this.w / 2, this.y + this.h / 2, '60,255,140', 34);
     Effects.burst(this.x + this.w / 2, this.y + this.h / 2, '120,255,170', 16, 160);
