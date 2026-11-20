@@ -406,14 +406,14 @@ function drawPortraitStub(ctx, x, y, s, id) {
 // Проигрыватель диалогов: буквы печатаются, ENTER — дальше, ESC — пропустить сцену
 // =====================================================================
 class Dialogue {
-  constructor(game, lines, { title = '', place = '', color = '#ffd319', onDone } = {}) {
+  constructor(game, lines, { title = '', place = '', color = '#ffd319', onDone, lock = 0.25 } = {}) {
     this.game = game;
     this.lines = lines || [];
     this.title = title; this.place = place; this.color = color;
     this.onDone = onDone;
     this.i = 0; this.t = 0; this.shown = 0; this.total = 0;
     this._blipN = 0;
-    this._lock = 0.25;   // не пролистываем случайно нажатым Enter
+    this._lock = lock;   // не пролистываем случайно нажатым Enter (в сюжете — целая секунда)
   }
 
   get line() { return this.lines[this.i] || ['', '']; }

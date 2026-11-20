@@ -33,6 +33,14 @@ const KMOVES = {
   suzi: { pose: 'throw', dur: 0.72, shoot: [0.14, 0.22, 0.3, 0.38, 0.46], special: true, gun: true },
   sfolder: { pose: 'throw', dur: 0.5, shoot: [0.18], special: true },
   szap: { pose: 'throw', dur: 0.62, zap: 0.2, special: true },
+  // направление + удар
+  fpunch: { pose: 'cross', dur: 0.44, a0: 0.1, a1: 0.24, dmg: 8, reach: 96, zone: 'high', kb: 300, stun: 0.4, dash: 430, y: 145, heavy: true },
+  bpunch: { pose: 'hook', dur: 0.52, a0: 0.16, a1: 0.27, dmg: 11, reach: 74, zone: 'high', kb: 360, stun: 0.45, heavy: true, y: 150 },
+  fkick: { pose: 'kick', dur: 0.5, a0: 0.14, a1: 0.27, dmg: 9, reach: 120, zone: 'mid', kb: 470, stun: 0.42, kick: true, dash: 260, y: 120 },
+  bkick: { pose: 'kick2', dur: 0.62, a0: 0.18, a1: 0.31, dmg: 12, reach: 110, zone: 'high', knock: true, kick: true, y: 150 },
+  cjab: { pose: 'cjab', dur: 0.24, a0: 0.05, a1: 0.12, dmg: 4, reach: 74, zone: 'low', kb: 80, stun: 0.22, y: 60 },
+  slide: { pose: 'sweep', dur: 0.6, a0: 0.06, a1: 0.34, dmg: 8, reach: 112, zone: 'low', knock: true, kick: true, dash: 640, y: 20 },
+  dive: { pose: 'jkick', air: true, dur: 0.6, a0: 0.02, a1: 0.55, dmg: 9, reach: 92, zone: 'over', kb: 300, stun: 0.45, kick: true, dive: true, y: 120 },
   stele: { pose: 'cross', dur: 0.78, tele: 0.24, a0: 0.34, a1: 0.46, dmg: 9, reach: 84, zone: 'mid', kb: 300, stun: 0.45, heavy: true, special: true, unblock: true, y: 140 },
 };
 // всё резче, как в Tekken / Mortal Kombat: обычные удары на 28% быстрее, приёмы — на 15%
@@ -41,7 +49,10 @@ for (const m of Object.values(KMOVES)) {
   for (const key of ['dur', 'a0', 'a1', 'tele', 'zap']) if (m[key] !== undefined) m[key] *= k;
   if (m.shoot) m.shoot = m.shoot.map(v => v * k);
 }
-const K_SPEED = 1.45;     // скорость ходьбы от характеристики бойца
+const K_SPEED = 1.45;
+KPOSE.cjab = { ...KPOSE.crouch, fs: 1.5, fe: 0.05, lean: 0.38 };
+// цвет подсветки бойцов и плёнки по аренам
+const K_GRADE = { gym: ['255,190,120', 0.18], canteen: ['255,140,60', 0.12], roof: ['90,140,255', 0.07], club: ['255,40,180', 0.26] };     // скорость ходьбы от характеристики бойца
 
 const K_SPECIAL = { asik: 'sdash', gal: 'sfire', daur: 'suzi', dani: 'stele', aseke: 'szap', ulzhan: 'sfolder' };
 const K_PUNCH_CHAIN = ['jab', 'cross', 'hook', 'upper'];
@@ -169,6 +180,7 @@ class SamsaKombat {
     else if (k === 's') AudioSys.play(a[0], a[1]);
     else if (k === 'sp') this._spark(...a);
     else if (k === 'z') this.zapFx = { x0: a[0], y0: a[1], x1: a[2], y1: a[3], t: 0.28 };
+    else if (k === 'i') this._impact(a[0], a[1], !!a[2], a[3]);
     this._replay = false;
   }
 
@@ -670,6 +682,10 @@ class SamsaKombat {
       }
       f.prevMv = mv;
       const spd = f.def.speed * K_SPEED;
+      const fwdH = mv === f.dir, backH = mv !== 0 && !fwdH;
+      f.holdBack = backH && !f.crouch;                 // назад — блок, как в Tekken
+      if (f.crouch && backH) f.blocking = true;        // присед + назад — нижний блок
+      if (f.crouch && fwdH && !f.blocking) { f.vx = mv * spd * 0.35; f.walkPh += dt * 9; }
       if (!f.crouch && !f.blocking && mv) {
         const back = mv !== f.dir;
         f.vx = mv * spd * (back ? 0.8 : 1);
@@ -677,12 +693,12 @@ class SamsaKombat {
         f.walk = Math.min(1, f.walk + dt * 8);
       } else { f.vx *= 0.7; f.walk = Math.max(0, f.walk - dt * 8); }
       if (inp.up && !f.crouch && !f.blocking) {
-        f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * spd * 0.95; f.crouch = false;
+        f.state = 'jump'; f.vz = K_JUMP; f.vx = mv * spd * 0.95; f.crouch = false; f.jumpT = 0;
         this._snd('melee_swing', 0.4);
       } else if (inp.special && f.cd <= 0) {
         this._doMove(f, K_SPECIAL[f.id]); f.cd = f.def.cd;
-      } else if (inp.punch) this._doMove(f, f.crouch ? 'upper' : 'jab');
-      else if (inp.kick) this._doMove(f, f.crouch ? 'sweep' : 'kick');
+      } else if (inp.punch) this._doMove(f, f.crouch ? (fwdH ? 'cjab' : 'upper') : fwdH ? 'fpunch' : backH ? 'bpunch' : 'jab');
+      else if (inp.kick) this._doMove(f, f.crouch ? (fwdH ? 'slide' : 'sweep') : fwdH ? 'fkick' : backH ? 'bkick' : 'kick');
     } else if (st === 'dash') {
       f.dashT -= dt; f.vx *= Math.exp(-dt * 4);
       if (Math.random() < 0.5) this._spark(f.x - f.vx * 0.02, 6, -f.vx * 0.1, Utils.rand(10, 50), 0.35, 'dust');
@@ -690,8 +706,11 @@ class SamsaKombat {
       else if (f.dashT <= 0) f.state = 'idle';
     } else if (st === 'jump') {
       f.crouch = false; f.blocking = false;
+      f.jumpT = (f.jumpT || 0) + dt;
+      const amv = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+      if (amv && f.jumpT < 0.12 && Math.abs(f.vx) < 40) f.vx = amv * f.def.speed * K_SPEED * 0.95;
       if (!f.act && inp.punch) this._doMove(f, 'jpunch', true);
-      else if (!f.act && inp.kick) this._doMove(f, 'jkick', true);
+      else if (!f.act && inp.kick) this._doMove(f, inp.down ? 'dive' : 'jkick', true);
       if (f.act) this._stepMove(f, o, dt, inp);
       if (f.grounded && f.vz <= 0) { f.state = 'idle'; f.act = null; f.vx *= 0.3; this._dust(f.x); }
     } else if (st === 'attack') {
@@ -758,7 +777,9 @@ class SamsaKombat {
     const m = KMOVES[name];
     if (!m) return;
     f.act = { name, m, t: 0, hit: false, shots: 0 };
-    if (!air) { f.state = 'attack'; f.crouch = name === 'upper' || name === 'sweep' ? f.crouch : false; }
+    if (!air) { f.state = 'attack'; f.crouch = ['upper', 'sweep', 'cjab', 'slide'].includes(name) ? f.crouch : false; }
+    if (m.dive) { f.vz = -900; f.vx = f.dir * 560; }
+    if (m.heavy || m.kick || m.special) this.ghosts.push({ id: f.id, P: { ...f.pose }, x: f.x, z: f.z, dir: f.dir, a: 0.3 });
     f.chain = K_PUNCH_CHAIN.indexOf(name);
     f.queued = null;
     if (m.special && name !== 'supper') this._pop(KF[f.id].special, f.x, 200 + f.z, KF[f.id].color, 13);
@@ -811,19 +832,21 @@ class SamsaKombat {
   // общая логика попадания (удары, снаряды, электрокабель)
   _resolveHit(att, o, h) {
     const facing = o.dir === (att.x > o.x ? 1 : -1);
-    const canBlock = o.state === 'idle' && o.blocking && o.grounded && facing && !h.unblock;
+    const canBlock = o.state === 'idle' && (o.blocking || o.holdBack) && o.grounded && facing && !h.unblock;
     const blocked = canBlock && (h.zone !== 'low' || o.crouch) && (h.zone !== 'over' || !o.crouch);
     const hx = o.x - att.dir * 10, hy = Math.min(h.y || 130, o.height() - 10 + o.z);
     if (blocked) {
       o.hp = Math.max(1, o.hp - h.dmg * 0.12);
       o.vx = att.dir * (h.kb || 150) * 0.7;
       for (let i = 0; i < 8; i++) this._spark(hx, hy, att.dir * Utils.rand(40, 200), Utils.rand(-80, 180), 0.25, 'spark');
+      this._impact(hx, hy, false, -1);
       this._snd('tank_hit', 0.4);
       this.hitstop = 0.03;
       return 'block';
     }
     const dmg = h.dmg * o.def.armor;
     o.hp = Math.max(0, o.hp - dmg);
+    this._impact(hx, hy, dmg >= 9 || h.launch || h.knock, o.side);
     o.act = null; o.alpha = 1; o.crouch = false; o.blocking = false;
     att.comboN++; att.comboT = 1.1;
     if (att.comboN >= 3) this._pop(`${att.comboN} УДАРА!`, att.x, 210, '#ffd319', 14);
@@ -977,6 +1000,14 @@ class SamsaKombat {
     this.gibs.push({ x, y, vx, vy, rot: 0, vr: Utils.rand(-12, 12), kind, color, size, id, rest: false });
   }
 
+  // вспышка удара: звезда, кольцо, белый силуэт, на тяжёлых — зум и вспышка экрана
+  _impact(x, y, big, side) {
+    this._emit(['i', Math.round(x), Math.round(y), big ? 1 : 0, side]);
+    (this.impacts = this.impacts || []).push({ x, y, t: 0, big, block: side < 0, rot: Math.random() * 6 });
+    if (side >= 0 && this.f[side]) this.f[side].flashT = big ? 0.14 : 0.08;
+    if (big) { this.zoom = Math.max(this.zoom || 1, 1.06); this.zoomAt = { x, y }; this.flashScreen = 0.22; }
+  }
+
   _pop(text, x, y, col, size = 14) { this._emit(['p', text, Math.round(x), Math.round(y), col, size]); this.pops.push({ text, x, y, col, size, t: 0 }); }
 
   _banner(text, sub, col, dur, big = false) { this._emit(['n', text, sub, col, dur, big]); this.banner = { text, sub, col, dur, t: 0, big }; }
@@ -1012,6 +1043,14 @@ class SamsaKombat {
     for (const g of this.ghosts) g.a -= dt * 1.6;
     this.ghosts = this.ghosts.filter(g => g.a > 0);
     if (this.zapFx) { this.zapFx.t -= dt; if (this.zapFx.t <= 0) this.zapFx = null; }
+    for (const im of this.impacts || []) im.t += dt;
+    this.impacts = (this.impacts || []).filter(im => im.t < (im.big ? 0.35 : 0.22));
+    this.zoom = 1 + Math.max(0, (this.zoom || 1) - 1) * Math.exp(-dt * 7);
+    this.flashScreen = Math.max(0, (this.flashScreen || 0) - dt * 2.2);
+    for (const f of this.f || []) f.flashT = Math.max(0, (f.flashT || 0) - dt);
+    // пылинки в лучах света
+    this.motes = this.motes || Array.from({ length: 40 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() * 0.6 + 0.2, p: Math.random() * 6 }));
+    for (const m of this.motes) { m.y -= dt * 0.012 * m.s; m.x += Math.sin(this.t * 0.5 + m.p) * dt * 0.004; if (m.y < 0) { m.y = 1; m.x = Math.random(); } }
   }
 
   // ---------- позы ----------
@@ -1077,8 +1116,8 @@ class SamsaKombat {
       hold({ [fwd]: true }, 0.2); return inp;
     }
     if (o.state === 'down' || o.state === 'getup') { hold({ [back]: true }, 0.2); return inp; }
-    if (r < 0.34) return { punch: true };
-    if (r < 0.54) return { kick: true };
+    if (r < 0.34) return Math.random() < 0.35 ? { [Math.random() < 0.6 ? fwd : back]: true, punch: true } : { punch: true };
+    if (r < 0.54) return Math.random() < 0.35 ? { [Math.random() < 0.6 ? fwd : back]: true, kick: true } : { kick: true };
     if (r < 0.63) return { down: true, kick: true };
     if (r < 0.7) return { down: true, punch: true };
     if (r < 0.8) { hold({ [back]: true }, 0.3); return inp; }
@@ -1335,6 +1374,11 @@ class SamsaKombat {
     const sx = this.shake > 0 ? Utils.rand(-this.shake, this.shake) : 0, sy = this.shake > 0 ? Utils.rand(-this.shake, this.shake) * 0.6 : 0;
     ctx.save();
     ctx.translate(sx, sy);
+    const z = this.zoom || 1;
+    if (z > 1.001) {
+      const fx = this.zoomAt ? this.zoomAt.x * k : w / 2, fy = this.zoomAt ? gy - this.zoomAt.y * k : h / 2;
+      ctx.translate(fx, fy); ctx.scale(z, z); ctx.translate(-fx, -fy);
+    }
     this.stage.draw(ctx, w, h, gy, k, this.t, this.game);
     const X = (x) => x * k, Y = (y) => gy - y * k;
     // лужи крови и следы на полу
@@ -1426,11 +1470,64 @@ class SamsaKombat {
       ctx.fillStyle = p.col; ctx.fillText(p.text, X(p.x), Y(p.y + p.t * 40));
       ctx.restore();
     }
+    // вспышки ударов
+    for (const im of this.impacts || []) {
+      const life = im.big ? 0.35 : 0.22, q = im.t / life, x = X(im.x), y = Y(im.y);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const col = im.block ? '120,200,255' : '255,240,180';
+      ctx.strokeStyle = `rgba(${col},${1 - q})`; ctx.lineWidth = (im.big ? 4 : 2.5) * k * (1 - q);
+      ctx.beginPath(); ctx.arc(x, y, (8 + q * (im.big ? 60 : 32)) * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.translate(x, y); ctx.rotate(im.rot);
+      ctx.fillStyle = `rgba(${col},${1 - q})`;
+      const r1 = (im.big ? 46 : 26) * k * (0.5 + q), r0 = 4 * k;
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, r = i % 2 ? r0 : r1 * (0.6 + 0.4 * ((i * 7) % 3) / 2); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
+    this._postFx(ctx, w, h, gy, k);
     this._drawHud(ctx, w, h);
     if (this.banner) this._drawBanner(ctx, w, h);
     if (this.phase === 'over' && this.pt > 1.4) this._drawOverMenu(ctx, w, h);
     if (this.paused) this._drawPause(ctx, w, h);
+  }
+
+  // Цветокоррекция арены, пылинки в свете, виньетка, вспышки и тревожный красный при добивании
+  _postFx(ctx, w, h, gy, k) {
+    const G = K_GRADE[this.stage.id] || ['255,255,255', 0.1];
+    ctx.save();
+    // цветная «плёнка» сцены
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = `rgba(${G[0]},0.35)`; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'lighter';
+    // световой конус сверху
+    const lg = ctx.createRadialGradient(w / 2, -h * 0.2, 10, w / 2, -h * 0.2, h * 1.1);
+    lg.addColorStop(0, `rgba(${G[0]},${0.18})`); lg.addColorStop(1, `rgba(${G[0]},0)`);
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, w, h);
+    // пылинки
+    for (const m of this.motes || []) {
+      ctx.fillStyle = `rgba(${G[0]},${0.18 + 0.2 * Math.sin(this.t * 2 + m.p)})`;
+      ctx.fillRect(m.x * w, m.y * gy, 2 * m.s * k + 1, 2 * m.s * k + 1);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // виньетка
+    const vg = ctx.createRadialGradient(w / 2, h * 0.55, Math.min(w, h) * 0.35, w / 2, h * 0.55, Math.max(w, h) * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+    // добивание и фаталити: пульсирующий красный по краям
+    if (this.phase === 'finish' || this.phase === 'fatality') {
+      const p = this.phase === 'fatality' ? 0.5 : 0.25 + 0.2 * Math.sin(this.t * 6);
+      const rg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.7);
+      rg.addColorStop(0, 'rgba(120,0,10,0)'); rg.addColorStop(1, `rgba(150,0,15,${p})`);
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, w, h);
+    }
+    // вспышка экрана от тяжёлого удара
+    if (this.flashScreen > 0) { ctx.fillStyle = `rgba(255,250,235,${this.flashScreen})`; ctx.fillRect(0, 0, w, h); }
+    // лёгкие полосы развёртки и зерно
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let y = (this.t * 40) % 4; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+    ctx.restore();
   }
 
   _drawFighter(ctx, f, X, gy, k) {
@@ -1446,7 +1543,9 @@ class SamsaKombat {
       KArt.render(ctx, f.id, f.pose, x, gy, k, f.dir, { ...opt, clip: { part: 'top', at: 12, dx: -f.fx.cut.dx, dy: f.fx.cut.dy, rot: -f.fx.cut.rot } });
       return;
     }
-    KArt.render(ctx, f.id, f.pose, x, gy, k, f.dir, opt);
+    const G = K_GRADE[this.stage.id] || ['255,255,255', 0.1];
+    if (!f.fx.squash && G[1] > 0) KArt.render(ctx, f.id, f.pose, x, gy + 2 * k, k, f.dir, { ...opt, squash: -0.5, alpha: (opt.alpha === undefined ? 1 : opt.alpha) * G[1] });
+    KArt.render(ctx, f.id, f.pose, x, gy, k, f.dir, { ...opt, glow: `rgba(${G[0]},0.55)`, flash: (f.flashT || 0) * 8 });
     // Даур дымит сигарой
     if (f.id === 'daur' && !opt.skeleton && !f.fx.noHead && Math.random() < 0.08) this._spark(f.x + f.dir * 22, KArt.hipHeight(f.pose) + f.z + 66, f.dir * 10, 40, 1.2, 'dust');
     // Uzi в руке во время очереди
@@ -1568,7 +1667,7 @@ class SamsaKombat {
       ctx.font = '11px "Courier New", monospace'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
       const line = this.twoP
         ? 'И1: WASD, J рука, K нога, L блок, I приём, F фаталити   •   И2: стрелки, «,» рука, «.» нога, «/» блок, «;» приём, «\'» фаталити'
-        : 'A/D — ход (дважды — рывок)   W — прыжок   S — присед   J — рука   K — нога   L — блок   I — приём   F — фаталити   (присед+J — апперкот, присед+K — подсечка)';
+        : 'A/D — ход (дважды — рывок, назад — блок)   W(+A/D) — прыжок   S — присед   J/K — рука/нога (+вперёд/назад/вниз — другие удары)   I — приём   F — фаталити';
       ctx.fillText(line, w / 2, h - 10, w - 20);
     }
   }

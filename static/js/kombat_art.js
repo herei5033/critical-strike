@@ -518,7 +518,18 @@ const KArt = {
       const cut = BH * 0.56 - (opt.clip.at || 14) / 2;
       if (opt.clip.part === 'top') { ctx.translate(opt.clip.dx || 0, opt.clip.dy || 0); ctx.rotate(opt.clip.rot || 0); ctx.drawImage(this._buf, 0, 0, BW, cut, sx, sy, BW, cut); }
       else ctx.drawImage(this._buf, 0, cut, BW, BH - cut, sx, sy + cut, BW, BH - cut);
-    } else ctx.drawImage(this._buf, sx, sy);
+    } else {
+      if (opt.glow) { ctx.shadowColor = opt.glow; ctx.shadowBlur = 10; }
+      ctx.drawImage(this._buf, sx, sy);
+      ctx.shadowBlur = 0;
+      if (opt.flash > 0) {
+        // белая вспышка от удара: тот же силуэт поверх в режиме «осветление»
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha *= Math.min(1, opt.flash);
+        ctx.drawImage(this._buf, sx, sy);
+        ctx.drawImage(this._buf, sx, sy);
+      }
+    }
     ctx.restore();
   },
 

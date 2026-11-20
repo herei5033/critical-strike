@@ -658,7 +658,14 @@ class RemotePlayer {
     this.hp = s.hp; this.maxHp = s.mhp;
     this.weaponId = s.w || null; this.ammo = s.am || 0;
     this.weapon2Id = s.w2 || null; this.spread = !!s.sp; this.ff = !!s.ff; this.grenades = s.gr || 0;
+    const th = game.thoughts, pm = this.mode, ppc = this.pc;
     this.armor = s.ar || 0; this.mode = s.md || 0; this.pc = s.pc || 0; this.allies = s.al || [];
+    if ((s.th || '') !== (this.thText || '')) { this.thText = s.th || ''; this.thT = 0; }
+    if (!first && th) {
+      if (this.mode === 1 && pm !== 1) th.react('mateRage', this.name);
+      if (this.mode === 4 && pm !== 4) th.react('mateBabah', this.name);
+      if (this.pc && !ppc) th.react('mateClone', this.name);
+    }
     this.moveAmt = s.mv || 0;
     this.flash = !!s.fl; this.hurt = !!s.hc;
     if (s.sw) {
@@ -668,10 +675,12 @@ class RemotePlayer {
       if (!this.punch || s.pu[0] < this.punch.p - 0.25) this.punch = { p: s.pu[0], side: s.pu[1] };
     }
     if (s.d && !this.dead) {
+      if (!first && game.thoughts) game.thoughts.react('mateDown', this.name);
       this.dead = true; this.deathAngle = s.da || 0;
       Effects.bloodSplat(this.x + 9, this.y + 9, this.deathAngle, 30);
       AudioSys.play('player_death');
     } else if (!s.d && this.dead) {
+      if (game.thoughts) game.thoughts.react('mateUp', this.name);
       this.dead = false;
       Effects.ring(this.x + 9, this.y + 9, '60,255,140', 34);
     }
@@ -705,6 +714,9 @@ class RemotePlayer {
     while (da < -Math.PI) da += Math.PI * 2;
     this.angle += da * Math.min(1, dt * 18);
     this.animT += dt;
+    this.thT = (this.thT || 0) + dt;
+    // ярость напарника видна всем: красные искры вокруг
+    if (this.mode === 1 && !this.dead && Math.random() < dt * 30) Effects.burst(this.x + 9 + Utils.rand(-12, 12), this.y + 9 + Utils.rand(-12, 12), '255,30,40', 1, 60);
     this.walkPhase += dt * 13 * this.moveAmt;
     this.recoil = Math.max(0, this.recoil - dt * 9);
     this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
@@ -755,6 +767,18 @@ class RemotePlayer {
     if (this.punch && !this.weaponId) st.punch = this.punch;
     Sprites.drawHuman(ctx, this.look, st);
     ctx.restore();
+    if (this.mode === 1) {
+      // красное свечение ярости поверх напарника (без экранного фильтра)
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const pl = 0.5 + 0.5 * Math.sin(this.animT * 14);
+      const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 22);
+      g.addColorStop(0, `rgba(255,40,40,${0.45 + 0.25 * pl})`); g.addColorStop(1, 'rgba(255,0,20,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.font = 'bold 9px "Courier New", monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(255,60,70,${0.7 + 0.3 * pl})`; ctx.fillText('ЯРОСТЬ', cx, cy + 28);
+    }
   }
 }
 
@@ -905,6 +929,7 @@ class CoopSession {
       pc: this.game.allies.some(a => a.kind === 'perfect' && !a.dead) ? 1 : 0,
       al: this.game.allies.filter(a => !a.dead).map(a => [Math.round(a.x), Math.round(a.y), +a.angle.toFixed(2), a.kind === 'perfect' ? 1 : 0]),
       bl: this.recentBullets.map(b => b.d),
+      th: this.game.thoughts && this.game.thoughts.cur ? this.game.thoughts.cur.text : '',
     };
   }
 
@@ -1097,7 +1122,7 @@ class CoopSession {
     if (!g.level || !g.level.doors) return;
     g.score = s.sc; g.kills = s.k; g.totalEnemies = s.tot; g.combo = s.cb; g.comboTimer = s.ct;
 
-    if (s.st === 'clear' && g.state === 'playing') { g.state = 'levelClear'; g.levelClearTimer = 99; }
+    if (s.st === 'clear' && g.state === 'playing') { g.state = 'levelClear'; g.levelClearTimer = g._lcMax = 2.6; AudioSys.play('game_start'); }
     if (s.st === 'over' && !this.teamOver) { this.teamOver = true; g.enterTeamOver(); }
 
     // враги
@@ -1386,59 +1411,6 @@ class CoopSession {
       ctx.strokeText(label, tx, ty); ctx.fillStyle = col; ctx.fillText(label, tx, ty);
       ctx.restore();
     }
-  }
-
-  // ---------- карта уровня (кнопка M) ----------
-  _mapImage() {
-    const L = this.game.level;
-    if (this._mapFor === L && this._mapCanvas) return this._mapCanvas;
-    const c = document.createElement('canvas');
-    c.width = L.cols; c.height = L.rows;
-    const x = c.getContext('2d');
-    const img = x.createImageData(L.cols, L.rows);
-    for (let r = 0; r < L.rows; r++) for (let q = 0; q < L.cols; q++) {
-      const v = L.grid[r] ? L.grid[r][q] : T_OUT, i = (r * L.cols + q) * 4;
-      const col = v === T_WALL ? [150, 140, 190] : v === T_FLOOR ? [44, 36, 70] : [14, 10, 22];
-      img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
-    }
-    x.putImageData(img, 0, 0);
-    this._mapCanvas = c; this._mapFor = L;
-    return c;
-  }
-
-  drawMap(ctx, W, H) {
-    const g = this.game, L = g.level;
-    if (!L || !L.grid) return;
-    const M = g.menu, img = this._mapImage();
-    const pad = 40, k = Math.min((W - pad * 2) / L.cols, (H - pad * 2 - 30) / L.rows);
-    const mw = L.cols * k, mh = L.rows * k, mx = W / 2 - mw / 2, my = H / 2 - mh / 2 + 12;
-    ctx.save();
-    ctx.fillStyle = 'rgba(4,2,10,0.78)'; ctx.fillRect(0, 0, W, H);
-    M.panel(ctx, mx - 12, my - 36, mw + 24, mh + 48, '#05d9e8', 0.92);
-    ctx.textAlign = 'left'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
-    ctx.fillText(`КАРТА ЭТАЖА ${this.levelNo}`, mx, my - 14);
-    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px "Courier New", monospace';
-    ctx.fillText(Input.isMobile ? 'КАРТА — закрыть' : 'M — закрыть', mx + mw, my - 14);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, mx, my, mw, mh);
-    const P = (wx, wy) => [mx + wx / TILE * k, my + wy / TILE * k];
-    const t = performance.now() / 1000;
-    // боссы
-    for (const e of g.enemies) if (e.isBoss && !e.dead) { const [x, y] = P(e.cx(), e.cy()); ctx.fillStyle = '#ff2a40'; ctx.fillRect(x - 4, y - 4, 8, 8); }
-    // клоны (свои)
-    for (const a of g.allies) if (!a.dead) { const [x, y] = P(a.cx(), a.cy()); ctx.fillStyle = '#b48aff'; ctx.fillRect(x - 2, y - 2, 4, 4); }
-    const dot = (wx, wy, col, name, dead, me) => {
-      const [x, y] = P(wx, wy), r = (me ? 6 : 5) + (me ? Math.sin(t * 6) * 1.5 : 0);
-      ctx.fillStyle = '#05030a'; ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = dead ? '#ff4060' : col; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      ctx.font = 'bold 11px "Courier New", monospace'; ctx.textAlign = 'center';
-      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(name + (dead ? ' ✚' : ''), x, y - r - 5);
-      ctx.fillStyle = dead ? '#ff4060' : col; ctx.fillText(name + (dead ? ' ✚' : ''), x, y - r - 5);
-    };
-    for (const rp of this.remotes.values()) if (rp.hasState) dot(rp.x + 9, rp.y + 9, SLOT_COLORS[rp.slot % 3], rp.name, rp.dead, false);
-    const p = g.player;
-    if (p) dot(p.x + 9, p.y + 9, SLOT_COLORS[(this.me.slot || 0) % 3], 'ВЫ', p.dead, true);
-    ctx.restore();
   }
 
   // Панель команды: здоровье всех игроков постоянно на экране

@@ -187,7 +187,7 @@ class Game {
     const begin = () => { this.mission = new Mission(this, ch); };
     if (!this._storySeen.has(ch.id)) {
       this._storySeen.add(ch.id);
-      this.dialogue = new Dialogue(this, ch.intro, { title: ch.title, place: ch.place, color: ch.color, onDone: () => { this.dialogue = null; this.state = 'playing'; begin(); } });
+      this.dialogue = new Dialogue(this, ch.intro, { title: ch.title, place: ch.place, color: ch.color, lock: 1, onDone: () => { this.dialogue = null; this.state = 'playing'; begin(); } });
       this.state = 'dialogue';
     } else begin();
   }
@@ -198,7 +198,7 @@ class Game {
     StoryProgress.unlock(this.storyIdx + 2);
     AudioSys.play('game_start');
     Effects.screenFlash(0.35, '255,240,200');
-    this.dialogue = new Dialogue(this, ch.outro, { title: ch.title, place: 'ГЛАВА ПРОЙДЕНА', color: ch.color, onDone: () => {
+    this.dialogue = new Dialogue(this, ch.outro, { title: ch.title, place: 'ГЛАВА ПРОЙДЕНА', color: ch.color, lock: 1, onDone: () => {
       this.dialogue = null;
       this.state = 'victory'; this.victoryT = 0;
       if (this.storyIdx >= STORY.length - 1) this._submitRun();
@@ -305,7 +305,177 @@ class Game {
     return out;
   }
 
+  // Экран зачистки: полосы закрывают экран, счётчик этажа щёлкает на следующий
+  _drawLevelClear(ctx) {
+    const W = this.W, H = this.H, M = this.menu;
+    const max = this._lcMax || 2.2, el = Math.max(0, max - Math.max(0, this.levelClearTimer)), p = Math.min(1, el / max);
+    const t = performance.now() / 1000;
+    const inK = Math.min(1, el / 0.35), outK = Math.max(0, (el - (max - 0.35)) / 0.35);
+    ctx.save();
+    // наезжающие полосы
+    const bands = 7;
+    for (let i = 0; i < bands; i++) {
+      const bh = H / bands, d = Math.min(1, Math.max(0, inK * 1.6 - i * 0.08));
+      const w = W * d;
+      ctx.fillStyle = i % 2 ? 'rgba(10,4,20,0.94)' : 'rgba(18,6,30,0.94)';
+      if (i % 2) ctx.fillRect(W - w, i * bh, w, bh + 1); else ctx.fillRect(0, i * bh, w, bh + 1);
+    }
+    ctx.globalAlpha = inK * (1 - outK);
+    const floor = this.coop ? this.coop.levelNo : null;
+    const title = floor ? `ЭТАЖ ${floor} ЗАЧИЩЕН` : 'УРОВЕНЬ ЗАЧИЩЕН';
+    const sz = Math.min(52, W * 0.075) * (1 + 0.2 * (1 - inK));
+    M.glowText(ctx, title, W / 2, H * 0.42, '#ffd319', sz, 'center', 24);
+    // смена номера этажа
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.min(22, W * 0.035)}px "Courier New", monospace`;
+    const next = floor ? `ЭТАЖ ${floor + 1}` : 'СЛЕДУЮЩИЙ ЭТАЖ';
+    const shift = Math.min(1, Math.max(0, (p - 0.45) / 0.25));
+    ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - shift)})`; ctx.fillText(floor ? `ЭТАЖ ${floor}` : 'ЭТОТ ЭТАЖ', W / 2, H * 0.52 - shift * 20);
+    ctx.fillStyle = `rgba(5,217,232,${shift})`; ctx.fillText('▲ ' + next, W / 2, H * 0.52 + 20 - shift * 20);
+    // полоса перехода
+    const bw = Math.min(420, W * 0.6), bx = W / 2 - bw / 2, by = H * 0.6;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(bx, by, bw, 6);
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0); g.addColorStop(0, '#05d9e8'); g.addColorStop(1, '#ff2a6d');
+    ctx.fillStyle = g; ctx.fillRect(bx, by, bw * p, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(bx + bw * p - 2, by - 3, 4, 12);
+    ctx.font = '12px "Courier New", monospace'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText(this.coop ? 'команда поднимается выше…' : (Input.isMobile ? 'тап — дальше' : 'ENTER — дальше'), W / 2, by + 30);
+    // искры
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 24; i++) {
+      const ph = (t * 0.6 + i * 0.137) % 1;
+      ctx.fillStyle = `rgba(255,${180 + (i % 4) * 15},60,${0.5 * (1 - ph) * inK})`;
+      ctx.fillRect((i * 97.7) % W, H * (1 - ph), 3, 3);
+    }
+    ctx.restore();
+  }
+
+  // ---------- сюжет: охотники, которые сами ищут героя ----------
+  _storyHunters(dt, players) {
+    if (this.storyIdx === null || this.coop || !this.mission || this.mission.complete) return;
+    this._huntSpawnT = (this._huntSpawnT === undefined ? 25 : this._huntSpawnT) - dt;
+    if (this._huntSpawnT > 0) return;
+    this._huntSpawnT = Utils.rand(24, 34);
+    const hunters = this.enemies.filter(e => e._hunter && !e.dead).length;
+    if (hunters >= 6) return;
+    const lit = new Set();
+    for (const p of players) for (const r of this.level.getLitRooms(p).lit) lit.add(r);
+    const far = this.level.rooms.filter(r => !lit.has(r) && !r.hall).sort(() => Math.random() - 0.5);
+    const room = far[0];
+    if (!room) return;
+    const n = Math.min(6 - hunters, 2 + Math.floor(this.storyIdx / 3));
+    for (let i = 0; i < n; i++) {
+      const pt = this.level.randomFreePoint(room);
+      if (!pt) continue;
+      const type = Math.random() < 0.2 ? 'hound' : 'normal';
+      const e = new Enemy(pt.x - 9, pt.y - 9, 'static', null, type);
+      if (type === 'normal') e.weapon = makeWeapon(Utils.choice(['ak47', 'uzi', 'm4', 'shotgun', 'bat', 'pipe', 'knife', 'glock']));
+      e._hunter = true;
+      e.state = 'investigate'; e.noiseTarget = { x: players[0].x + 9, y: players[0].y + 9 }; e.investigateTimer = 14;
+      this.enemies.push(e);
+    }
+    this.totalEnemies = this.enemies.length;
+    AudioSys.play('hound_bark', 0.6);
+    if (this.thoughts) setTimeout(() => this.thoughts.event('wave'), 2500);
+    if (this.radio) this.radio.push('aseke', Utils.choice(['Вижу на камерах: ещё люди Депозита, идут к вам!', 'Осторожно, к вам гости. Ищут именно вас.', 'Подкрепление Депозита на подходе. Держитесь!']));
+  }
+
+  // ---------- карта уровня (M): посещённые комнаты, враги, задания, напарники ----------
+  _markVisited() {
+    const L = this.level;
+    if (!L || !L.getRoomAt) return;
+    if (!this.visited) this.visited = new Set();
+    for (const p of this.allPlayers()) {
+      if (!p || p.x === undefined) continue;
+      const tx = Math.floor((p.x + 9) / TILE), ty = Math.floor((p.y + 9) / TILE);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const id = L.roomGrid ? L.roomGrid[(ty + dy) * L.cols + tx + dx] : -1;
+        if (id >= 0) this.visited.add(id);
+      }
+    }
+  }
+
+  _drawLevelMap(ctx, W, H) {
+    const L = this.level;
+    if (!L || !L.grid) return;
+    const M = this.menu, t = performance.now() / 1000;
+    // комнаты с живыми врагами
+    const hot = new Set();
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const id = L.roomGrid[Math.floor(e.cy() / TILE) * L.cols + Math.floor(e.cx() / TILE)];
+      if (id >= 0) hot.add(id);
+    }
+    if (!this._mapC || this._mapC.width !== L.cols || this._mapC.height !== L.rows) {
+      this._mapC = document.createElement('canvas'); this._mapC.width = L.cols; this._mapC.height = L.rows;
+    }
+    const mc = this._mapC, mx2 = mc.getContext('2d'), img = mx2.createImageData(L.cols, L.rows), vis = this.visited || new Set();
+    const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+    for (let r = 0; r < L.rows; r++) for (let q = 0; q < L.cols; q++) {
+      const v = L.grid[r] ? L.grid[r][q] : T_OUT, i = (r * L.cols + q) * 4, id = L.roomGrid[r * L.cols + q];
+      let c;
+      if (v === T_WALL) c = [120, 112, 160];
+      else if (v === T_FLOOR) {
+        const seen = id < 0 || vis.has(id);
+        c = seen ? [52, 44, 84] : [6, 4, 10];               // непосещённые комнаты — чёрные
+        if (id >= 0 && hot.has(id)) c = seen ? [78 + 14 * pulse, 40, 72] : [26 + 8 * pulse, 8, 16];   // там бродят враги — лёгкая подсветка
+      } else c = [14, 10, 22];
+      img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+    }
+    mx2.putImageData(img, 0, 0);
+    const pad = 40, k = Math.min((W - pad * 2) / L.cols, (H - pad * 2 - 30) / L.rows);
+    const mw = L.cols * k, mh = L.rows * k, mx = W / 2 - mw / 2, my = H / 2 - mh / 2 + 12;
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,2,10,0.78)'; ctx.fillRect(0, 0, W, H);
+    M.panel(ctx, mx - 12, my - 36, mw + 24, mh + 60, '#05d9e8', 0.92);
+    ctx.textAlign = 'left'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = '#05d9e8';
+    const title = this.coop ? `КАРТА ЭТАЖА ${this.coop.levelNo}` : this.storyIdx !== null ? `КАРТА — ${STORY[this.storyIdx].place || STORY[this.storyIdx].title}` : 'КАРТА УРОВНЯ';
+    ctx.fillText(title, mx, my - 14, mw * 0.7);
+    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px "Courier New", monospace';
+    ctx.fillText(Input.isMobile ? 'КАРТА — закрыть' : 'M — закрыть', mx + mw, my - 14);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(mc, mx, my, mw, mh);
+    // легенда
+    const ly = my + mh + 16;
+    const leg = (x, col, text) => { ctx.fillStyle = col; ctx.fillRect(x, ly - 8, 10, 10); ctx.fillStyle = '#c8c2e0'; ctx.textAlign = 'left'; ctx.fillText(text, x + 14, ly + 1); return x + 14 + ctx.measureText(text).width + 16; };
+    let lx = mx; ctx.font = '11px "Courier New", monospace';
+    lx = leg(lx, 'rgb(52,44,84)', 'изучено'); lx = leg(lx, 'rgb(6,4,10)', 'не были'); lx = leg(lx, 'rgb(88,40,72)', 'враги');
+    if (this.mission) lx = leg(lx, '#ffd319', 'задание');
+    const P = (wx, wy) => [mx + wx / TILE * k, my + wy / TILE * k];
+    // боссы
+    for (const e of this.enemies) if (e.isBoss && !e.dead) { const [x, y] = P(e.cx(), e.cy()); ctx.fillStyle = '#ff2a40'; ctx.fillRect(x - 4, y - 4, 8, 8); }
+    // точки заданий сюжета
+    const mi = this.mission;
+    if (mi && mi.obj && !mi.complete) {
+      const pts = [];
+      if (mi.target) pts.push(mi.target);
+      if (mi.obj.type === 'collect') for (const it of mi.items) if (!it.taken) pts.push(it);
+      for (const q of pts) {
+        const [x, y] = P(q.x, q.y), r = 5 + pulse * 2;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#05030a'; ctx.fillRect(-r - 2, -r - 2, r * 2 + 4, r * 2 + 4);
+        ctx.fillStyle = '#ffd319'; ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.restore();
+      }
+    }
+    // свои клоны
+    for (const a of this.allies) if (!a.dead) { const [x, y] = P(a.cx(), a.cy()); ctx.fillStyle = '#b48aff'; ctx.fillRect(x - 2, y - 2, 4, 4); }
+    const dot = (wx, wy, col, name, dead, me) => {
+      const [x, y] = P(wx, wy), r = (me ? 6 : 5) + (me ? Math.sin(t * 6) * 1.5 : 0);
+      ctx.fillStyle = '#05030a'; ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = dead ? '#ff4060' : col; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.font = 'bold 11px "Courier New", monospace'; ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(name + (dead ? ' ✚' : ''), x, y - r - 5);
+      ctx.fillStyle = dead ? '#ff4060' : col; ctx.fillText(name + (dead ? ' ✚' : ''), x, y - r - 5);
+    };
+    if (this.coop) for (const rp of this.coop.remotes.values()) if (rp.hasState) dot(rp.x + 9, rp.y + 9, SLOT_COLORS[rp.slot % 3], rp.name, rp.dead, false);
+    const p = this.player;
+    if (p) dot(p.x + 9, p.y + 9, this.coop ? SLOT_COLORS[(this.coop.me.slot || 0) % 3] : '#3dff8a', 'ВЫ', p.dead, true);
+    ctx.restore();
+  }
+
   _afterLevelStart() {
+    this.visited = new Set(); this.showMap = false;
     for (const p of this.pickups) p._levelItem = true;
     this._waves = 0; this._waveT = undefined; this._huntT = 0;
     if (this.thoughts) { this.thoughts.cur = null; setTimeout(() => { if (this.state === 'playing') this.thoughts.event('level'); }, 3200); }
@@ -470,6 +640,7 @@ class Game {
     TextField.close();
     this._exitAsk = null;
     this.paused = null;
+    this.showMap = false;
     this.tutorial = null;
     this.allies = [];
     this.pulls = [];
@@ -505,6 +676,7 @@ class Game {
     }
 
     this._syncQuiet();
+    if (this.state === 'playing' && this.level) this._markVisited();
 
     // Эффекты
     this.lightFlicker += dt * 15;
@@ -594,8 +766,8 @@ class Game {
       if (!this.coop && this.state === 'dead' && Input.wasPressed('Escape') && this.nameSubmitted) { this.toMenu(); return; }
     }
     // Карта уровня (M)
-    if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyM') && !TextField.active) {
-      this.coop.showMap = !this.coop.showMap; AudioSys.play('menu_move');
+    if ((this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyM') && !TextField.active && !this.paused) {
+      this.showMap = !this.showMap; AudioSys.play('menu_move');
     }
     // Чат корпоратива
     if (this.coop && (this.state === 'playing' || this.state === 'levelClear') && Input.wasPressed('KeyT') && !TextField.active) {
@@ -609,7 +781,8 @@ class Game {
 
     if (this.state === 'levelClear') {
       if (this.coop && !this.coop.isHost) {
-        // клиент ждёт, пока хост пришлёт новый уровень
+        // клиент ждёт, пока хост пришлёт новый уровень (анимация идёт сама)
+        this.levelClearTimer = Math.max(0.05, this.levelClearTimer - dt);
         this.coop.updateReplicas(dt);
         return;
       }
@@ -892,7 +1065,8 @@ class Game {
           AudioSys.play('game_start');
           Effects.screenFlash(0.35, '255,240,200');
         } else {
-          this.state = 'levelClear'; this.levelClearTimer = this.coop ? 1.8 : 1.0;
+          this.state = 'levelClear'; this.levelClearTimer = this._lcMax = this.coop ? 2.6 : 2.2;
+          AudioSys.play('game_start'); Effects.screenFlash(0.25, '255,240,200');
         }
       }
       if (this.levelBanner) { this.levelBanner.t -= dt; if (this.levelBanner.t <= 0) this.levelBanner = null; }
@@ -983,6 +1157,16 @@ class Game {
           Effects.burst(e.cx(), e.cy(), '255,30,40', 14, 200);
           e.die(this.pickups, { kind: 'burn', angle: Math.atan2(e.cy() - cy, e.cx() - cx), by: p.charId });
         }
+      }
+    }
+    // ярость напарника-Даура: аура смерти считается у хоста
+    if (this.coop && this.coop.isHost) for (const rp of this.coop.remotes.values()) {
+      if (rp.dead || !rp.hasState || rp.charId !== 'daur' || rp.mode !== 1) continue;
+      const rx = rp.x + 9, ry = rp.y + 9;
+      for (const e of this.enemies) {
+        if (e.dead || e.isBoss || Utils.dist(rx, ry, e.cx(), e.cy()) >= RAGE_AURA) continue;
+        Effects.burst(e.cx(), e.cy(), '255,30,40', 14, 200);
+        e.die(this.pickups, { kind: 'burn', angle: Math.atan2(e.cy() - ry, e.cx() - rx), by: 'daur' });
       }
     }
     // Гала в огне, пока «БАБАХ» заряжен: кто прикоснётся — горит
@@ -1204,8 +1388,11 @@ class Game {
         }
       }
     }
+    this._storyHunters(dt, players);
+    for (const e of alive) if (e._hunter && (e.state === 'idle' || e.state === 'patrol')) { const p = players[0]; e.state = 'investigate'; e.noiseTarget = { x: p.x + 9, y: p.y + 9 }; e.investigateTimer = 8; }
     // волны: не в кампании; после 45% зачистки, до 2 (соло) / 3 (корп) волн на этаж
     if (this.campaignIdx !== null && !this.coop) return;
+    if (this.storyIdx !== null && !this.coop) return;
     const n = players.length;
     const maxWaves = this.coop ? 3 : 2;
     this._waveT = (this._waveT === undefined ? 20 : this._waveT) - dt;
@@ -1232,6 +1419,7 @@ class Game {
     Effects.screenFlash(0.18, '255,40,60');
     AudioSys.play('hound_bark');
     this.levelBanner = { name: 'ПОДКРЕПЛЕНИЕ', sub: `ВОЛНА ${this._waves} — ${size} ВРАГОВ ИДУТ К ВАМ`, color: '#ff2a40', t: 2.4 };
+    if (this.thoughts) this.thoughts.event('wave');
   }
 
   // Враг дольше полсекунды внутри стены/двери — переносим на ближайшее свободное место
@@ -1656,8 +1844,8 @@ class Game {
       ctx.restore();
       if (this._exitAsk) this._drawExitAsk(ctx);
     }
-    if (this.coop && this.coop.showMap && (this.state === 'playing' || this.state === 'levelClear')) {
-      this.ctx.save(); this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.coop.drawMap(this.ctx, this.W, this.H); this.ctx.restore();
+    if (this.showMap && this.level && (this.state === 'playing' || this.state === 'levelClear')) {
+      this.ctx.save(); this.ctx.setTransform(1, 0, 0, 1, 0, 0); this._drawLevelMap(this.ctx, this.W, this.H); this.ctx.restore();
     }
     if (this.paused && !this._exitAsk) this._drawPauseMenu(this.ctx);
   }
@@ -1919,6 +2107,11 @@ class Game {
     if (this.mission) this.mission.drawHud(ctx, this.W, this.H, scale);
     this.radio.draw(ctx);
     this.thoughts.draw(ctx);
+    if (this.coop && this.cam) for (const rp of this.coop.remotes.values()) {
+      if (!rp.hasState || !rp.thText) continue;
+      const sx = (rp.x + 9 - this.cam.x) * this.cam.zoom, sy = (rp.y - this.cam.y) * this.cam.zoom - 18;
+      Thoughts.bubble(ctx, this, sx, sy, rp.thText, rp.thT || 0, 3.4, SLOT_COLORS[rp.slot % 3]);
+    }
 
     if (this.coop) {
       this.coop.drawPartyHud(ctx, this.W, scale);
@@ -1941,17 +2134,7 @@ class Game {
     this._drawLevelBanner(ctx, scale);
 
 
-    if (this.state === 'levelClear') {
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillRect(0, 0, this.W, this.H);
-      ctx.fillStyle = P.yellow;
-      ctx.font = `bold ${Math.min(48, this.W * 0.08)}px "Courier New", monospace`;
-      ctx.textAlign = 'center';
-      ctx.fillText('УРОВЕНЬ ЗАЧИЩЕН', this.W / 2, this.H / 2 - 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = `${Math.min(24, this.W * 0.04)}px "Courier New", monospace`;
-      ctx.fillText('Тап / ENTER для продолжения', this.W / 2, this.H / 2 + 30);
-    }
+    if (this.state === 'levelClear') this._drawLevelClear(ctx);
 
     if (this.state === 'dead' && this.coop) { this._drawTeamOver(ctx); return; }
 

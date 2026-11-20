@@ -130,8 +130,7 @@ body[data-hero="gal"] #btn-ult.ready { display: flex; animation: ultPulse 0.6s i
   color: #fff; font: bold 14px 'Courier New', monospace; pointer-events: auto; touch-action: none;
 }
 
-.pbtn-map { right: 62px; width: 64px; font-size: 11px; display: none; }
-body.in-coop .pbtn-map { display: block; }
+.pbtn-map { right: 62px; width: 64px; font-size: 11px; }
 
 /* --- Слой МЕНЮ (телефон) --- */
 #mobile-menu-controls {
