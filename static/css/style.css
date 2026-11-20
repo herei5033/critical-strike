@@ -222,20 +222,6 @@ body:not(.is-mobile) #mobile-game-controls, body:not(.is-mobile) #mobile-menu-co
 }
 #text-input::placeholder { color: rgba(255, 255, 255, 0.45); }
 
-/* ===== Переключатель Critical Strike / DLC «Расследование Аулета» ===== */
-#mode-btn {
-  position: absolute; left: 12px; bottom: 12px; z-index: 2000;
-  display: none; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 8px 14px 9px; border-radius: 6px; cursor: pointer;
-  background: rgba(10, 8, 6, 0.78); border: 1px solid rgba(232, 199, 106, 0.55);
-  color: #e8c76a; font-family: Georgia, "Times New Roman", serif; text-align: left;
-  box-shadow: 0 0 18px rgba(232, 199, 106, 0.15); transition: background .2s, box-shadow .2s;
-}
-#mode-btn.show { display: flex; }
-#mode-btn small { font: bold 10px "Courier New", monospace; letter-spacing: 2px; color: rgba(232, 216, 176, 0.65); }
-#mode-btn b { font-size: 14px; letter-spacing: 1px; }
-#mode-btn:hover { background: rgba(40, 30, 14, 0.9); box-shadow: 0 0 24px rgba(232, 199, 106, 0.35); }
-#mode-btn.dlc { border-color: rgba(5, 217, 232, 0.6); color: #05d9e8; box-shadow: 0 0 18px rgba(5, 217, 232, 0.18); }
-#mode-btn.dlc:hover { background: rgba(4, 30, 34, 0.9); }
+/* ===== DLC «Расследование Аулета» ===== */
 body.aulet .mobile-overlay { display: none !important; }
 body.aulet #game-container { background: #000; }

@@ -1752,7 +1752,7 @@ const AULET = {
   },
 };
 
-// Переключение Critical Strike ⇄ DLC (кнопка в левом нижнем углу)
+// Переключение Critical Strike ⇄ DLC (пункты главных меню обеих игр)
 window.switchMode = function (mode) {
   const g = window.game;
   if (mode === 'aulet') {
@@ -1762,20 +1762,9 @@ window.switchMode = function (mode) {
     if (!AULET.canSwitch()) return;
     AULET.leave();
   }
-  syncModeBtn();
 };
 window.AULET = AULET;
 window.toggleMode = () => window.switchMode(AULET.active ? 'cs' : 'aulet');
-function syncModeBtn() {
-  const b = document.getElementById('mode-btn');
-  if (!b) return;
-  const g = window.game;
-  const show = AULET.active && AULET.canSwitch();   // в Critical Strike вход в DLC — пунктом главного меню
-  b.classList.toggle('show', !!show);
-  b.classList.toggle('dlc', AULET.active);
-  const html = AULET.active ? '<small>◀ ВЕРНУТЬСЯ</small><b>CRITICAL STRIKE</b>' : '<small>DLC</small><b>РАССЛЕДОВАНИЕ АУЛЕТА</b>';
-  if (b._html !== html) { b._html = html; b.innerHTML = html; }
-}
 // DLC забирает цикл игры целиком: подменяем update/render, как только игра создана
 // (так не нужно трогать main.js, который у игроков может лежать в кэше браузера)
 if (typeof Game === 'function' && !Game.prototype._auletHooked) {
@@ -1791,5 +1780,4 @@ try { _autoAulet = localStorage.cs_mode === 'aulet'; } catch (e) {}
 setInterval(() => {
   const g = window.game;
   if (_autoAulet && g && g.state === 'menu' && !AULET.active) { _autoAulet = false; window.switchMode('aulet'); }
-  syncModeBtn();
 }, 250);
